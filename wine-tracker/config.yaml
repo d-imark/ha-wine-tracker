@@ -25,17 +25,17 @@ options:
   language: "de"
   ai_provider: "none"
   anthropic_api_key: ""
-  anthropic_model: "claude-opus-4-6"
+  anthropic_model: "claude-opus-4-8"
   openai_api_key: ""
-  openai_model: "gpt-5.2"
+  openai_model: "gpt-5.5"
   openrouter_api_key: ""
-  openrouter_model: "anthropic/claude-opus-4.6"
+  openrouter_model: "anthropic/claude-opus-4.8"
   ollama_host: "http://localhost:11434"
-  ollama_model: "llava"
+  ollama_model: "llama3.2-vision"
   minimax_api_key: ""
-  minimax_model: "MiniMax-Text-01"
+  minimax_model: "MiniMax-M3"
   mistral_api_key: ""
-  mistral_model: "pixtral-large-latest"
+  mistral_model: "mistral-medium-latest"
 schema:
   currency: str
   language: str

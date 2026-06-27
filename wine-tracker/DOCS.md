@@ -67,19 +67,19 @@ Pick one AI provider and configure its API key and model. The AI is used for lab
 |--------|---------|-------------|
 | `ai_provider` | `none` | `none`, `anthropic`, `openai`, `openrouter`, `ollama`, `minimax`, `mistral` |
 | `anthropic_api_key` | _(empty)_ | Claude API key from [console.anthropic.com](https://console.anthropic.com) |
-| `anthropic_model` | `claude-opus-4-6` | Anthropic model identifier |
+| `anthropic_model` | `claude-opus-4-8` | Anthropic model identifier |
 | `openai_api_key` | _(empty)_ | OpenAI API key from [platform.openai.com](https://platform.openai.com) |
-| `openai_model` | `gpt-5.2` | OpenAI vision model |
+| `openai_model` | `gpt-5.5` | OpenAI vision model |
 | `openrouter_api_key` | _(empty)_ | OpenRouter API key from [openrouter.ai](https://openrouter.ai) |
-| `openrouter_model` | `anthropic/claude-opus-4.6` | Any vision-capable OpenRouter model |
+| `openrouter_model` | `anthropic/claude-opus-4.8` | Any vision-capable OpenRouter model |
 | `ollama_host` | `http://localhost:11434` | Local Ollama server URL |
-| `ollama_model` | `llava` | Local Ollama vision model |
+| `ollama_model` | `llama3.2-vision` | Local Ollama vision model |
 | `minimax_api_key` | _(empty)_ | MiniMax API key from [api.minimaxi.chat](https://api.minimaxi.chat) |
-| `minimax_model` | `MiniMax-Text-01` | MiniMax model (vision-capable despite the "Text" name) |
+| `minimax_model` | `MiniMax-M3` | MiniMax model (vision-capable despite the "Text" name) |
 | `mistral_api_key` | _(empty)_ | Mistral API key from [console.mistral.ai](https://console.mistral.ai) |
-| `mistral_model` | `pixtral-large-latest` | Mistral model (use a Pixtral model for label recognition) |
+| `mistral_model` | `mistral-medium-latest` | Mistral model (use a Pixtral model for label recognition) |
 
-> **Tip:** Ollama runs fully local and requires no API key. Pull a vision model (`ollama pull llava`) and point `ollama_host` at your Ollama server.
+> **Tip:** Ollama runs fully local and requires no API key. Pull a vision model (`ollama pull llama3.2-vision`) and point `ollama_host` at your Ollama server.
 
 ## Data Persistence
 

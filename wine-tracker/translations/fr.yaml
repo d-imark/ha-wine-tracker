@@ -17,19 +17,19 @@ configuration:
     description: Clé API de console.anthropic.com. Requise pour le fournisseur "anthropic".
   anthropic_model:
     name: Modèle Anthropic
-    description: Nom du modèle Anthropic (p.ex. claude-opus-4-6).
+    description: Nom du modèle Anthropic (p.ex. claude-opus-4-8).
   openai_api_key:
     name: Clé API OpenAI
     description: Clé API de platform.openai.com. Requise pour le fournisseur "openai".
   openai_model:
     name: Modèle OpenAI
-    description: Nom du modèle OpenAI (p.ex. gpt-5.2).
+    description: Nom du modèle OpenAI (p.ex. gpt-5.5).
   openrouter_api_key:
     name: Clé API OpenRouter
     description: Clé API de openrouter.ai. Requise pour le fournisseur "openrouter".
   openrouter_model:
     name: Modèle OpenRouter
-    description: Identifiant du modèle OpenRouter (p.ex. anthropic/claude-opus-4.6).
+    description: Identifiant du modèle OpenRouter (p.ex. anthropic/claude-opus-4.8).
   ollama_host:
     name: Hôte Ollama
     description: >-
@@ -37,4 +37,4 @@ configuration:
       Requis pour le fournisseur "ollama". Aucune clé API nécessaire.
   ollama_model:
     name: Modèle Ollama
-    description: Nom du modèle vision pour Ollama (p.ex. llava, llava-llama3).
+    description: Nom du modèle vision pour Ollama (p.ex. llama3.2-vision, llama3.2-vision-llama3).

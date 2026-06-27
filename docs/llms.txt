@@ -10,7 +10,7 @@ Wine Tracker helps wine enthusiasts manage their personal wine collection with A
 - Backend: Python 3 + Flask
 - Database: SQLite
 - Frontend: Vanilla HTML/CSS/JavaScript (no build tools)
-- AI: Anthropic Claude, OpenAI GPT, OpenRouter, Ollama (local), MiniMax
+- AI: Anthropic Claude, OpenAI GPT, OpenRouter, Ollama (local), MiniMax, Mistral
 - Visualization: COBE (WebGL 3D globe), SVG charts
 
 **Deployment:**
@@ -51,9 +51,9 @@ Wine Tracker helps wine enthusiasts manage their personal wine collection with A
   - **Anthropic Claude** (`anthropic`) - direct Claude API
   - **OpenAI** (`openai`) - GPT vision models
   - **OpenRouter** (`openrouter`) - unified API for many vision-capable models
-  - **Ollama** (`ollama`) - runs fully local, no API key required (e.g. llava)
-  - **MiniMax** (`minimax`) - OpenAI-compatible, default model `MiniMax-Text-01`
-  - **Mistral** (`mistral`) - OpenAI-compatible, vision via Pixtral (default model `pixtral-large-latest`)
+  - **Ollama** (`ollama`) - runs fully local, no API key required (e.g. llama3.2-vision)
+  - **MiniMax** (`minimax`) - OpenAI-compatible, default model `MiniMax-M3`
+  - **Mistral** (`mistral`) - OpenAI-compatible, vision-capable (default model `mistral-medium-latest`)
 - **Cost:** roughly $0.001/wine with GPT-4o-mini, $0.002 with Claude Haiku, free with Ollama
 
 ### AI Sommelier Chat
@@ -174,12 +174,12 @@ Access at `http://localhost:5050`.
 
 ### AI Providers (optional)
 - `ai_provider`: `none`, `anthropic`, `openai`, `openrouter`, `ollama`, `minimax`, `mistral`
-- **Anthropic:** `anthropic_api_key`, `anthropic_model` (default `claude-opus-4-6`)
-- **OpenAI:** `openai_api_key`, `openai_model` (default `gpt-5.2`)
-- **OpenRouter:** `openrouter_api_key`, `openrouter_model` (default `anthropic/claude-opus-4.6`)
-- **Ollama:** `ollama_host`, `ollama_model` (default `llava`)
-- **MiniMax:** `minimax_api_key`, `minimax_model` (default `MiniMax-Text-01`)
-- **Mistral:** `mistral_api_key`, `mistral_model` (default `pixtral-large-latest`)
+- **Anthropic:** `anthropic_api_key`, `anthropic_model` (default `claude-opus-4-8`)
+- **OpenAI:** `openai_api_key`, `openai_model` (default `gpt-5.5`)
+- **OpenRouter:** `openrouter_api_key`, `openrouter_model` (default `anthropic/claude-opus-4.8`)
+- **Ollama:** `ollama_host`, `ollama_model` (default `llama3.2-vision`)
+- **MiniMax:** `minimax_api_key`, `minimax_model` (default `MiniMax-M3`)
+- **Mistral:** `mistral_api_key`, `mistral_model` (default `mistral-medium-latest`)
 
 All configuration options can also be passed as environment variables in Docker mode (e.g. `ANTHROPIC_API_KEY`, `MINIMAX_MODEL`).
 

@@ -58,17 +58,17 @@ def load_options():
         "language": "de",
         "ai_provider": "none",
         "anthropic_api_key": "",
-        "anthropic_model": "claude-opus-4-6",
+        "anthropic_model": "claude-opus-4-8",
         "openai_api_key": "",
-        "openai_model": "gpt-5.2",
+        "openai_model": "gpt-5.5",
         "openrouter_api_key": "",
-        "openrouter_model": "anthropic/claude-opus-4.6",
+        "openrouter_model": "anthropic/claude-opus-4.8",
         "ollama_host": "http://localhost:11434",
-        "ollama_model": "llava",
+        "ollama_model": "llama3.2-vision",
         "minimax_api_key": "",
-        "minimax_model": "MiniMax-Text-01",
+        "minimax_model": "MiniMax-M3",
         "mistral_api_key": "",
-        "mistral_model": "pixtral-large-latest",
+        "mistral_model": "mistral-medium-latest",
     }
     try:
         with open(OPTIONS_PATH, "r") as f:
@@ -1460,7 +1460,7 @@ def _call_anthropic(image_b64, media_type, prompt, opts):
     """Call Anthropic Claude API (vision or text-only)."""
     import anthropic
     api_key = opts.get("anthropic_api_key", "").strip()
-    model = opts.get("anthropic_model", "claude-opus-4-6").strip() or "claude-opus-4-6"
+    model = opts.get("anthropic_model", "claude-opus-4-8").strip() or "claude-opus-4-8"
     client = anthropic.Anthropic(api_key=api_key)
     content = []
     if image_b64:
@@ -1478,7 +1478,7 @@ def _call_openai(image_b64, media_type, prompt, opts):
     """Call OpenAI API (vision or text-only)."""
     from openai import OpenAI
     api_key = opts.get("openai_api_key", "").strip()
-    model = opts.get("openai_model", "gpt-5.2").strip() or "gpt-5.2"
+    model = opts.get("openai_model", "gpt-5.5").strip() or "gpt-5.5"
     client = OpenAI(api_key=api_key)
     content = []
     if image_b64:
@@ -1496,7 +1496,7 @@ def _call_openrouter(image_b64, media_type, prompt, opts):
     """Call OpenRouter API (OpenAI-compatible with custom base_url)."""
     from openai import OpenAI
     api_key = opts.get("openrouter_api_key", "").strip()
-    model = opts.get("openrouter_model", "anthropic/claude-opus-4.6").strip() or "anthropic/claude-opus-4.6"
+    model = opts.get("openrouter_model", "anthropic/claude-opus-4.8").strip() or "anthropic/claude-opus-4.8"
     client = OpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
@@ -1517,7 +1517,7 @@ def _call_ollama(image_b64, media_type, prompt, opts):
     """Call local Ollama API (vision or text-only)."""
     import requests as req
     host = opts.get("ollama_host", "http://localhost:11434").strip().rstrip("/")
-    model = opts.get("ollama_model", "llava").strip() or "llava"
+    model = opts.get("ollama_model", "llama3.2-vision").strip() or "llama3.2-vision"
     msg = {"role": "user", "content": prompt}
     if image_b64:
         msg["images"] = [image_b64]
@@ -1534,7 +1534,7 @@ def _call_minimax(image_b64, media_type, prompt, opts):
     """Call MiniMax API (OpenAI-compatible, vision or text-only)."""
     from openai import OpenAI
     api_key = opts.get("minimax_api_key", "").strip()
-    model = opts.get("minimax_model", "MiniMax-Text-01").strip() or "MiniMax-Text-01"
+    model = opts.get("minimax_model", "MiniMax-M3").strip() or "MiniMax-M3"
     client = OpenAI(api_key=api_key, base_url="https://api.minimaxi.chat/v1")
     content = []
     if image_b64:
@@ -1549,10 +1549,10 @@ def _call_minimax(image_b64, media_type, prompt, opts):
 
 
 def _call_mistral(image_b64, media_type, prompt, opts):
-    """Call Mistral AI API (OpenAI-compatible, vision via Pixtral models)."""
+    """Call Mistral AI API (OpenAI-compatible, vision-capable models)."""
     from openai import OpenAI
     api_key = opts.get("mistral_api_key", "").strip()
-    model = opts.get("mistral_model", "pixtral-large-latest").strip() or "pixtral-large-latest"
+    model = opts.get("mistral_model", "mistral-medium-latest").strip() or "mistral-medium-latest"
     client = OpenAI(api_key=api_key, base_url="https://api.mistral.ai/v1")
     content = []
     if image_b64:
@@ -1572,7 +1572,7 @@ def _call_chat_anthropic(messages, system_prompt, opts, image_b64=None, media_ty
     """Chat via Anthropic Claude (multi-turn, with optional image)."""
     import anthropic
     api_key = opts.get("anthropic_api_key", "").strip()
-    model = opts.get("anthropic_model", "claude-opus-4-6").strip() or "claude-opus-4-6"
+    model = opts.get("anthropic_model", "claude-opus-4-8").strip() or "claude-opus-4-8"
     client = anthropic.Anthropic(api_key=api_key)
     # Attach image to the last user message if provided
     if image_b64 and messages:
@@ -1595,7 +1595,7 @@ def _call_chat_openai(messages, system_prompt, opts, image_b64=None, media_type=
     """Chat via OpenAI (multi-turn, with optional image)."""
     from openai import OpenAI
     api_key = opts.get("openai_api_key", "").strip()
-    model = opts.get("openai_model", "gpt-5.2").strip() or "gpt-5.2"
+    model = opts.get("openai_model", "gpt-5.5").strip() or "gpt-5.5"
     client = OpenAI(api_key=api_key)
     if image_b64 and messages:
         last = messages[-1]
@@ -1617,7 +1617,7 @@ def _call_chat_openrouter(messages, system_prompt, opts, image_b64=None, media_t
     """Chat via OpenRouter (multi-turn, with optional image)."""
     from openai import OpenAI
     api_key = opts.get("openrouter_api_key", "").strip()
-    model = opts.get("openrouter_model", "anthropic/claude-opus-4.6").strip() or "anthropic/claude-opus-4.6"
+    model = opts.get("openrouter_model", "anthropic/claude-opus-4.8").strip() or "anthropic/claude-opus-4.8"
     client = OpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
@@ -1642,7 +1642,7 @@ def _call_chat_ollama(messages, system_prompt, opts, image_b64=None, media_type=
     """Chat via local Ollama (multi-turn, with optional image)."""
     import requests as req
     host = opts.get("ollama_host", "http://localhost:11434").strip().rstrip("/")
-    model = opts.get("ollama_model", "llava").strip() or "llava"
+    model = opts.get("ollama_model", "llama3.2-vision").strip() or "llama3.2-vision"
     if image_b64 and messages:
         last = messages[-1]
         if last["role"] == "user":
@@ -1661,7 +1661,7 @@ def _call_chat_minimax(messages, system_prompt, opts, image_b64=None, media_type
     """Chat via MiniMax (OpenAI-compatible, multi-turn, with optional image)."""
     from openai import OpenAI
     api_key = opts.get("minimax_api_key", "").strip()
-    model = opts.get("minimax_model", "MiniMax-Text-01").strip() or "MiniMax-Text-01"
+    model = opts.get("minimax_model", "MiniMax-M3").strip() or "MiniMax-M3"
     client = OpenAI(api_key=api_key, base_url="https://api.minimaxi.chat/v1")
     if image_b64 and messages:
         last = messages[-1]
@@ -1683,7 +1683,7 @@ def _call_chat_mistral(messages, system_prompt, opts, image_b64=None, media_type
     """Chat via Mistral AI (OpenAI-compatible, multi-turn, with optional image)."""
     from openai import OpenAI
     api_key = opts.get("mistral_api_key", "").strip()
-    model = opts.get("mistral_model", "pixtral-large-latest").strip() or "pixtral-large-latest"
+    model = opts.get("mistral_model", "mistral-medium-latest").strip() or "mistral-medium-latest"
     client = OpenAI(api_key=api_key, base_url="https://api.mistral.ai/v1")
     if image_b64 and messages:
         last = messages[-1]

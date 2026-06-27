@@ -17,19 +17,19 @@ configuration:
     description: API-sleutel van console.anthropic.com. Vereist voor provider "anthropic".
   anthropic_model:
     name: Anthropic Model
-    description: Modelnaam voor Anthropic (bijv. claude-opus-4-6).
+    description: Modelnaam voor Anthropic (bijv. claude-opus-4-8).
   openai_api_key:
     name: OpenAI API-sleutel
     description: API-sleutel van platform.openai.com. Vereist voor provider "openai".
   openai_model:
     name: OpenAI Model
-    description: Modelnaam voor OpenAI (bijv. gpt-5.2).
+    description: Modelnaam voor OpenAI (bijv. gpt-5.5).
   openrouter_api_key:
     name: OpenRouter API-sleutel
     description: API-sleutel van openrouter.ai. Vereist voor provider "openrouter".
   openrouter_model:
     name: OpenRouter Model
-    description: Model-ID voor OpenRouter (bijv. anthropic/claude-opus-4.6).
+    description: Model-ID voor OpenRouter (bijv. anthropic/claude-opus-4.8).
   ollama_host:
     name: Ollama Host
     description: >-
@@ -37,4 +37,4 @@ configuration:
       Vereist voor provider "ollama". Geen API-sleutel nodig.
   ollama_model:
     name: Ollama Model
-    description: Vision-modelnaam voor Ollama (bijv. llava, llava-llama3).
+    description: Vision-modelnaam voor Ollama (bijv. llama3.2-vision, llama3.2-vision-llama3).

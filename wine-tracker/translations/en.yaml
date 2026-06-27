@@ -18,19 +18,19 @@ configuration:
     description: API key from console.anthropic.com. Required when AI provider is "anthropic".
   anthropic_model:
     name: Anthropic Model
-    description: Model name for Anthropic (e.g. claude-opus-4-6).
+    description: Model name for Anthropic (e.g. claude-opus-4-8).
   openai_api_key:
     name: OpenAI API Key
     description: API key from platform.openai.com. Required when AI provider is "openai".
   openai_model:
     name: OpenAI Model
-    description: Model name for OpenAI (e.g. gpt-5.2).
+    description: Model name for OpenAI (e.g. gpt-5.5).
   openrouter_api_key:
     name: OpenRouter API Key
     description: API key from openrouter.ai. Required when AI provider is "openrouter".
   openrouter_model:
     name: OpenRouter Model
-    description: Model identifier for OpenRouter (e.g. anthropic/claude-opus-4.6).
+    description: Model identifier for OpenRouter (e.g. anthropic/claude-opus-4.8).
   ollama_host:
     name: Ollama Host
     description: >-
@@ -38,4 +38,4 @@ configuration:
       Required when AI provider is "ollama". No API key needed.
   ollama_model:
     name: Ollama Model
-    description: Vision model name for Ollama (e.g. llava, llava-llama3).
+    description: Vision model name for Ollama (e.g. llama3.2-vision, llama3.2-vision-llama3).

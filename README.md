@@ -176,28 +176,28 @@ docker-compose up -d
 | Variable | Default |
 |----------|---------|
 | `ANTHROPIC_API_KEY` | _(empty)_ |
-| `ANTHROPIC_MODEL` | `claude-opus-4-6` |
+| `ANTHROPIC_MODEL` | `claude-opus-4-8` |
 
 **OpenAI (GPT):**
 
 | Variable | Default |
 |----------|---------|
 | `OPENAI_API_KEY` | _(empty)_ |
-| `OPENAI_MODEL` | `gpt-5.2` |
+| `OPENAI_MODEL` | `gpt-5.5` |
 
 **OpenRouter (multi-provider):**
 
 | Variable | Default |
 |----------|---------|
 | `OPENROUTER_API_KEY` | _(empty)_ |
-| `OPENROUTER_MODEL` | `anthropic/claude-opus-4.6` |
+| `OPENROUTER_MODEL` | `anthropic/claude-opus-4.8` |
 
 **Ollama (local, no API key needed):**
 
 | Variable | Default |
 |----------|---------|
 | `OLLAMA_HOST` | `http://localhost:11434` |
-| `OLLAMA_MODEL` | `llava` |
+| `OLLAMA_MODEL` | `llama3.2-vision` |
 
 > **Tip:** When running Ollama in a separate container, use `http://host.docker.internal:11434` as the host.
 
@@ -206,18 +206,18 @@ docker-compose up -d
 | Variable | Default |
 |----------|---------|
 | `MINIMAX_API_KEY` | _(empty)_ |
-| `MINIMAX_MODEL` | `MiniMax-Text-01` |
+| `MINIMAX_MODEL` | `MiniMax-M3` |
 
-> **Note:** `MiniMax-Text-01` is MiniMax's current vision-capable model - despite the name it accepts image input. The older `MiniMax-VL-01` name is no longer accepted by the API.
+> **Note:** `MiniMax-M3` is MiniMax's current vision-capable model - despite the name it accepts image input. The older `MiniMax-VL-01` name is no longer accepted by the API.
 
 **Mistral:**
 
 | Variable | Default |
 |----------|---------|
 | `MISTRAL_API_KEY` | _(empty)_ |
-| `MISTRAL_MODEL` | `pixtral-large-latest` |
+| `MISTRAL_MODEL` | `mistral-medium-latest` |
 
-> **Note:** For label recognition (vision) use a Pixtral model (`pixtral-large-latest`, `pixtral-12b-latest`). Other Mistral models like `mistral-large-latest` work for the sommelier chat but cannot read labels.
+> **Note:** For label recognition (vision) use a Pixtral model (`mistral-medium-latest`, `pixtral-12b-latest`). Other Mistral models like `mistral-large-latest` work for the sommelier chat but cannot read labels.
 
 ### Updating
 
@@ -249,25 +249,25 @@ The AI feature lets you snap a photo of a wine label and automatically fills in 
 |--------|------|---------|-------------|
 | `ai_provider` | dropdown | `none` | AI provider: `none`, `anthropic`, `openai`, `openrouter`, `ollama`, `minimax`, `mistral` |
 | `anthropic_api_key` | string | _(empty)_ | API key for Anthropic (Claude) |
-| `anthropic_model` | string | `claude-opus-4-6` | Anthropic model name |
+| `anthropic_model` | string | `claude-opus-4-8` | Anthropic model name |
 | `openai_api_key` | string | _(empty)_ | API key for OpenAI |
-| `openai_model` | string | `gpt-5.2` | OpenAI model name |
+| `openai_model` | string | `gpt-5.5` | OpenAI model name |
 | `openrouter_api_key` | string | _(empty)_ | API key for OpenRouter |
-| `openrouter_model` | string | `anthropic/claude-opus-4.6` | OpenRouter model identifier |
+| `openrouter_model` | string | `anthropic/claude-opus-4.8` | OpenRouter model identifier |
 | `ollama_host` | string | `http://localhost:11434` | Ollama server URL (for local AI) |
-| `ollama_model` | string | `llava` | Ollama vision model name |
+| `ollama_model` | string | `llama3.2-vision` | Ollama vision model name |
 | `minimax_api_key` | string | _(empty)_ | API key for MiniMax |
-| `minimax_model` | string | `MiniMax-Text-01` | MiniMax model name (vision-capable despite the name) |
+| `minimax_model` | string | `MiniMax-M3` | MiniMax model name (vision-capable despite the name) |
 | `mistral_api_key` | string | _(empty)_ | API key for Mistral |
-| `mistral_model` | string | `pixtral-large-latest` | Mistral model name (use Pixtral models for vision) |
+| `mistral_model` | string | `mistral-medium-latest` | Mistral model name (use Pixtral models for vision) |
 
 **Provider notes:**
 - **Anthropic** - uses the Claude API directly. Requires an API key from [console.anthropic.com](https://console.anthropic.com)
 - **OpenAI** - uses the OpenAI API. Requires an API key from [platform.openai.com](https://platform.openai.com)
 - **OpenRouter** - a unified API that routes to many models. Requires an API key from [openrouter.ai](https://openrouter.ai). You can choose any vision-capable model.
-- **Ollama** - runs fully local, no API key needed. Install [Ollama](https://ollama.com) and pull a vision model (e.g. `llava`). Set the host to your Ollama server address.
-- **MiniMax** - OpenAI-compatible API from [minimaxi.chat](https://api.minimaxi.chat). The default model `MiniMax-Text-01` supports vision input despite the name; the older `MiniMax-VL-01` name is no longer accepted by the API.
-- **Mistral** - OpenAI-compatible API from [mistral.ai](https://console.mistral.ai). For label recognition use a Pixtral model (e.g. `pixtral-large-latest`); regular Mistral text models work for the sommelier chat but cannot read labels. A free Experiment plan is available for some regions ([details](https://help.mistral.ai/en/articles/455206)).
+- **Ollama** - runs fully local, no API key needed. Install [Ollama](https://ollama.com) and pull a vision model (e.g. `llama3.2-vision`). Set the host to your Ollama server address.
+- **MiniMax** - OpenAI-compatible API from [minimaxi.chat](https://api.minimaxi.chat). The default model `MiniMax-M3` supports vision input despite the name; the older `MiniMax-VL-01` name is no longer accepted by the API.
+- **Mistral** - OpenAI-compatible API from [mistral.ai](https://console.mistral.ai). For label recognition use a Pixtral model (e.g. `mistral-medium-latest`); regular Mistral text models work for the sommelier chat but cannot read labels. A free Experiment plan is available for some regions ([details](https://help.mistral.ai/en/articles/455206)).
 
 Token cost varies by provider and model - typical analysis is ~2,500 tokens. See the provider's pricing page for current rates. Ollama runs locally and is free.
 

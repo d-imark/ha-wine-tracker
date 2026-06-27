@@ -41,13 +41,13 @@ def _patch_env(tmp_path, monkeypatch):
         "language": "de",
         "ai_provider": "none",
         "anthropic_api_key": "",
-        "anthropic_model": "claude-opus-4-6",
+        "anthropic_model": "claude-opus-4-8",
         "openai_api_key": "",
         "openai_model": "gpt-4o",
         "openrouter_api_key": "",
-        "openrouter_model": "anthropic/claude-opus-4.6",
+        "openrouter_model": "anthropic/claude-opus-4.8",
         "ollama_host": "http://localhost:11434",
-        "ollama_model": "llava",
+        "ollama_model": "llama3.2-vision",
     }
     monkeypatch.setattr(wine_app, "HA_OPTIONS", test_options)
 

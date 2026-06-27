@@ -134,7 +134,7 @@ class TestAnalyzeWine:
             **wine_app.HA_OPTIONS,
             "ai_provider": "minimax",
             "minimax_api_key": "mm-test-key",
-            "minimax_model": "MiniMax-Text-01",
+            "minimax_model": "MiniMax-M3",
         }
         mock_call.return_value = json.dumps({
             "name": "Penfolds Grange",
@@ -169,7 +169,7 @@ class TestAnalyzeWine:
             **wine_app.HA_OPTIONS,
             "ai_provider": "mistral",
             "mistral_api_key": "ms-test-key",
-            "mistral_model": "pixtral-large-latest",
+            "mistral_model": "mistral-medium-latest",
         }
         mock_call.return_value = json.dumps({
             "name": "Château Margaux",
@@ -563,9 +563,9 @@ class TestWineChat:
         "openai_api_key": "",
         "openai_model": "gpt-4o",
         "openrouter_api_key": "",
-        "openrouter_model": "anthropic/claude-opus-4.6",
+        "openrouter_model": "anthropic/claude-opus-4.8",
         "ollama_host": "http://localhost:11434",
-        "ollama_model": "llava",
+        "ollama_model": "llama3.2-vision",
     }
 
     def _post_chat(self, client, message="Hello", history=None):
@@ -647,7 +647,7 @@ class TestWineChat:
             **wine_app.HA_OPTIONS,
             "ai_provider": "minimax",
             "minimax_api_key": "mm-test-key",
-            "minimax_model": "MiniMax-Text-01",
+            "minimax_model": "MiniMax-M3",
         }
         mock_chat.return_value = "MiniMax recommends a Barolo."
 
@@ -666,7 +666,7 @@ class TestWineChat:
             **wine_app.HA_OPTIONS,
             "ai_provider": "mistral",
             "mistral_api_key": "ms-test-key",
-            "mistral_model": "pixtral-large-latest",
+            "mistral_model": "mistral-medium-latest",
         }
         mock_chat.return_value = "Mistral recommends a Châteauneuf-du-Pape."
 
@@ -1196,9 +1196,9 @@ class TestChatRecordingToggle:
         "openai_api_key": "",
         "openai_model": "gpt-4o",
         "openrouter_api_key": "",
-        "openrouter_model": "anthropic/claude-opus-4.6",
+        "openrouter_model": "anthropic/claude-opus-4.8",
         "ollama_host": "http://localhost:11434",
-        "ollama_model": "llava",
+        "ollama_model": "llama3.2-vision",
     }
 
     @patch("app._call_chat")
