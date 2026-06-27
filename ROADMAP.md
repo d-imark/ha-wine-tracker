@@ -12,6 +12,7 @@ Features are listed roughly by priority - not all will ship, and order may chang
 - **HA Dashboard card** - native Lovelace card to embed wine stats on any dashboard
 
 ## UI & Personalization
+- **Server-side preferences** - persist settings (theme, colour mode, view mode, filter defaults, show-empty, table sort) in the database instead of `localStorage`, so they survive a cache clear and sync across browsers and devices. Shared per instance by default, per user when auth is enabled. Resolves #18.
 - **Keyboard shortcuts** - `/` to search, `+` to add, `Esc` to close modals
 - **Wishlist mode** - mark wines you want to buy (separate from owned bottles)
 
