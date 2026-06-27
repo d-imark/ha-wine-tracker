@@ -300,6 +300,18 @@ class TestViewModalTranslations:
             assert "view_drink_window" in TRANSLATIONS[lang], f"Missing view_drink_window in {lang}"
 
 
+# ── Out-of-stock translations ────────────────────────────────────────────────
+
+class TestOutOfStockTranslations:
+    def test_out_of_stock_keys_in_all_languages(self):
+        """All 7 languages need the out-of-stock ribbon and settings keys, non-empty."""
+        from translations import TRANSLATIONS
+        for lang in TRANSLATIONS:
+            for key in ("ribbon_empty", "settings_show_empty"):
+                assert key in TRANSLATIONS[lang], f"Missing {key} in {lang}"
+                assert TRANSLATIONS[lang][key].strip(), f"Empty {key} in {lang}"
+
+
 # ── parse_user_string / DEV_AUTH ─────────────────────────────────────────────
 
 class TestParseUserString:
