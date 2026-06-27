@@ -100,12 +100,14 @@ ok "wine-tracker/README.md updated"
 sed -i '' "s/version-v${CURRENT_VERSION}-blue/version-v${SEMVER}-blue/" wine-tracker/DOCS.md
 ok "wine-tracker/DOCS.md updated"
 
-# 4g. docs/llms.txt — bump version only. Content regeneration is handled
-# separately (post-release) because the claude --print CLI call tends to hang
-# or require auth prompts that break non-interactive deploys.
+# 4g. docs/llms.txt — bump only the "Current version" pointer line. Do NOT
+# blanket-replace the version string: the file's version-history section lists
+# past releases (e.g. "v1.10.0"), and a global sed would mislabel those.
+# Content regeneration is deferred (post-release) because the claude --print
+# CLI call tends to hang or require auth prompts that break non-interactive deploys.
 if [[ -f "docs/llms.txt" ]]; then
-  sed -i '' "s/v${CURRENT_VERSION}/v${SEMVER}/g" docs/llms.txt
-  ok "docs/llms.txt version bumped to ${SEMVER} (content regen deferred to post-release)"
+  sed -i '' "s/^Current version: \*\*v${CURRENT_VERSION}\*\*/Current version: **v${SEMVER}**/" docs/llms.txt
+  ok "docs/llms.txt current-version pointer bumped to ${SEMVER} (content regen deferred to post-release)"
 fi
 
 # ── 5. Read CHANGELOG entry ───────────────────────────────
