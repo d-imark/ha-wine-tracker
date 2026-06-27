@@ -424,7 +424,7 @@ function syncTableVisibility() {
 // ── Client-side filter state ─────────────────────────────────────────────────
 var activeType = '';
 var activeDrinkWindow = '';
-var showEmpty = false;
+var showEmpty = localStorage.getItem('wine-show-empty') === '1';
 var _filterTimer = null;
 
 function debouncedFilter() {
@@ -696,6 +696,7 @@ function openModal(id) {
     updateThemeDropdown();
     initChatRecordingToggle();
     initAdvancedFilterDefaultToggle();
+    initShowEmptyDefaultToggle();
   }
 }
 
@@ -707,6 +708,23 @@ function initAdvancedFilterDefaultToggle() {
 function setAdvancedFilterDefault(enabled) {
   if (enabled) localStorage.setItem('wine-advanced-filter-default', '1');
   else localStorage.removeItem('wine-advanced-filter-default');
+}
+
+function initShowEmptyDefaultToggle() {
+  var cb = document.getElementById('showEmptyDefaultToggle');
+  if (cb) cb.checked = localStorage.getItem('wine-show-empty') === '1';
+}
+
+function setShowEmptyDefault(enabled) {
+  if (enabled) localStorage.setItem('wine-show-empty', '1');
+  else localStorage.removeItem('wine-show-empty');
+  showEmpty = enabled;
+  applyFilters();
+  // Sync the quick-toggle button label/icon
+  var icon = document.querySelector('#toggleEmptyBtn .mdi');
+  var label = document.querySelector('#toggleEmptyBtn .toggle-empty-label');
+  if (icon) icon.className = 'mdi ' + (showEmpty ? 'mdi-eye-off-outline' : 'mdi-eye-outline');
+  if (label) label.textContent = showEmpty ? T.toggle_empty_hide : T.toggle_empty_show;
 }
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
@@ -1381,7 +1399,15 @@ document.getElementById('deleteForm').addEventListener('submit', function(e) {
   history.replaceState(null, '', window.location.pathname + (clean ? '?' + clean : ''));
 })();
 
-// Apply filters on initial load (hides empty bottles when showEmpty is false)
+// Sync quick-toggle button label/icon with persisted showEmpty preference
+(function() {
+  var icon = document.querySelector('#toggleEmptyBtn .mdi');
+  var label = document.querySelector('#toggleEmptyBtn .toggle-empty-label');
+  if (icon) icon.className = 'mdi ' + (showEmpty ? 'mdi-eye-off-outline' : 'mdi-eye-outline');
+  if (label) label.textContent = showEmpty ? T.toggle_empty_hide : T.toggle_empty_show;
+})();
+
+// Apply filters on initial load
 applyFilters();
 
 // Drink window warnings - reusable so it works after AJAX add/edit/duplicate
