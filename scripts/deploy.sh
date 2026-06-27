@@ -12,7 +12,7 @@ set -euo pipefail
 #   1. Validate version argument (must be semver: vX.Y.Z)
 #   2. Check for clean working tree
 #   3. Run all tests (pytest)
-#   4. Update version in 7 files (incl. docs/llm.txt)
+#   4. Update version in 7 files (incl. docs/llms.txt)
 #   5. Generate CHANGELOG entry from git log
 #   6. Commit version bump + changelog
 #   7. Create git tag
@@ -100,12 +100,12 @@ ok "wine-tracker/README.md updated"
 sed -i '' "s/version-v${CURRENT_VERSION}-blue/version-v${SEMVER}-blue/" wine-tracker/DOCS.md
 ok "wine-tracker/DOCS.md updated"
 
-# 4g. docs/llm.txt — bump version only. Content regeneration is handled
+# 4g. docs/llms.txt — bump version only. Content regeneration is handled
 # separately (post-release) because the claude --print CLI call tends to hang
 # or require auth prompts that break non-interactive deploys.
-if [[ -f "docs/llm.txt" ]]; then
-  sed -i '' "s/v${CURRENT_VERSION}/v${SEMVER}/g" docs/llm.txt
-  ok "docs/llm.txt version bumped to ${SEMVER} (content regen deferred to post-release)"
+if [[ -f "docs/llms.txt" ]]; then
+  sed -i '' "s/v${CURRENT_VERSION}/v${SEMVER}/g" docs/llms.txt
+  ok "docs/llms.txt version bumped to ${SEMVER} (content regen deferred to post-release)"
 fi
 
 # ── 5. Read CHANGELOG entry ───────────────────────────────
@@ -192,13 +192,13 @@ git add \
   wine-tracker/DOCS.md \
   CHANGELOG.md \
   wine-tracker/CHANGELOG.md \
-  docs/llm.txt
+  docs/llms.txt
 git commit -m "$(cat <<EOF
 Release ${TAG}
 
 - Bump version to ${SEMVER} in all 7 files
 - Update both CHANGELOGs with release notes
-- Update docs/llm.txt version
+- Update docs/llms.txt version
 EOF
 )"
 ok "Committed"
