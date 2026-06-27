@@ -139,7 +139,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Erweiterten Filter als Standard",
     "toggle_empty_hide": "Leere ausblenden",
     "toggle_empty_show": "Leere anzeigen",
-    "ribbon_empty": "Nicht vorrätig",
+    "ribbon_empty": "Leer",
     "settings_show_empty": "Leere Flaschen anzeigen",
     "btn_add_wine": "+ Wein hinzufügen",
 
@@ -493,7 +493,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Use advanced filter as default",
     "toggle_empty_hide": "Hide empty",
     "toggle_empty_show": "Show empty",
-    "ribbon_empty": "Out of Stock",
+    "ribbon_empty": "Empty",
     "settings_show_empty": "Show out-of-stock wines",
     "btn_add_wine": "+ Add wine",
 
@@ -838,7 +838,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Utiliser le filtre avancé par défaut",
     "toggle_empty_hide": "Masquer vides",
     "toggle_empty_show": "Afficher vides",
-    "ribbon_empty": "Rupture de stock",
+    "ribbon_empty": "Vide",
     "settings_show_empty": "Afficher les vins épuisés",
     "btn_add_wine": "+ Ajouter un vin",
 
@@ -1183,7 +1183,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Usa filtro avanzato come predefinito",
     "toggle_empty_hide": "Nascondi vuoti",
     "toggle_empty_show": "Mostra vuoti",
-    "ribbon_empty": "Esaurito",
+    "ribbon_empty": "Vuoto",
     "settings_show_empty": "Mostra vini esauriti",
     "btn_add_wine": "+ Aggiungi vino",
 
@@ -1528,7 +1528,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Usar filtro avanzado por defecto",
     "toggle_empty_hide": "Ocultar vacíos",
     "toggle_empty_show": "Mostrar vacíos",
-    "ribbon_empty": "Sin existencias",
+    "ribbon_empty": "Agotado",
     "settings_show_empty": "Mostrar vinos agotados",
     "btn_add_wine": "+ Añadir vino",
 
@@ -1873,7 +1873,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Usar filtro avançado como padrão",
     "toggle_empty_hide": "Ocultar vazios",
     "toggle_empty_show": "Mostrar vazios",
-    "ribbon_empty": "Sem estoque",
+    "ribbon_empty": "Vazio",
     "settings_show_empty": "Mostrar vinhos sem estoque",
     "btn_add_wine": "+ Adicionar vinho",
 
@@ -2218,7 +2218,7 @@ TRANSLATIONS = {
     "settings_advanced_filter_default": "Geavanceerd filter als standaard gebruiken",
     "toggle_empty_hide": "Lege verbergen",
     "toggle_empty_show": "Lege tonen",
-    "ribbon_empty": "Niet op voorraad",
+    "ribbon_empty": "Leeg",
     "settings_show_empty": "Toon uitverkochte wijnen",
     "btn_add_wine": "+ Wijn toevoegen",
 
