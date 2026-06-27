@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.11.0
+
+- **Out-of-stock wines stay visible** - wines that drop to zero bottles no longer vanish from the cellar. They now show an "Empty" ribbon, and a new persistent "Show empty bottles" toggle in Settings remembers your choice across sessions (the existing quick-toggle in the filter bar still works as a temporary shortcut). Thanks @rogercrocha for the contribution.
+- **Advanced filter autocomplete** - the text inputs in the advanced filter now suggest values from your existing cellar (region, grape, location, ...) as you type.
+- **Advanced filter fixes** - the filter button badge no longer lingers as an empty blue dot when hidden, and it no longer counts stale empty rules.
+- **Mobile filter polish** - fixed several advanced-filter layout issues on narrow screens.
+- **Clearer filter group labels** - renamed the advanced filter group labels for clarity across all seven languages.
+- **Consistent punctuation** - replaced em/en-dashes with regular hyphens throughout the app.
+
 ## 1.10.0
 
 - **Advanced filter with multiple AND-conditions** - filter the cellar by any combination of fields (type, vintage, region, grape, rating, drink window, location, source, format, ...) in a single popover. Resolves #5.
