@@ -1,0 +1,9 @@
+.git/
+.venv/
+wine-tracker/app/data/
+wine-tracker/tests/
+**/.pytest_cache/
+**/.claude/
+**/.DS_Store
+docs/
+assets/

@@ -1,0 +1,5 @@
+app/data/
+tests/
+.pytest_cache/
+.claude/
+**/.DS_Store
