@@ -448,3 +448,11 @@ class TestSecretKeyWarning:
         monkeypatch.delenv("SECRET_KEY", raising=False)
         wine_app.warn_missing_secret_key()
         assert capsys.readouterr().out == ""
+
+
+# ── Production server dependency ──────────────────────────────────────────────
+
+class TestServerDependency:
+    def test_waitress_is_available(self):
+        """app.py serves via waitress in production - the import must work."""
+        import waitress  # noqa: F401

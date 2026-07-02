@@ -3039,5 +3039,8 @@ def api_summary():
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    from waitress import serve
     init_db()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    # Production WSGI server: multi-threaded so long AI calls (up to 120s)
+    # don't block other requests; single process keeps SQLite happy.
+    serve(app, host="0.0.0.0", port=5050, threads=8)
