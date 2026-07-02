@@ -2758,6 +2758,11 @@ def api_chat():
         save = body.get("save", True)
         edit_wines = body.get("edit_wines", False)
 
+    # Readonly users must never trigger wine actions - force the flag off so
+    # neither the system prompt extension nor the action block processing runs.
+    if AUTH_ENABLED and session.get("role") == "readonly":
+        edit_wines = False
+
     if not user_message:
         return jsonify({"ok": False, "error": "empty_message"}), 400
 
@@ -2865,7 +2870,7 @@ def api_chat():
     )
 
     # Extend system prompt with wine editing capabilities
-    if edit_wines and not (AUTH_ENABLED and session.get("role") == "readonly"):
+    if edit_wines:
         # List images uploaded in this chat session
         session_images = []
         if session_id:

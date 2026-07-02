@@ -1532,6 +1532,40 @@ class TestChatWineEditing:
 
     @patch("app._call_chat")
     @patch("app.load_options")
+    def test_chat_readonly_cannot_trigger_wine_actions(self, mock_opts, mock_chat, client, sample_wine):
+        """Readonly users must not trigger wine actions via chat, even with edit_wines=true."""
+        import app as wine_app
+        from werkzeug.security import generate_password_hash
+
+        mock_opts.return_value = self.CHAT_OPTS
+        wine_id = sample_wine["wine"]["id"]
+        mock_chat.return_value = (
+            'OK\n[DELETE_WINE]\n{"id": ' + str(wine_id) + '}\n[/DELETE_WINE]'
+        )
+
+        wine_app.AUTH_ENABLED = True
+        wine_app._USERS = {
+            "viewer": {"hash": generate_password_hash("pass", method="pbkdf2:sha256"), "role": "readonly"},
+        }
+        try:
+            client.post("/login", data={"username": "viewer", "password": "pass"})
+            resp = client.post(
+                "/api/chat",
+                data=json.dumps({"message": "Delete it", "edit_wines": True}),
+                content_type="application/json",
+            )
+            data = json.loads(resp.data)
+            assert data["ok"] is True
+            assert data.get("wine_action") is None
+            # Wine must still exist
+            resp2 = client.get(f"/api/wine/{wine_id}")
+            assert resp2.status_code == 200
+        finally:
+            wine_app.AUTH_ENABLED = False
+            wine_app._USERS = {}
+
+    @patch("app._call_chat")
+    @patch("app.load_options")
     def test_chat_delete_nonexistent_wine(self, mock_opts, mock_chat, client):
         """Deleting a nonexistent wine should not crash."""
         mock_opts.return_value = self.CHAT_OPTS
