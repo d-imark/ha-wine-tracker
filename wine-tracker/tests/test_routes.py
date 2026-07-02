@@ -864,6 +864,39 @@ class TestChatPage:
         assert 'id="viewModal"' in html
 
     @patch("app.load_options")
+    def test_chat_page_sanitizes_markdown(self, mock_opts, client):
+        """Chat markdown must be sanitized with DOMPurify (XSS via AI response),
+        and stored messages must be escaped before innerHTML on session load."""
+        mock_opts.return_value = {
+            "currency": "CHF", "language": "en",
+            "ai_provider": "anthropic", "anthropic_api_key": "sk-test",
+            "anthropic_model": "claude-sonnet-4-20250514",
+            "openai_api_key": "", "openrouter_api_key": "",
+            "ollama_host": "", "ollama_model": "",
+        }
+        response = client.get("/chat")
+        html = response.data.decode()
+        assert "dompurify" in html.lower()
+        assert "DOMPurify.sanitize" in html
+        assert "escapeHtmlChat(msg.content)" in html
+
+    @patch("app.load_options")
+    def test_chat_panel_sanitizes_markdown(self, mock_opts, client):
+        """Same XSS protection in the embedded chat panel (index page)."""
+        mock_opts.return_value = {
+            "currency": "CHF", "language": "en",
+            "ai_provider": "anthropic", "anthropic_api_key": "sk-test",
+            "anthropic_model": "claude-sonnet-4-20250514",
+            "openai_api_key": "", "openrouter_api_key": "",
+            "ollama_host": "", "ollama_model": "",
+        }
+        response = client.get("/")
+        html = response.data.decode()
+        assert "dompurify" in html.lower()
+        assert "DOMPurify.sanitize" in html
+        assert "escapeHtmlChat(msg.content)" in html
+
+    @patch("app.load_options")
     def test_chat_new_button_closes_history_sidebar_on_mobile(self, mock_opts, client):
         """The 'new chat' button must close the history sidebar on narrow viewports,
         otherwise the new (empty) chat stays hidden behind the open sidebar."""

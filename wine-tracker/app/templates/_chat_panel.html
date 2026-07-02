@@ -43,14 +43,18 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script>
 // ── Wine Sommelier Chat ──────────────────────────────────────────────────────
 function renderMarkdown(text) {
-  if (typeof marked !== 'undefined') {
+  if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
     marked.setOptions({breaks: true, gfm: true});
-    return marked.parse(text);
+    // Sanitize the rendered HTML; allow the app-internal wine: link scheme
+    return DOMPurify.sanitize(marked.parse(text), {
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|wine):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+    });
   }
-  // Fallback if marked didn't load
+  // Fallback if marked/DOMPurify didn't load
   return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 var _chatSessionId = null;
@@ -193,7 +197,7 @@ function loadChatSession(sessionId) {
       if (data.messages && data.messages.length > 0) {
         data.messages.forEach(function(msg) {
           if (msg.image_path && msg.role === 'user') {
-            appendChatMessage(msg.role, '<img class="chat-msg-thumb" src="' + INGRESS + '/uploads/' + msg.image_path + '" alt="">\n' + msg.content, true);
+            appendChatMessage(msg.role, '<img class="chat-msg-thumb" src="' + INGRESS + '/uploads/' + encodeURI(msg.image_path) + '" alt="">\n' + escapeHtmlChat(msg.content), true);
           } else {
             appendChatMessage(msg.role, msg.content);
           }
@@ -311,7 +315,7 @@ function sendChatMessage() {
   // Show user message with optional image thumbnail
   var thumbSrc = _chatImageFile ? document.getElementById('chatImageThumb').src : null;
   if (thumbSrc) {
-    appendChatMessage('user', '<img class="chat-msg-thumb" src="' + thumbSrc + '" alt="">\n' + text, true);
+    appendChatMessage('user', '<img class="chat-msg-thumb" src="' + thumbSrc + '" alt="">\n' + escapeHtmlChat(text), true);
   } else {
     appendChatMessage('user', text);
   }
