@@ -23,24 +23,32 @@ services:
       - LANGUAGE=de
 
       # ── AI Provider (optional — pick ONE) ───────────────────────────
-      # Provider: none, anthropic, openai, openrouter, ollama
+      # Provider: none, anthropic, openai, openrouter, ollama, minimax, mistral
       # - AI_PROVIDER=anthropic
 
       # Anthropic (Claude):
       # - ANTHROPIC_API_KEY=sk-ant-...
-      # - ANTHROPIC_MODEL=claude-opus-4-6
+      # - ANTHROPIC_MODEL=claude-opus-4-8
 
       # OpenAI (GPT):
       # - OPENAI_API_KEY=sk-...
-      # - OPENAI_MODEL=gpt-5.2
+      # - OPENAI_MODEL=gpt-5.5
 
       # OpenRouter (multi-provider):
       # - OPENROUTER_API_KEY=sk-or-...
-      # - OPENROUTER_MODEL=anthropic/claude-opus-4.6
+      # - OPENROUTER_MODEL=anthropic/claude-opus-4.8
 
       # Ollama (local, no API key needed):
       # - OLLAMA_HOST=http://host.docker.internal:11434
-      # - OLLAMA_MODEL=llava
+      # - OLLAMA_MODEL=llama3.2-vision
+
+      # MiniMax:
+      # - MINIMAX_API_KEY=...
+      # - MINIMAX_MODEL=MiniMax-M3
+
+      # Mistral:
+      # - MISTRAL_API_KEY=...
+      # - MISTRAL_MODEL=mistral-medium-latest
 
     restart: unless-stopped
 
