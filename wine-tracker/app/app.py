@@ -15,7 +15,7 @@ from export_import import (
 )
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
 # ── Authentication (optional, for standalone Docker deployment) ───────────────
 # DEV_AUTH enables auth without a full HA setup: "user:pass" or "user:pass:role"
@@ -47,6 +47,20 @@ AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true" or bool
 
 _users_raw = _dev_auth if _dev_auth.strip() else os.environ.get("USERS", "")
 _USERS = parse_user_string(_users_raw) if AUTH_ENABLED else {}
+
+
+def warn_missing_secret_key():
+    """Warn when auth is enabled without a persistent SECRET_KEY.
+
+    Without it a random key is generated per process start, so all login
+    sessions are invalidated on every restart.
+    """
+    if AUTH_ENABLED and not os.environ.get("SECRET_KEY"):
+        print("[AUTH] SECRET_KEY not set - login sessions will not survive "
+              "restarts. Set the SECRET_KEY env variable for persistent logins.")
+
+
+warn_missing_secret_key()
 
 # ── HA Add-on Options ─────────────────────────────────────────────────────────
 OPTIONS_PATH = os.environ.get("OPTIONS_PATH", "/data/options.json")

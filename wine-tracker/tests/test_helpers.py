@@ -426,3 +426,25 @@ class TestBuildWineCellarContext:
             text, _ = wine_app._build_wine_cellar_context()
         # English fallback applied
         assert "Vintage 2020" in text
+
+
+# ── warn_missing_secret_key() ─────────────────────────────────────────────────
+
+class TestSecretKeyWarning:
+    def test_warns_when_auth_enabled_without_secret_key(self, monkeypatch, capsys):
+        monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        wine_app.warn_missing_secret_key()
+        assert "SECRET_KEY" in capsys.readouterr().out
+
+    def test_silent_when_secret_key_set(self, monkeypatch, capsys):
+        monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+        monkeypatch.setenv("SECRET_KEY", "some-persistent-key")
+        wine_app.warn_missing_secret_key()
+        assert capsys.readouterr().out == ""
+
+    def test_silent_when_auth_disabled(self, monkeypatch, capsys):
+        monkeypatch.setattr(wine_app, "AUTH_ENABLED", False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        wine_app.warn_missing_secret_key()
+        assert capsys.readouterr().out == ""
