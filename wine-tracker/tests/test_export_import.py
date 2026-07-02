@@ -111,6 +111,18 @@ class TestReadme:
         assert "1.9.2" in readme
         assert "2026-04-22T12:00:00+00:00" in readme
 
+    def test_field_reference_matches_real_values(self):
+        """The field reference must describe the actual DB values:
+        German wine types, 0-5 rating, liters, real timeline actions."""
+        readme = _build_readme(self._manifest())
+        assert "`Rotwein`" in readme
+        assert "0 - 5" in readme
+        assert "0 - 100" not in readme
+        assert "liters" in readme
+        assert "`consumed`" in readme
+        assert "`restocked`" in readme
+        assert "`drink`," not in readme
+
 
 # ── Export: image bundling ────────────────────────────────────────────────────
 

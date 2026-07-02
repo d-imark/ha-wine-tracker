@@ -119,20 +119,20 @@ def _build_readme(manifest: dict) -> str:
 | `id` | integer | Original DB id - used to link timeline entries; ignored on import |
 | `name` | string | Wine name |
 | `year` | integer | Vintage year |
-| `type` | string | e.g. `Red`, `White`, `Rosé`, `Sparkling`, `Dessert` |
+| `type` | string | One of `Rotwein`, `Weisswein`, `Rosé`, `Schaumwein`, `Dessertwein`, `Likörwein`, `Anderes` |
 | `region` | string | Region / appellation |
 | `grape` | string | Grape variety / blend |
 | `quantity` | integer | Bottles currently in cellar |
-| `rating` | number | 0 - 100 personal rating |
+| `rating` | integer | 0 - 5 personal rating |
 | `price` | number | Purchase price |
-| `purchased_at` | string | Purchase date (ISO 8601) |
+| `purchased_at` | string | Where the wine was purchased |
 | `drink_from` | integer | Earliest recommended drinking year |
 | `drink_until` | integer | Latest recommended drinking year |
 | `location` | string | Storage location label |
-| `bottle_format` | string | e.g. `Standard (750ml)`, `Magnum (1.5L)` |
+| `bottle_format` | number | Bottle volume in liters, e.g. `0.75`, `1.5` |
 | `notes` | string | Free-text tasting notes |
 | `image` | string | Image filename (file lives in `images/`) |
-| `vivino_id` | string | Vivino wine ID (used for deduplication on import) |
+| `vivino_id` | integer | Vivino wine ID (used for deduplication on import) |
 | `maturity_data` | string | JSON blob with maturity curve data |
 | `taste_profile` | string | JSON blob with taste radar data |
 | `food_pairings` | string | JSON blob with food pairing suggestions |
@@ -144,8 +144,8 @@ def _build_readme(manifest: dict) -> str:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `wine_id` | integer | References `id` in wines.json |
-| `action` | string | `drink`, `add`, or `adjust` |
+| `wine_id` | integer | References `id` in wines.json (`0` for chat entries) |
+| `action` | string | `added`, `consumed`, `restocked`, `removed`, or `chat` |
 | `quantity` | integer | Number of bottles involved |
 | `timestamp` | string | ISO 8601 timestamp |
 
