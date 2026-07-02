@@ -307,6 +307,11 @@ def _normalize_wine(w: dict) -> dict:
     out["vivino_id"] = _coerce_int(out.get("vivino_id"))
     bf = _coerce_float(out.get("bottle_format"))
     out["bottle_format"] = bf if bf is not None else 0.75
+    # Image must be a bare filename - reject path traversal from crafted files
+    # (the value later ends up in os.remove() when the image is replaced).
+    img = out.get("image")
+    if img and os.path.basename(img) != img:
+        out["image"] = None
     # Required column
     out["name"] = (out.get("name") or "").strip()
     return out

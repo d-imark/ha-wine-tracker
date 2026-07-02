@@ -253,6 +253,31 @@ class TestAddWine:
         # File should exist on disk
         assert os.path.isfile(os.path.join(upload_dir, data["wine"]["image"]))
 
+    def test_add_wine_ai_image_adopted(self, client, upload_dir):
+        """A bare ai_image filename already in the upload dir is adopted."""
+        fname = "aabbccdd.jpg"
+        with open(os.path.join(upload_dir, fname), "wb") as f:
+            f.write(b"fake")
+        resp = client.post(
+            "/add", data={"name": "AI Wine", "ai_image": fname}, headers=AJAX
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["image"] == fname
+
+    def test_add_wine_ai_image_path_traversal_rejected(self, client):
+        """ai_image with path components must not be adopted (would later
+        end up in os.remove when the image is replaced or deleted)."""
+        import app as wine_app
+        outside = os.path.join(wine_app.DATA_DIR, "evil.jpg")
+        with open(outside, "wb") as f:
+            f.write(b"fake")
+        resp = client.post(
+            "/add", data={"name": "Evil Wine", "ai_image": "../evil.jpg"}, headers=AJAX
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["image"] is None
+        assert os.path.isfile(outside)
+
 
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
@@ -283,6 +308,22 @@ class TestEditWine:
         assert data["wine"]["rating"] == 5
         assert data["wine"]["grape"] == "Chardonnay"
         assert data["wine"]["bottle_format"] == 1.5
+
+    def test_edit_ai_image_path_traversal_rejected(self, client, sample_wine):
+        """ai_image with path components must not be adopted on edit."""
+        import app as wine_app
+        wine_id = sample_wine["wine"]["id"]
+        outside = os.path.join(wine_app.DATA_DIR, "evil.jpg")
+        with open(outside, "wb") as f:
+            f.write(b"fake")
+        resp = client.post(
+            f"/edit/{wine_id}",
+            data={"name": "Still Safe", "quantity": "3", "ai_image": "../evil.jpg"},
+            headers=AJAX,
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["image"] is None
+        assert os.path.isfile(outside)
 
     def test_edit_nonexistent_wine(self, client):
         resp = client.post(

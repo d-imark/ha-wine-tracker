@@ -619,6 +619,21 @@ def allowed(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
 
 
+def safe_upload_ref(name):
+    """Validate a client-supplied upload filename reference.
+
+    Returns the name if it is a bare filename with an allowed extension
+    (same rules as uploaded_file), otherwise None. Prevents path traversal
+    via form fields like ai_image that later end up in os.remove().
+    """
+    if not name or "/" in name or "\\" in name:
+        return None
+    parts = name.rsplit(".", 1)
+    if len(parts) != 2 or parts[1].lower() not in ALLOWED_EXT:
+        return None
+    return name
+
+
 MAX_IMAGE_PX = 1800  # downscale images so longest edge ≤ this
 
 
@@ -758,7 +773,7 @@ def add():
     image = save_image(request.files.get("image"))
     # If no new image uploaded but AI already saved one, use that
     if not image:
-        ai_img = request.form.get("ai_image", "").strip()
+        ai_img = safe_upload_ref(request.form.get("ai_image", "").strip())
         if ai_img and os.path.isfile(os.path.join(UPLOAD_DIR, ai_img)):
             image = ai_img
     price_raw = request.form.get("price", "").strip()
@@ -837,7 +852,7 @@ def edit(wine_id):
         image = new_image
     # If no file upload but AI/Vivino downloaded an image, use that
     if not new_image:
-        ai_img = request.form.get("ai_image", "").strip()
+        ai_img = safe_upload_ref(request.form.get("ai_image", "").strip())
         if ai_img and ai_img != image and os.path.isfile(os.path.join(UPLOAD_DIR, ai_img)):
             if image:
                 try:

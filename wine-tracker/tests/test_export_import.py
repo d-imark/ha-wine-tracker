@@ -232,6 +232,23 @@ class TestImportParsing:
         with pytest.raises(ImportError):
             parse_import_file(b"year,grape\n2020,Merlot\n", filename="bad.csv")
 
+    def test_image_path_traversal_rejected(self):
+        """Image values with path components in wines.json must be dropped
+        (they would later end up in os.remove when the image is replaced)."""
+        import zipfile as zf_mod
+        from export_import import parse_import_file
+
+        buf = io.BytesIO()
+        with zf_mod.ZipFile(buf, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({"schema_version": 1}))
+            zf.writestr("wines.json", json.dumps([
+                {"name": "Evil Wine", "year": 2020, "image": "../../wine.db"},
+                {"name": "Good Wine", "year": 2021, "image": "abc123.jpg"},
+            ]))
+        parsed = parse_import_file(buf.getvalue(), filename="evil.zip")
+        assert parsed["wines"][0]["image"] is None
+        assert parsed["wines"][1]["image"] == "abc123.jpg"
+
     def test_quantity_zero_preserved(self):
         """Regression: quantity=0 must not be rewritten to 1 on import."""
         from export_import import parse_import_file
