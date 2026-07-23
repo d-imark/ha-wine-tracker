@@ -200,6 +200,17 @@ function _fillDatalist(id, values, keepExisting) {
   dl.innerHTML = out.map(function(v) { return '<option value="' + String(v).replace(/"/g, '&quot;') + '">'; }).join('');
 }
 
+// Flatten reference items to their name + aliases, so typing an alias
+// (e.g. "Schweiz" for Switzerland) also finds the entry in the datalist.
+function _refValues(items) {
+  var out = [];
+  (items || []).forEach(function(it) {
+    if (it.name) out.push(it.name);
+    (it.aliases || []).forEach(function(a) { if (a) out.push(a); });
+  });
+  return out;
+}
+
 function loadReferenceLists() {
   if (_refListsLoaded) return;
   _refListsLoaded = true;
@@ -209,12 +220,12 @@ function loadReferenceLists() {
       _refCountryByName[c.name.toLowerCase()] = c.code;
       (c.aliases || []).forEach(function(a) { _refCountryByName[a.toLowerCase()] = c.code; });
     });
-    _fillDatalist('countryList', d.items.map(function(c) { return c.name; }), false);
+    _fillDatalist('countryList', _refValues(d.items), false);
     _lastRegionCode = undefined;
     onCountryChange();
   });
   fetch(INGRESS + '/api/reference/grapes').then(function(r) { return r.json(); }).then(function(d) {
-    if (d.ok) _fillDatalist('grapeList', d.items.map(function(g) { return g.name; }), true);
+    if (d.ok) _fillDatalist('grapeList', _refValues(d.items), true);
   });
 }
 
@@ -227,7 +238,7 @@ function onCountryChange() {
   _lastRegionCode = code;
   var url = INGRESS + '/api/reference/regions' + (code ? '?country=' + encodeURIComponent(code) : '');
   fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.ok) _fillDatalist('regionList', d.items.map(function(x) { return x.name; }), false);
+    if (d.ok) _fillDatalist('regionList', _refValues(d.items), false);
   });
 }
 
