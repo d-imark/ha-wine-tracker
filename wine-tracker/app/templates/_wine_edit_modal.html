@@ -226,6 +226,25 @@ var AI_ENABLED = {{ 'true' if ai_enabled else 'false' }};
 var _aiLastFile = null;
 var _reloadMode = false;
 
+// ── AI reload confirm (per-field) ────────────────────────────────────────────
+var _AR_FIELDS = [
+  { key: 'name',        el: 'wine_name',        labelKey: 'label_name' },
+  { key: 'vintage',     el: 'wine_year',        labelKey: 'label_vintage' },
+  { key: 'wine_type',   el: 'wine_type',        labelKey: 'label_type', type: 'wine_type' },
+  { key: 'region',      el: 'wine_region',      labelKey: 'label_region' },
+  { key: 'grape',       el: 'wine_grape',       labelKey: 'label_grape' },
+  { key: 'price',       el: 'wine_price',       labelKey: 'label_price' },
+  { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
+  { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' },
+  { key: 'notes',       el: 'wine_notes',       labelKey: 'label_notes' }
+];
+var _AR_ENRICH = [
+  { key: 'maturity_data', el: 'wine_maturity_data', labelKey: 'ar_maturity' },
+  { key: 'taste_profile', el: 'wine_taste_profile', labelKey: 'ar_taste' },
+  { key: 'food_pairings', el: 'wine_food_pairings', labelKey: 'ar_pairings' }
+];
+var _arPending = null;
+
 // Store original placeholders so we can hide them in edit mode
 var _placeholders = {};
 ['wine_name','wine_year','wine_region','wine_grape','wine_purchased_at',
@@ -903,7 +922,7 @@ function reloadViaAi() {
   .then(function(data) {
     setReloadLoading(false);
     if (data.ok && data.fields) {
-      populateFormMerge(data.fields, null);
+      openAiReload(data.fields);
     } else {
       showReloadToast(T.ai_error, false);
     }
@@ -1095,6 +1114,103 @@ function vrConfirm() {
   closeVivinoReload();
   showReloadToast(T.vr_applied, true);
 }
+
+// ── AI reload: per-field confirmation before applying ────────────────────────
+function _arDisplay(f, val) {
+  if (val === '' || val === null || val === undefined) return '—';
+  if (f.type === 'wine_type') return T['wine_type_' + val] || val;
+  return String(val);
+}
+
+function arComputeChanges(fields) {
+  var changes = [];
+  _AR_FIELDS.forEach(function(f) {
+    var raw = fields[f.key];
+    if (raw === null || raw === undefined) return;
+    var nv = String(raw).trim();
+    if (!nv) return;
+    var el = document.getElementById(f.el);
+    var cur = el ? (el.value || '').trim() : '';
+    if (nv === cur) return;                       // unchanged -> skip
+    changes.push({ f: f, cur: cur, nv: nv });
+  });
+  // Personal rating: only when the AI supplies one and the slider is still unset.
+  if (fields.rating) {
+    var slider = document.getElementById('wine_rating');
+    var curRating = slider ? (parseFloat(slider.value) || 0) : 0;
+    if (curRating === 0) {
+      var rv = Math.max(0, Math.min(5, Math.round(Number(fields.rating) * 10) / 10));
+      if (rv > 0) {
+        changes.push({ f: { el: 'wine_rating', labelKey: 'label_rating', rating: true },
+                       cur: '', nv: String(rv) });
+      }
+    }
+  }
+  return changes;
+}
+
+function arComputeEnrich(fields) {
+  var out = [];
+  _AR_ENRICH.forEach(function(e) {
+    var val = fields[e.key];
+    if (val === null || val === undefined) return;
+    if (Array.isArray(val)) { if (val.length === 0) return; out.push({ e: e, val: val, count: val.length }); return; }
+    if (typeof val === 'object') { var n = Object.keys(val).length; if (n === 0) return; out.push({ e: e, val: val, count: n }); return; }
+  });
+  return out;
+}
+
+function renderAiReload(fields, changes, enrich) {
+  var esc = function(s) { return (s == null ? '' : String(s)).replace(/</g, '&lt;'); };
+  var idParts = [];
+  ['name','vintage','wine_type','region','grape'].forEach(function(k) {
+    var v = fields[k];
+    if (!v) return;
+    if (k === 'wine_type') v = T['wine_type_' + v] || v;
+    idParts.push(esc(v));
+  });
+  document.getElementById('aiIdentified').innerHTML =
+    '<span class="ar-id-label">' + (T.ar_identified || '') + '</span>' +
+    (idParts.length ? idParts.join(' · ') : '—');
+
+  var rows = '';
+  changes.forEach(function(c, i) {
+    rows += '<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="arChk_' + i + '" checked></td>' +
+      '<td class="vr-field">' + (T[c.f.labelKey] || c.f.el) + '</td>' +
+      '<td class="vr-old">' + esc(_arDisplay(c.f, c.cur)) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(_arDisplay(c.f, c.nv)) + '</td>' +
+    '</tr>';
+  });
+  enrich.forEach(function(en, j) {
+    rows += '<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="arEnr_' + j + '" checked></td>' +
+      '<td class="vr-field">' + (T[en.e.labelKey] || en.e.key) + '</td>' +
+      '<td class="vr-new" colspan="3"><i class="mdi mdi-check"></i>' +
+        (en.count ? ' (' + en.count + ')' : '') + '</td>' +
+    '</tr>';
+  });
+  document.getElementById('aiChanges').innerHTML = rows;
+}
+
+function openAiReload(fields) {
+  var changes = arComputeChanges(fields);
+  var enrich = arComputeEnrich(fields);
+  if (changes.length === 0 && enrich.length === 0) {
+    showReloadToast(T.ar_no_changes || T.reload_nothing, false);
+    return;
+  }
+  _arPending = { fields: fields, changes: changes, enrich: enrich };
+  renderAiReload(fields, changes, enrich);
+  document.getElementById('aiReloadModal').classList.add('open');
+}
+
+function closeAiReload() {
+  document.getElementById('aiReloadModal').classList.remove('open');
+  _arPending = null;
+}
+function arCancel() { closeAiReload(); }
 
 // ── AJAX form submit (wineModal) ──────────────────────────────────────────────
 // Uses a callback pattern: if window._onWineSaved is defined, call it;
