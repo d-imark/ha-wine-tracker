@@ -618,6 +618,43 @@ def geocode_region(region_name):
     return None
 
 
+def resolve_map_coords(db, region, country=None):
+    """Resolve [lat, lon] for the globe from the reference data (TP4).
+
+    Priority: reference region coords -> that region's country centroid ->
+    the wine's country centroid -> a country parsed from legacy free-text
+    region ("Region, Country" or the whole string). None if nothing resolves.
+    """
+    def _country_coords(row):
+        if row and row["lat"] is not None and row["lon"] is not None:
+            return [row["lat"], row["lon"]]
+        return None
+
+    if region:
+        r = reference.match_reference(db, "region", region)
+        if r:
+            if r["lat"] is not None and r["lon"] is not None:
+                return [r["lat"], r["lon"]]
+            if r["country_code"]:
+                c = db.execute("SELECT lat, lon FROM ref_countries WHERE code=?", (r["country_code"],)).fetchone()
+                coords = _country_coords(c)
+                if coords:
+                    return coords
+
+    if country:
+        coords = _country_coords(reference.match_reference(db, "country", country))
+        if coords:
+            return coords
+
+    if region:
+        cand = region.rsplit(",", 1)[-1].strip() if "," in region else region
+        coords = _country_coords(reference.match_reference(db, "country", cand))
+        if coords:
+            return coords
+
+    return None
+
+
 def _derive_country_from_region(db, region_text):
     """Best-effort country name for a free-text region (uses TP1 matching)."""
     if not region_text:
@@ -1201,15 +1238,22 @@ def stats_page():
         "SELECT region, SUM(quantity) as qty FROM wines WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC LIMIT 7"
     ).fetchall()]
 
-    # All regions with coordinates (for the map)
-    all_regions = [dict(r) for r in db.execute(
-        "SELECT region, SUM(quantity) as qty FROM wines WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC"
-    ).fetchall()]
+    # Map points (for the globe), resolved via reference data with a country
+    # centroid fallback (TP4). Grouped by region+country; wines with only a
+    # country still get a marker at the country centroid.
+    map_groups = db.execute(
+        "SELECT region, country, SUM(quantity) as qty FROM wines "
+        "WHERE (region IS NOT NULL AND region != '') OR (country IS NOT NULL AND country != '') "
+        "GROUP BY region, country ORDER BY qty DESC"
+    ).fetchall()
     map_points = []
-    for r in all_regions:
-        coords = geocode_region(r["region"])
+    for r in map_groups:
+        coords = resolve_map_coords(db, r["region"], r["country"])
         if coords:
-            map_points.append({"region": r["region"], "qty": r["qty"], "lat": coords[0], "lon": coords[1]})
+            map_points.append({
+                "region": r["region"] or r["country"],
+                "qty": r["qty"], "lat": coords[0], "lon": coords[1],
+            })
 
     # Total liters (quantity * bottle_format)
     total_liters = db.execute(

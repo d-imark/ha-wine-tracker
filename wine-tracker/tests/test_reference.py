@@ -256,6 +256,31 @@ class TestReconcile:
         assert data["items"][0]["ai_pick"] == "Cabernet Sauvignon"
 
 
+class TestMapCoords:
+    """Map coordinate resolution via reference data + country fallback (TP4)."""
+
+    def test_region_with_coords(self, db):
+        c = wine_app.resolve_map_coords(db, "Bordeaux", None)
+        assert c and abs(c[0] - 44.8) < 1.5 and abs(c[1] - (-0.6)) < 1.5
+
+    def test_country_centroid_fallback(self, db):
+        c = wine_app.resolve_map_coords(db, "Unknownville", "France")
+        fr = db.execute("SELECT lat, lon FROM ref_countries WHERE code='FR'").fetchone()
+        assert c == [fr["lat"], fr["lon"]]
+
+    def test_country_only(self, db):
+        assert wine_app.resolve_map_coords(db, "", "Italy") is not None
+
+    def test_region_country_suffix_legacy(self, db):
+        # legacy free-text "Region, Country" with an unknown region still lands via country
+        c = wine_app.resolve_map_coords(db, "Kleinstlage, France", None)
+        assert c is not None
+
+    def test_unknown_returns_none(self, db):
+        assert wine_app.resolve_map_coords(db, "Nowhereland", None) is None
+        assert wine_app.resolve_map_coords(db, "", "") is None
+
+
 class TestReadApi:
     def test_list_countries(self, client):
         resp = client.get("/api/reference/countries")
