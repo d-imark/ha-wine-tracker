@@ -17,54 +17,72 @@ APP_DIR = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP_DIR)
 
 
+TEST_OPTIONS = {
+    "currency": "CHF",
+    "language": "de",
+    "ai_provider": "none",
+    "anthropic_api_key": "",
+    "anthropic_model": "claude-opus-4-8",
+    "openai_api_key": "",
+    "openai_model": "gpt-4o",
+    "openrouter_api_key": "",
+    "openrouter_model": "anthropic/claude-opus-4.8",
+    "ollama_host": "http://localhost:11434",
+    "ollama_model": "llama3.2-vision",
+}
+
+
+@pytest.fixture(scope="session")
+def _template_db(tmp_path_factory):
+    """Build a fully initialized DB (all tables + reference seed) ONCE per
+    session, then hand each test a fast file copy instead of re-running
+    init_db (~1s of fsync-heavy DDL) 366 times."""
+    import app as wine_app
+
+    tpl_dir = tmp_path_factory.mktemp("template")
+    tpl_db = str(tpl_dir / "template.db")
+    saved = (wine_app.DATA_DIR, wine_app.UPLOAD_DIR, wine_app.DB_PATH, wine_app.HA_OPTIONS)
+    try:
+        wine_app.DATA_DIR = str(tpl_dir)
+        wine_app.UPLOAD_DIR = os.path.join(str(tpl_dir), "uploads")
+        os.makedirs(wine_app.UPLOAD_DIR, exist_ok=True)
+        wine_app.DB_PATH = tpl_db
+        wine_app.HA_OPTIONS = dict(TEST_OPTIONS)
+        wine_app.init_db()
+    finally:
+        wine_app.DATA_DIR, wine_app.UPLOAD_DIR, wine_app.DB_PATH, wine_app.HA_OPTIONS = saved
+    return tpl_db
+
+
 @pytest.fixture(autouse=True)
-def _patch_env(tmp_path, monkeypatch):
+def _patch_env(tmp_path, monkeypatch, _template_db):
     """
     Patch all global state in app.py so each test gets:
     - A fresh temporary directory for DATA_DIR / UPLOAD_DIR / DB_PATH
+    - A ready-to-use DB copied from the session template (no per-test init_db)
     - Default HA options (no AI, CHF, German)
     """
     data_dir = str(tmp_path / "data")
     upload_dir = os.path.join(data_dir, "uploads")
     db_path = os.path.join(data_dir, "wine.db")
     os.makedirs(upload_dir, exist_ok=True)
+    shutil.copyfile(_template_db, db_path)
 
     import app as wine_app
 
     monkeypatch.setattr(wine_app, "DATA_DIR", data_dir)
     monkeypatch.setattr(wine_app, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(wine_app, "DB_PATH", db_path)
-
-    # Sensible default options for tests
-    test_options = {
-        "currency": "CHF",
-        "language": "de",
-        "ai_provider": "none",
-        "anthropic_api_key": "",
-        "anthropic_model": "claude-opus-4-8",
-        "openai_api_key": "",
-        "openai_model": "gpt-4o",
-        "openrouter_api_key": "",
-        "openrouter_model": "anthropic/claude-opus-4.8",
-        "ollama_host": "http://localhost:11434",
-        "ollama_model": "llama3.2-vision",
-    }
-    monkeypatch.setattr(wine_app, "HA_OPTIONS", test_options)
+    monkeypatch.setattr(wine_app, "HA_OPTIONS", dict(TEST_OPTIONS))
 
 
 @pytest.fixture
 def app(_patch_env):
-    """Create a Flask test app with a fresh database.
-
-    Explicit dependency on _patch_env ensures monkeypatches (DB_PATH, etc.)
-    are applied *before* init_db() runs. Without this, pytest may resolve
-    the autouse fixture after `app`, causing init_db() to run against the
-    real data directory.
-    """
+    """Flask test app. The DB is already provisioned from the session template
+    (see _patch_env), so no per-test init_db is needed."""
     import app as wine_app
 
     wine_app.app.config["TESTING"] = True
-    wine_app.init_db()
 
     yield wine_app.app
 
