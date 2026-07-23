@@ -7,10 +7,20 @@ are usable both inside the Flask app and in tests.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import unicodedata
 
 import reference_data as rd
+
+
+# entity name -> (table, has_country_scope)
+_ENTITY_TABLE = {
+    "country": "ref_countries",
+    "region": "ref_regions",
+    "grape": "ref_grapes",
+    "wine_type": "ref_wine_types",
+}
 
 
 class UnknownEntity(Exception):
@@ -112,11 +122,15 @@ def seed_reference_data(db):
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
-def _alias_norms(row):
+def _aliases_list(row):
     try:
-        return {normalize_name(a) for a in json.loads(row["aliases"] or "[]")}
+        return list(json.loads(row["aliases"] or "[]"))
     except (json.JSONDecodeError, TypeError, IndexError):
-        return set()
+        return []
+
+
+def _alias_norms(row):
+    return {normalize_name(a) for a in _aliases_list(row)}
 
 
 def match_reference(db, entity, value, country_code=None):
@@ -195,6 +209,49 @@ def add_custom_entry(db, entity, **fields):
         return db.execute("SELECT * FROM ref_regions WHERE id=?", (cur.lastrowid,)).fetchone()
 
     raise UnknownEntity(f"add_custom_entry unsupported for entity: {entity}")
+
+
+def suggest_matches(db, entity, value, country_code=None, limit=5):
+    """Return reference rows ranked by fuzzy similarity to `value`, best first.
+
+    Basis for the no-AI reconciliation fallback: when a value doesn't match
+    exactly, offer the closest known entries. Regions are scoped to country_code.
+    Score = best fuzzy ratio over the entry's name + its aliases.
+    """
+    table = _ENTITY_TABLE.get(entity)
+    if not table:
+        raise UnknownEntity(entity)
+    nv = normalize_name(value)
+    cc = country_code.upper() if country_code else None
+
+    scored = []
+    for row in db.execute(f"SELECT * FROM {table}"):
+        if entity == "region" and cc and (row["country_code"] or "").upper() != cc:
+            continue
+        candidates = [row["norm"]] + list(_alias_norms(row))
+        score = max((difflib.SequenceMatcher(None, nv, c).ratio() for c in candidates if c),
+                    default=0.0)
+        scored.append((score, row))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [row for _, row in scored[:limit]]
+
+
+def add_alias(db, entity, entry_id, alias):
+    """Append `alias` to an existing reference entry (idempotent). Lets a
+    confirmed reconciliation teach the reference so future values match."""
+    table = _ENTITY_TABLE.get(entity)
+    if not table:
+        raise UnknownEntity(entity)
+    row = db.execute(f"SELECT aliases FROM {table} WHERE id=?", (entry_id,)).fetchone()
+    if not row:
+        return False
+    if not alias or not alias.strip():
+        return True
+    aliases = _aliases_list(row)
+    if normalize_name(alias) not in {normalize_name(a) for a in aliases}:
+        aliases.append(alias.strip())
+        db.execute(f"UPDATE {table} SET aliases=? WHERE id=?", (json.dumps(aliases), entry_id))
+    return True
 
 
 # ── Listing (read API) ─────────────────────────────────────────────────────────

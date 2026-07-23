@@ -93,6 +93,33 @@ class TestMatching:
         assert db.execute("SELECT COUNT(*) FROM ref_grapes WHERE name='Zibibbo'").fetchone()[0] == 1
 
 
+class TestSuggestAndAlias:
+    def test_suggest_grape_typo_ranks_correct_top(self, db):
+        # "Shirazz" (typo of the Shiraz alias) should rank Syrah first.
+        out = reference.suggest_matches(db, "grape", "Shirazz", limit=5)
+        assert out and out[0]["name"] == "Syrah"
+
+    def test_suggest_region_typo_scoped_to_country(self, db):
+        out = reference.suggest_matches(db, "region", "Bordeux", country_code="FR", limit=5)
+        assert out and out[0]["name"] == "Bordeaux"
+        assert all((r["country_code"] or "").upper() == "FR" for r in out)
+
+    def test_add_alias_makes_future_match(self, db):
+        syrah = reference.match_reference(db, "grape", "Syrah")
+        assert reference.add_alias(db, "grape", syrah["id"], "Balsamina") is True
+        db.commit()
+        assert reference.match_reference(db, "grape", "Balsamina")["name"] == "Syrah"
+
+    def test_add_alias_is_idempotent(self, db):
+        syrah = reference.match_reference(db, "grape", "Syrah")
+        reference.add_alias(db, "grape", syrah["id"], "Sirah")
+        reference.add_alias(db, "grape", syrah["id"], "Sirah")
+        db.commit()
+        import json
+        aliases = json.loads(db.execute("SELECT aliases FROM ref_grapes WHERE id=?", (syrah["id"],)).fetchone()[0])
+        assert aliases.count("Sirah") == 1
+
+
 class TestReadApi:
     def test_list_countries(self, client):
         resp = client.get("/api/reference/countries")
