@@ -448,11 +448,21 @@ def inject_globals():
                 "SELECT DISTINCT location FROM wines WHERE location IS NOT NULL AND location != '' ORDER BY location"
             ).fetchall()
         ]
+        # Wine types from the reference data (built-in + custom) - TP3d
+        type_rows = db.execute(
+            "SELECT key, color, is_custom FROM ref_wine_types ORDER BY sort_order, key"
+        ).fetchall()
+        ctx["wine_types_ref"] = [dict(r) for r in type_rows]
+        ctx["wine_type_colors"] = {r["key"]: r["color"] for r in type_rows}
+        ctx["wine_type_custom_keys"] = [r["key"] for r in type_rows if r["is_custom"]]
     except Exception:
         ctx.setdefault("used_regions_list", [])
         ctx.setdefault("used_grapes", [])
         ctx.setdefault("used_purchased_at", [])
         ctx.setdefault("used_locations", [])
+        ctx.setdefault("wine_types_ref", [{"key": k, "color": None, "is_custom": 0} for k in WINE_TYPES])
+        ctx.setdefault("wine_type_colors", {})
+        ctx.setdefault("wine_type_custom_keys", [])
     return ctx
 
 
@@ -480,6 +490,7 @@ def close_db(e=None):
 
 def init_db():
     with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row  # name-based access for reference matching / migration
         db.execute("""
             CREATE TABLE IF NOT EXISTS wines (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,

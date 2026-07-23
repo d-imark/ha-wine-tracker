@@ -24,8 +24,8 @@
     <label>{{ t.label_type }}</label>
     <select name="type" id="wine_type">
       <option value="">{{ t.type_select_default }}</option>
-      {% for wt in wine_types %}
-      <option value="{{ wt }}">{{ wt | wine_type }}</option>
+      {% for wt in wine_types_ref %}
+      <option value="{{ wt.key }}">{{ wt.key | wine_type }}</option>
       {% endfor %}
     </select>
   </div>

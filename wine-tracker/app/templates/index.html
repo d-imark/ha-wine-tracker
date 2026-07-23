@@ -115,7 +115,7 @@
     {% if w['quantity'] == 0 %}
       <div class="ribbon ribbon-empty">{{ t.ribbon_empty }}</div>
     {% elif w['type'] %}
-      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}">{{ w['type'] | wine_type }}</div>
+      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}"{% if w['type'] in wine_type_custom_keys %} style="background:{{ wine_type_colors[w['type']] }};color:#fff"{% endif %}>{{ w['type'] | wine_type }}</div>
     {% endif %}
 
     <div class="card-img{% if w['image'] %} shimmer{% endif %}" onclick="cardImgClick(this)">
@@ -250,6 +250,12 @@
 const INGRESS = '{{ ingress }}';
 const CURRENCY = '{{ currency }}';
 const T = {{ t | tojson }};
+var WINE_TYPE_COLORS = {{ wine_type_colors | tojson }};
+var WINE_TYPE_CUSTOM = {{ wine_type_custom_keys | tojson }};
+function ribbonStyle(type) {
+  return (WINE_TYPE_CUSTOM.indexOf(type) >= 0 && WINE_TYPE_COLORS[type])
+    ? ' style="background:' + WINE_TYPE_COLORS[type] + ';color:#fff"' : '';
+}
 const AUTH_READONLY = {{ auth_readonly | tojson }};
 window.T = T;
 window.INGRESS = INGRESS;
@@ -961,7 +967,7 @@ function openViewModal(id, wine) {
   if (w.type) {
     var typeKey = 'wine_type_' + w.type;
     var typeLabel = T[typeKey] || w.type;
-    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '">' + escapeHtml(typeLabel) + '</span>';
+    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '"' + ribbonStyle(w.type) + '>' + escapeHtml(typeLabel) + '</span>';
   }
   if (w.image) {
     html += '<div class="view-photo-panel" onclick="openLightbox(\'' + INGRESS + '/uploads/' + encodeURIComponent(w.image) + '\')">'
@@ -1180,7 +1186,7 @@ function renderCard(w) {
     ribbonHtml = '<div class="ribbon ribbon-empty">' + (T.ribbon_empty || '') + '</div>';
   } else if (w.type) {
     var ribbonCls = w.type.toLowerCase().replace(/é/g,'e').replace(/ö/g,'oe');
-    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls + '">' + escapeHtml(T['wine_type_' + w.type] || w.type) + '</div>';
+    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls + '"' + ribbonStyle(w.type) + '>' + escapeHtml(T['wine_type_' + w.type] || w.type) + '</div>';
   }
 
   return ribbonHtml +
