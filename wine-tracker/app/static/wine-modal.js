@@ -113,12 +113,12 @@ function srStarsHtml(value) {
     pct.toFixed(1) + '%"></span></span>';
 }
 
-// Distinct badge for the Vivino community rating (empty string when unset).
+// Subdued label for the Vivino community rating (empty string when unset).
 function vivinoBadgeHtml(value, label) {
   var v = Number(value);
   if (!v) return '';
   return '<span class="vivino-badge" title="' + (label || 'Vivino') +
-    '"><i class="mdi mdi-star"></i>' + v.toFixed(1) + '</span>';
+    '">Vivino ' + v.toFixed(1) + '</span>';
 }
 
 // ── Vivino ID popover ─────────────────────────────────────────────────────────

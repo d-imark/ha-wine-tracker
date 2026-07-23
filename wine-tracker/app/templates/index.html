@@ -139,7 +139,7 @@
       {% if w['rating'] or w['vivino_rating'] %}
       <div class="rating-line">
         {% if w['rating'] %}{{ star_rating(w['rating']) }}<span class="rating-num">{{ "%.1f"|format(w['rating']) }}</span>{% endif %}
-        {% if w['vivino_rating'] %}<span class="vivino-badge" title="{{ t.vivino_rating_label }}"><i class="mdi mdi-star"></i>{{ "%.1f"|format(w['vivino_rating']) }}</span>{% endif %}
+        {% if w['vivino_rating'] %}<span class="vivino-badge" title="{{ t.vivino_rating_label }}">Vivino {{ "%.1f"|format(w['vivino_rating']) }}</span>{% endif %}
       </div>
       {% endif %}
       <div class="card-extra">
