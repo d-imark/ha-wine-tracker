@@ -269,6 +269,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Referenzdaten",
+    "rc_title": "Referenz-Abgleich",
+    "rc_apply": "Übernehmen",
+    "rc_hint": "Nicht in der Referenz gefunden — was möchtest du tun?",
+    "rc_use_known": "Bekannten Eintrag übernehmen",
+    "rc_create_new": "Als neu anlegen",
+    "rc_keep_text": "Als Freitext belassen",
+    "rc_ai": "KI-Vorschlag",
     "ref_search": "Suchen …",
     "ref_add": "Hinzufügen",
     "ref_edit": "Bearbeiten",
@@ -641,6 +648,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Reference data",
+    "rc_title": "Reference match",
+    "rc_apply": "Apply",
+    "rc_hint": "Not in the reference - what do you want to do?",
+    "rc_use_known": "Use known entry",
+    "rc_create_new": "Add as new",
+    "rc_keep_text": "Keep as free text",
+    "rc_ai": "AI suggestion",
     "ref_search": "Search …",
     "ref_add": "Add",
     "ref_edit": "Edit",
@@ -1010,6 +1024,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Données de référence",
+    "rc_title": "Correspondance référence",
+    "rc_apply": "Appliquer",
+    "rc_hint": "Absent de la référence - que faire ?",
+    "rc_use_known": "Utiliser une entrée connue",
+    "rc_create_new": "Ajouter comme nouveau",
+    "rc_keep_text": "Garder en texte libre",
+    "rc_ai": "Suggestion IA",
     "ref_search": "Rechercher …",
     "ref_add": "Ajouter",
     "ref_edit": "Modifier",
@@ -1379,6 +1400,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Dati di riferimento",
+    "rc_title": "Confronto referenza",
+    "rc_apply": "Applica",
+    "rc_hint": "Non presente nella referenza - cosa vuoi fare?",
+    "rc_use_known": "Usa voce esistente",
+    "rc_create_new": "Aggiungi come nuovo",
+    "rc_keep_text": "Mantieni come testo libero",
+    "rc_ai": "Suggerimento IA",
     "ref_search": "Cerca …",
     "ref_add": "Aggiungi",
     "ref_edit": "Modifica",
@@ -1748,6 +1776,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Datos de referencia",
+    "rc_title": "Cotejo de referencia",
+    "rc_apply": "Aplicar",
+    "rc_hint": "No está en la referencia, ¿qué quieres hacer?",
+    "rc_use_known": "Usar entrada conocida",
+    "rc_create_new": "Añadir como nuevo",
+    "rc_keep_text": "Mantener como texto libre",
+    "rc_ai": "Sugerencia de IA",
     "ref_search": "Buscar …",
     "ref_add": "Añadir",
     "ref_edit": "Editar",
@@ -2117,6 +2152,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Dados de referência",
+    "rc_title": "Correspondência de referência",
+    "rc_apply": "Aplicar",
+    "rc_hint": "Não está na referência - o que fazer?",
+    "rc_use_known": "Usar entrada conhecida",
+    "rc_create_new": "Adicionar como novo",
+    "rc_keep_text": "Manter como texto livre",
+    "rc_ai": "Sugestão de IA",
     "ref_search": "Pesquisar …",
     "ref_add": "Adicionar",
     "ref_edit": "Editar",
@@ -2486,6 +2528,13 @@ TRANSLATIONS = {
 
     # Reference data management (TP2)
     "ref_title": "Referentiegegevens",
+    "rc_title": "Referentievergelijking",
+    "rc_apply": "Toepassen",
+    "rc_hint": "Niet in de referentie - wat wil je doen?",
+    "rc_use_known": "Bekende vermelding gebruiken",
+    "rc_create_new": "Als nieuw toevoegen",
+    "rc_keep_text": "Als vrije tekst behouden",
+    "rc_ai": "AI-suggestie",
     "ref_search": "Zoeken …",
     "ref_add": "Toevoegen",
     "ref_edit": "Bewerken",

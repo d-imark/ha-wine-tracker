@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -206,6 +207,53 @@ class TestCrudApi:
         r = client.post("/api/reference/bogus", data=json.dumps({"name": "x"}),
                         content_type="application/json", headers=AJAX)
         assert r.status_code == 404
+
+
+class TestReconcile:
+    """Save-time reconciliation endpoint (TP3b): suggest known matches for
+    unknown grape/region values; AI pick when configured; alias learning."""
+
+    def _post(self, client, payload):
+        import json
+        return json.loads(client.post("/api/reference/reconcile", data=json.dumps(payload),
+                                      content_type="application/json", headers=AJAX).data)
+
+    def test_exact_match_yields_no_items(self, client):
+        data = self._post(client, {"grape": "Merlot"})
+        assert data["ok"] is True
+        assert data["items"] == []
+
+    def test_unknown_grape_returns_suggestions(self, client):
+        data = self._post(client, {"grape": "Cabernet Savignon"})  # typo
+        assert len(data["items"]) == 1
+        item = data["items"][0]
+        assert item["entity"] == "grape"
+        names = [s["name"] for s in item["suggestions"]]
+        assert "Cabernet Sauvignon" in names
+        assert item["ai_pick"] is None  # no AI configured in tests
+
+    def test_region_scoped_by_country(self, client):
+        data = self._post(client, {"region": "Bordeux", "country": "France"})
+        item = next(i for i in data["items"] if i["entity"] == "region")
+        assert "Bordeaux" in [s["name"] for s in item["suggestions"]]
+
+    def test_alias_endpoint_teaches_match(self, client, db):
+        gid = reference.match_reference(db, "grape", "Syrah")["id"]
+        import json
+        r = client.post(f"/api/reference/grape/{gid}/alias", data=json.dumps({"alias": "Balsamina"}),
+                        content_type="application/json", headers=AJAX)
+        assert r.status_code == 200
+        # a fresh reconcile for "Balsamina" now matches Syrah exactly -> no items
+        assert self._post(client, {"grape": "Balsamina"})["items"] == []
+
+    @patch("app._call_chat")
+    def test_ai_pick_when_configured(self, mock_chat, client, monkeypatch):
+        import app as wine_app
+        monkeypatch.setattr(wine_app, "load_options", lambda: {
+            "ai_provider": "anthropic", "anthropic_api_key": "k", "anthropic_model": "m"})
+        mock_chat.return_value = "Cabernet Sauvignon"
+        data = self._post(client, {"grape": "Cab Sauv"})
+        assert data["items"][0]["ai_pick"] == "Cabernet Sauvignon"
 
 
 class TestReadApi:

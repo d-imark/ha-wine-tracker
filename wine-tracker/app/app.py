@@ -3152,6 +3152,74 @@ def api_reference_detail(entity, entry_id):
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
+def _ai_reconcile_pick(opts, entity, value, candidates):
+    """Ask the configured AI which known candidate equals `value`, or None."""
+    if not candidates:
+        return None
+    label = "grape variety" if entity == "grape" else "wine region"
+    prompt = (
+        f'A user entered the {label} "{value}". Which ONE of the following known '
+        f'{label}s is the same thing? Reply with the exact name from the list, or the '
+        f'single word NEW if none match.\nList:\n' + "\n".join("- " + c for c in candidates)
+    )
+    try:
+        resp = _call_chat(opts.get("ai_provider"), [{"role": "user", "content": prompt}], "", opts)
+        ans = reference.normalize_name((resp or "").strip().strip('".'))
+        for c in candidates:
+            if reference.normalize_name(c) == ans:
+                return c
+    except Exception:
+        app.logger.exception("AI reconcile pick failed")
+    return None
+
+
+@app.route("/api/reference/reconcile", methods=["POST"])
+def api_reference_reconcile():
+    """For unknown grape/region values, return known-match suggestions (+ an AI
+    pick when configured) so the save flow can ask the user to reconcile."""
+    db = get_db()
+    body = request.get_json(silent=True) or {}
+    country = (body.get("country") or "").strip()
+    country_code = None
+    if country:
+        c = reference.match_reference(db, "country", country)
+        country_code = c["code"] if c else None
+
+    opts = load_options()
+    ai_on = _is_ai_configured(opts)
+    items = []
+    for entity in ("grape", "region"):
+        value = (body.get(entity) or "").strip()
+        if not value:
+            continue
+        scope = country_code if entity == "region" else None
+        if reference.match_reference(db, entity, value, scope):
+            continue  # already known (exact/alias) - nothing to reconcile
+        suggestions = [
+            {"id": r["id"], "name": r["name"], "is_custom": r["is_custom"]}
+            for r in reference.suggest_matches(db, entity, value, scope, limit=5)
+        ]
+        ai_pick = _ai_reconcile_pick(opts, entity, value, [s["name"] for s in suggestions]) if ai_on else None
+        items.append({"entity": entity, "value": value, "country_code": country_code,
+                      "suggestions": suggestions, "ai_pick": ai_pick})
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/reference/<entity>/<int:entry_id>/alias", methods=["POST"])
+def api_reference_add_alias(entity, entry_id):
+    """Teach a reference entry an alias (self-learning from a confirmed match)."""
+    db = get_db()
+    alias = (request.get_json(silent=True) or {}).get("alias", "")
+    try:
+        ok = reference.add_alias(db, entity, entry_id, alias)
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    if not ok:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    db.commit()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/summary")
 def api_summary():
     db = get_db()
