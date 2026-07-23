@@ -2577,3 +2577,21 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   .adv-filter-name-footer .btn-cancel,
   .adv-filter-name-footer .btn-primary { flex: 1; justify-content: center; }
 }
+
+/* ── Vivino reload confirm dialog ──────────────────────────────────────────── */
+#vivinoReloadModal { z-index: 260; }  /* above the edit modal (200) it opens from */
+#vivinoReloadModal .vr-hint { font-size: .85rem; color: var(--muted); margin: 0 0 .25rem; }
+.vr-footer {
+  display: flex; justify-content: flex-end; gap: .6rem;
+  padding: .75rem 1.25rem 1.25rem; border-top: 1px solid var(--border);
+}
+.vr-footer .vr-back { margin-right: auto; }
+.vr-changes-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.vr-changes-table td {
+  padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top;
+}
+.vr-changes-table tr:last-child td { border-bottom: none; }
+.vr-changes-table .vr-field { color: var(--muted); white-space: nowrap; }
+.vr-changes-table .vr-old { color: var(--muted); text-decoration: line-through; }
+.vr-changes-table .vr-arrow { color: var(--accent); text-align: center; }
+.vr-changes-table .vr-new { color: var(--text); font-weight: 600; }

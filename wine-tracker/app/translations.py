@@ -266,6 +266,20 @@ TRANSLATIONS = {
     "reload_filled": "Felder ergänzt!",
     "reload_nothing": "Keine neuen Daten gefunden",
 
+    # Vivino reload confirmation
+    "vr_title": "Vivino-Abgleich",
+    "vr_pick_hint": "Wähle den passenden Wein:",
+    "vr_confirm_single": "Ist das der richtige Wein?",
+    "vr_changes_hint": "Diese Felder werden überschrieben:",
+    "vr_apply": "Übernehmen",
+    "vr_back": "Zurück",
+    "vr_no_changes": "Keine Änderungen nötig",
+    "vr_applied": "Daten übernommen",
+    "vr_field_name": "Name",
+    "vr_field_type": "Typ",
+    "vr_field_region": "Region",
+    "vr_field_grape": "Rebsorte",
+
     # Vivino ID
     "vivino_id_title": "Vivino ID",
     "vivino_id_placeholder": "z.B. 1157077",
@@ -614,6 +628,20 @@ TRANSLATIONS = {
     "reload_filled": "Fields updated!",
     "reload_nothing": "No new data found",
 
+    # Vivino reload confirmation
+    "vr_title": "Vivino match",
+    "vr_pick_hint": "Pick the matching wine:",
+    "vr_confirm_single": "Is this the right wine?",
+    "vr_changes_hint": "These fields will be overwritten:",
+    "vr_apply": "Apply",
+    "vr_back": "Back",
+    "vr_no_changes": "No changes needed",
+    "vr_applied": "Data applied",
+    "vr_field_name": "Name",
+    "vr_field_type": "Type",
+    "vr_field_region": "Region",
+    "vr_field_grape": "Grape",
+
     # Vivino ID
     "vivino_id_title": "Vivino ID",
     "vivino_id_placeholder": "e.g. 1157077",
@@ -958,6 +986,20 @@ TRANSLATIONS = {
     "reload_vivino_desc": "Charger les données manquantes depuis Vivino",
     "reload_filled": "Champs complétés !",
     "reload_nothing": "Aucune nouvelle donnée trouvée",
+
+    # Vivino reload confirmation
+    "vr_title": "Correspondance Vivino",
+    "vr_pick_hint": "Choisissez le vin correspondant :",
+    "vr_confirm_single": "Est-ce le bon vin ?",
+    "vr_changes_hint": "Ces champs seront remplacés :",
+    "vr_apply": "Appliquer",
+    "vr_back": "Retour",
+    "vr_no_changes": "Aucune modification nécessaire",
+    "vr_applied": "Données appliquées",
+    "vr_field_name": "Nom",
+    "vr_field_type": "Type",
+    "vr_field_region": "Région",
+    "vr_field_grape": "Cépage",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -1304,6 +1346,20 @@ TRANSLATIONS = {
     "reload_filled": "Campi aggiornati!",
     "reload_nothing": "Nessun nuovo dato trovato",
 
+    # Vivino reload confirmation
+    "vr_title": "Confronto Vivino",
+    "vr_pick_hint": "Scegli il vino corrispondente:",
+    "vr_confirm_single": "È il vino giusto?",
+    "vr_changes_hint": "Questi campi verranno sovrascritti:",
+    "vr_apply": "Applica",
+    "vr_back": "Indietro",
+    "vr_no_changes": "Nessuna modifica necessaria",
+    "vr_applied": "Dati applicati",
+    "vr_field_name": "Nome",
+    "vr_field_type": "Tipo",
+    "vr_field_region": "Regione",
+    "vr_field_grape": "Vitigno",
+
     # Vivino ID
     "vivino_id_title": "Vivino ID",
     "vivino_id_placeholder": "es. 1157077",
@@ -1648,6 +1704,20 @@ TRANSLATIONS = {
     "reload_vivino_desc": "Cargar datos faltantes de Vivino",
     "reload_filled": "¡Campos actualizados!",
     "reload_nothing": "No se encontraron datos nuevos",
+
+    # Vivino reload confirmation
+    "vr_title": "Coincidencia Vivino",
+    "vr_pick_hint": "Elige el vino correspondiente:",
+    "vr_confirm_single": "¿Es este el vino correcto?",
+    "vr_changes_hint": "Estos campos se sobrescribirán:",
+    "vr_apply": "Aplicar",
+    "vr_back": "Atrás",
+    "vr_no_changes": "No hay cambios necesarios",
+    "vr_applied": "Datos aplicados",
+    "vr_field_name": "Nombre",
+    "vr_field_type": "Tipo",
+    "vr_field_region": "Región",
+    "vr_field_grape": "Uva",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -1994,6 +2064,20 @@ TRANSLATIONS = {
     "reload_filled": "Campos atualizados!",
     "reload_nothing": "Nenhum dado novo encontrado",
 
+    # Vivino reload confirmation
+    "vr_title": "Correspondência Vivino",
+    "vr_pick_hint": "Escolha o vinho correspondente:",
+    "vr_confirm_single": "Este é o vinho certo?",
+    "vr_changes_hint": "Estes campos serão substituídos:",
+    "vr_apply": "Aplicar",
+    "vr_back": "Voltar",
+    "vr_no_changes": "Nenhuma alteração necessária",
+    "vr_applied": "Dados aplicados",
+    "vr_field_name": "Nome",
+    "vr_field_type": "Tipo",
+    "vr_field_region": "Região",
+    "vr_field_grape": "Casta",
+
     # Vivino ID
     "vivino_id_title": "Vivino ID",
     "vivino_id_placeholder": "ex. 1157077",
@@ -2338,6 +2422,20 @@ TRANSLATIONS = {
     "reload_vivino_desc": "Ontbrekende gegevens van Vivino laden",
     "reload_filled": "Velden bijgewerkt!",
     "reload_nothing": "Geen nieuwe gegevens gevonden",
+
+    # Vivino reload confirmation
+    "vr_title": "Vivino-match",
+    "vr_pick_hint": "Kies de juiste wijn:",
+    "vr_confirm_single": "Is dit de juiste wijn?",
+    "vr_changes_hint": "Deze velden worden overschreven:",
+    "vr_apply": "Toepassen",
+    "vr_back": "Terug",
+    "vr_no_changes": "Geen wijzigingen nodig",
+    "vr_applied": "Gegevens toegepast",
+    "vr_field_name": "Naam",
+    "vr_field_type": "Type",
+    "vr_field_region": "Regio",
+    "vr_field_grape": "Druif",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",

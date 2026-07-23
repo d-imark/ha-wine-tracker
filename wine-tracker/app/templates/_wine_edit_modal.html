@@ -150,6 +150,40 @@
   </div>
 </div>
 
+<!-- ═══════════ VIVINO RELOAD CONFIRM (two steps) ═══════════ -->
+<div class="modal-overlay" id="vivinoReloadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.vr_title }}</span>
+      <button class="modal-close" type="button" onclick="vrCancel()">&times;</button>
+    </div>
+
+    <!-- Step 1: confirm / pick the wine -->
+    <div id="vrStep1">
+      <div class="modal-body">
+        <p class="vr-hint" id="vrStep1Hint"></p>
+        <div id="vrCandidates" class="vivino-results"></div>
+      </div>
+      <div class="modal-footer vr-footer">
+        <button type="button" class="btn-cancel" onclick="vrCancel()">{{ t.btn_cancel }}</button>
+      </div>
+    </div>
+
+    <!-- Step 2: confirm the field changes -->
+    <div id="vrStep2" style="display:none;">
+      <div class="modal-body">
+        <p class="vr-hint">{{ t.vr_changes_hint }}</p>
+        <table class="vr-changes-table"><tbody id="vrChanges"></tbody></table>
+      </div>
+      <div class="modal-footer vr-footer">
+        <button type="button" class="btn-cancel vr-back" onclick="vrBack()">{{ t.vr_back }}</button>
+        <button type="button" class="btn-cancel" onclick="vrCancel()">{{ t.btn_cancel }}</button>
+        <button type="button" class="btn-submit" onclick="vrConfirm()">{{ t.vr_apply }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
@@ -783,56 +817,28 @@ function reloadViaAi() {
 // Merge a Vivino result into the form. allowSetId controls whether the
 // vivino_id field may be written - we only set it from a name search (when no
 // id was stored yet), never overwrite an id the user already has.
-function applyVivinoResult(item, allowSetId) {
-  var fields = {};
-  if (item.name) fields.name = item.name;
-  if (item.year) fields.vintage = item.year;
-  if (item.wine_type) fields.wine_type = item.wine_type;
-  if (item.region) fields.region = item.region;
-  if (item.grape) fields.grape = item.grape;
-  if (item.price) fields.price = item.price;
-  if (item.rating) fields.rating = item.rating;
-
-  if (allowSetId) {
-    var vivinoField = document.getElementById('wine_vivino_id');
-    if (vivinoField && item.vivino_id) {
-      vivinoField.value = item.vivino_id;
-    }
-  }
-
-  var hasImage = document.getElementById('aiImageField').value
-    || document.querySelector('#winePreview img');
-  if (!hasImage && item.image_url) {
-    downloadVivinoImage(item.image_url);
-  }
-
-  populateFormMerge(fields, null);
-}
-
-function _handleVivinoReloadResponse(data) {
-  setReloadLoading(false);
-  if (data.ok && data.results && data.results.length > 0) {
-    // ID lookup already has the right id stored; only a name search may set it.
-    var fromNameSearch = arguments.length > 1 ? arguments[1] : true;
-    applyVivinoResult(data.results[0], fromNameSearch);
-  } else {
-    showReloadToast(T.vivino_no_results, false);
-  }
-}
+// ── Vivino reload with two-step confirmation ─────────────────────────────────
+// Fields the reload may overwrite once confirmed. rating (personal), year and
+// price (catalog wines carry neither) are intentionally excluded.
+var _VR_FIELDS = [
+  { key: 'name',      el: 'wine_name',   labelKey: 'vr_field_name' },
+  { key: 'wine_type', el: 'wine_type',   labelKey: 'vr_field_type', type: 'wine_type' },
+  { key: 'region',    el: 'wine_region', labelKey: 'vr_field_region' },
+  { key: 'grape',     el: 'wine_grape',  labelKey: 'vr_field_grape' }
+];
+var _vrCandidates = [];
+var _vrSelected = null;
+var _vrAllowSetId = false;
 
 function reloadViaVivino() {
-  // If we already know the exact wine, reload it deterministically by id
-  // instead of guessing via a name search.
+  // Deterministic path: we already know the exact wine, fetch it by id.
   var vivinoId = document.getElementById('wine_vivino_id').value.trim();
   if (vivinoId) {
     setReloadLoading(true);
     fetch(INGRESS + '/api/vivino-search?id=' + encodeURIComponent(vivinoId))
     .then(function(r) { return r.json(); })
-    .then(function(data) { _handleVivinoReloadResponse(data, false); })
-    .catch(function() {
-      setReloadLoading(false);
-      showReloadToast(T.vivino_error, false);
-    });
+    .then(function(data) { _vrOnResults(data, false); })
+    .catch(function() { setReloadLoading(false); showReloadToast(T.vivino_error, false); });
     return;
   }
 
@@ -846,14 +852,144 @@ function reloadViaVivino() {
   }
 
   setReloadLoading(true);
-
   fetch(INGRESS + '/api/vivino-search?q=' + encodeURIComponent(query))
   .then(function(r) { return r.json(); })
-  .then(function(data) { _handleVivinoReloadResponse(data, true); })
-  .catch(function() {
-    setReloadLoading(false);
-    showReloadToast(T.vivino_error, false);
+  .then(function(data) { _vrOnResults(data, true); })
+  .catch(function() { setReloadLoading(false); showReloadToast(T.vivino_error, false); });
+}
+
+function _vrOnResults(data, allowSetId) {
+  setReloadLoading(false);
+  if (data.ok && data.results && data.results.length > 0) {
+    openVivinoReload(data.results, allowSetId);
+  } else {
+    showReloadToast(T.vivino_no_results, false);
+  }
+}
+
+function openVivinoReload(candidates, allowSetId) {
+  _vrCandidates = candidates;
+  _vrAllowSetId = allowSetId;
+  _vrSelected = null;
+  vrRenderCandidates();
+  vrShowStep(1);
+  document.getElementById('vivinoReloadModal').classList.add('open');
+}
+
+function closeVivinoReload() {
+  document.getElementById('vivinoReloadModal').classList.remove('open');
+  _vrCandidates = [];
+  _vrSelected = null;
+}
+
+function vrShowStep(n) {
+  document.getElementById('vrStep1').style.display = (n === 1) ? '' : 'none';
+  document.getElementById('vrStep2').style.display = (n === 2) ? '' : 'none';
+}
+
+function vrRenderCandidates() {
+  var single = _vrCandidates.length === 1;
+  document.getElementById('vrStep1Hint').textContent =
+    single ? (T.vr_confirm_single || '') : (T.vr_pick_hint || '');
+  document.getElementById('vrCandidates').innerHTML = _vrCandidates.map(function(item, idx) {
+    var meta = [];
+    if (item.year) meta.push(item.year);
+    if (item.wine_type) meta.push(T['wine_type_' + item.wine_type] || item.wine_type);
+    if (item.region) meta.push(item.region);
+    var ratingHtml = item.rating
+      ? '<span class="vivino-result-rating"><i class="mdi mdi-star"></i> ' +
+        Number(item.rating).toFixed(1) + '</span>' : '';
+    var imgHtml = item.image_url
+      ? '<img class="vivino-result-img" src="' + item.image_url + '" alt="" loading="lazy">'
+      : '<div class="vivino-result-img" style="display:flex;align-items:center;justify-content:center;background:var(--surface);"><i class="mdi mdi-glass-wine" style="font-size:1.5rem;opacity:.4"></i></div>';
+    return '<div class="vivino-result-item" onclick="vrSelectCandidate(' + idx + ')">' +
+      imgHtml +
+      '<div class="vivino-result-info">' +
+        '<div class="vivino-result-name">' + (item.name || '').replace(/</g, '&lt;') + '</div>' +
+        '<div class="vivino-result-meta">' + meta.join(' · ') + '</div>' +
+        ratingHtml +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function _vrCurrentValue(f) {
+  var el = document.getElementById(f.el);
+  return el ? (el.value || '').trim() : '';
+}
+
+function _vrNewValue(item, f) {
+  var v = item[f.key];
+  return (v === null || v === undefined) ? '' : String(v).trim();
+}
+
+function _vrDisplay(f, val) {
+  if (!val) return '—';
+  if (f.type === 'wine_type') return T['wine_type_' + val] || val;
+  return val;
+}
+
+function vrComputeChanges(item) {
+  var changes = [];
+  _VR_FIELDS.forEach(function(f) {
+    var nv = _vrNewValue(item, f);
+    if (!nv) return;
+    var cur = _vrCurrentValue(f);
+    if (nv === cur) return;
+    changes.push({ f: f, cur: cur, nv: nv });
   });
+  return changes;
+}
+
+function vrSelectCandidate(idx) {
+  _vrSelected = _vrCandidates[idx];
+  if (!_vrSelected) return;
+  var changes = vrComputeChanges(_vrSelected);
+  if (changes.length === 0) {
+    // Nothing to overwrite - apply silent side-effects (image, id) and close.
+    _vrApplySideEffects(_vrSelected);
+    closeVivinoReload();
+    showReloadToast(T.vr_no_changes, true);
+    return;
+  }
+  var esc = function(s) { return (s || '').replace(/</g, '&lt;'); };
+  document.getElementById('vrChanges').innerHTML = changes.map(function(c) {
+    return '<tr>' +
+      '<td class="vr-field">' + (T[c.f.labelKey] || c.f.key) + '</td>' +
+      '<td class="vr-old">' + esc(_vrDisplay(c.f, c.cur)) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(_vrDisplay(c.f, c.nv)) + '</td>' +
+    '</tr>';
+  }).join('');
+  vrShowStep(2);
+}
+
+function vrBack() { vrShowStep(1); }
+function vrCancel() { closeVivinoReload(); }
+
+function _vrApplySideEffects(item) {
+  // Image only when none is set yet.
+  var hasImage = document.getElementById('aiImageField').value
+    || document.querySelector('#winePreview img');
+  if (!hasImage && item.image_url) {
+    downloadVivinoImage(item.image_url);
+  }
+  // vivino_id only on the name-search path and only when empty (never overwrite).
+  if (_vrAllowSetId && item.vivino_id) {
+    var vf = document.getElementById('wine_vivino_id');
+    if (vf && !vf.value.trim()) { vf.value = item.vivino_id; }
+  }
+}
+
+function vrConfirm() {
+  if (!_vrSelected) { closeVivinoReload(); return; }
+  vrComputeChanges(_vrSelected).forEach(function(c) {
+    var el = document.getElementById(c.f.el);
+    if (el) { el.value = c.nv; }
+  });
+  _vrApplySideEffects(_vrSelected);
+  closeVivinoReload();
+  showReloadToast(T.vr_applied, true);
 }
 
 // ── AJAX form submit (wineModal) ──────────────────────────────────────────────
