@@ -102,7 +102,7 @@
   {% for w in wines %}
   <div class="card {% if w['quantity'] == 0 %}empty{% endif %}" data-id="{{ w['id'] }}"
        data-name="{{ w['name'] }}" data-year="{{ w['year'] or '' }}"
-       data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}"
+       data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}" data-country="{{ w['country'] or '' }}"
        data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}"
        data-notes="{{ w['notes'] or '' }}" data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
@@ -761,7 +761,7 @@ function getCardData(el) {
   const d = card.dataset;
   return { id: d.id, wine: {
     name: d.name, year: d.year ? parseInt(d.year) : null,
-    type: d.type || null, region: d.region || null,
+    type: d.type || null, region: d.region || null, country: d.country || null,
     quantity: parseInt(d.quantity) || 0, rating: parseInt(d.rating) || 0,
     notes: d.notes || '', image: d.image || null,
     purchased_at: d.purchased_at || null, price: d.price ? parseFloat(d.price) : null,
@@ -982,6 +982,7 @@ function openViewModal(id, wine) {
   var meta = [];
   if (w.year) meta.push('<span>' + w.year + '</span>');
   if (w.region) meta.push('<span>' + escapeHtml(w.region) + '</span>');
+  if (w.country) meta.push('<span>' + escapeHtml(w.country) + '</span>');
   if (meta.length) html += '<div class="view-meta">' + meta.join('') + '</div>';
 
   // Rating stars
@@ -1208,6 +1209,7 @@ function updateCardData(card, w) {
   card.dataset.year = w.year || '';
   card.dataset.type = w.type || '';
   card.dataset.region = w.region || '';
+  card.dataset.country = w.country || '';
   card.dataset.quantity = w.quantity;
   card.dataset.rating = w.rating || 0;
   card.dataset.notes = w.notes || '';

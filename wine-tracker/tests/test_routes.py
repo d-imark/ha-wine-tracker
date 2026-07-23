@@ -281,6 +281,42 @@ class TestAddWine:
 
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
+class TestCountryField:
+    """Separate country field on wines (TP3a), stored as a string."""
+
+    def test_add_stores_country(self, client):
+        resp = client.post("/add", data={"name": "Ctry", "quantity": "1", "country": "France"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["country"] == "France"
+
+    def test_edit_updates_country(self, client, sample_wine):
+        wine_id = sample_wine["wine"]["id"]
+        resp = client.post(
+            f"/edit/{wine_id}",
+            data={"name": "X", "quantity": "1", "country": "Italy"},
+            headers=AJAX,
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["country"] == "Italy"
+
+    def test_duplicate_copies_country(self, client):
+        created = json.loads(client.post(
+            "/add", data={"name": "Dup", "quantity": "1", "country": "Spain"}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        resp = client.post(f"/duplicate/{wid}", data={"year": "2021"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["country"] == "Spain"
+
+    def test_api_wine_returns_country(self, client):
+        created = json.loads(client.post(
+            "/add", data={"name": "C2", "quantity": "1", "country": "Portugal"}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        data = json.loads(client.get(f"/api/wine/{wid}").data)
+        assert data["wine"]["country"] == "Portugal"
+
+
 class TestEditWine:
     def test_edit_wine(self, client, sample_wine):
         wine_id = sample_wine["wine"]["id"]

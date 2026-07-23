@@ -168,6 +168,57 @@ var _placeholders = {};
   if (el) _placeholders[id] = el.placeholder || '';
 });
 
+// ── Reference-driven pick lists (TP3a) ────────────────────────────────────────
+var _refCountryByName = {};   // lowercased name/alias -> ISO code
+var _refListsLoaded = false;
+var _lastRegionCode;
+
+function _fillDatalist(id, values, keepExisting) {
+  var dl = document.getElementById(id);
+  if (!dl) return;
+  var out = [], seen = {};
+  if (keepExisting) {
+    Array.prototype.forEach.call(dl.querySelectorAll('option'), function(o) {
+      if (o.value && !seen[o.value.toLowerCase()]) { seen[o.value.toLowerCase()] = 1; out.push(o.value); }
+    });
+  }
+  (values || []).forEach(function(v) {
+    if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); }
+  });
+  dl.innerHTML = out.map(function(v) { return '<option value="' + String(v).replace(/"/g, '&quot;') + '">'; }).join('');
+}
+
+function loadReferenceLists() {
+  if (_refListsLoaded) return;
+  _refListsLoaded = true;
+  fetch(INGRESS + '/api/reference/countries').then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.ok) return;
+    d.items.forEach(function(c) {
+      _refCountryByName[c.name.toLowerCase()] = c.code;
+      (c.aliases || []).forEach(function(a) { _refCountryByName[a.toLowerCase()] = c.code; });
+    });
+    _fillDatalist('countryList', d.items.map(function(c) { return c.name; }), false);
+    _lastRegionCode = undefined;
+    onCountryChange();
+  });
+  fetch(INGRESS + '/api/reference/grapes').then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) _fillDatalist('grapeList', d.items.map(function(g) { return g.name; }), true);
+  });
+}
+
+// Refill region suggestions for the selected country (cascading). Guarded so we
+// only refetch when the resolved country code actually changes.
+function onCountryChange() {
+  var name = (document.getElementById('wine_country').value || '').trim().toLowerCase();
+  var code = _refCountryByName[name] || '';
+  if (code === _lastRegionCode) return;
+  _lastRegionCode = code;
+  var url = INGRESS + '/api/reference/regions' + (code ? '?country=' + encodeURIComponent(code) : '');
+  fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) _fillDatalist('regionList', d.items.map(function(x) { return x.name; }), false);
+  });
+}
+
 function openWineModal(id, wine) {
   _reloadMode = false;
   var isEdit = !!id;
@@ -194,7 +245,10 @@ function openWineModal(id, wine) {
   document.getElementById('wine_year').value = w.year || '';
   document.getElementById('wine_qty').value = w.quantity !== undefined ? w.quantity : 1;
   document.getElementById('wine_type').value = w.type || '';
+  document.getElementById('wine_country').value = w.country || '';
   document.getElementById('wine_region').value = w.region || '';
+  loadReferenceLists();
+  onCountryChange();
   document.getElementById('wine_notes').value = w.notes || '';
   document.getElementById('wine_purchased_at').value = w.purchased_at || '';
   document.getElementById('wine_price').value = w.price || '';

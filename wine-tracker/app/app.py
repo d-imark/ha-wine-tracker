@@ -514,6 +514,7 @@ def init_db():
             "maturity_data":  "TEXT",
             "taste_profile":  "TEXT",
             "food_pairings":  "TEXT",
+            "country":        "TEXT",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -805,8 +806,8 @@ def add():
         """INSERT INTO wines
            (name, year, type, region, quantity, rating, notes, image, added,
             purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-            maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            maturity_data, taste_profile, food_pairings, country)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("year") or None,
@@ -828,6 +829,7 @@ def add():
             maturity_data_raw,
             taste_profile_raw,
             food_pairings_raw,
+            request.form.get("country", "").strip() or None,
         ),
     )
     db.commit()
@@ -901,11 +903,16 @@ def edit(wine_id):
     else:
         food_pairings_raw = wine["food_pairings"]
     new_quantity = int(request.form.get("quantity", 0))
+    # Preserve stored country if the form omits it (e.g. quantity +/- FormData)
+    if "country" in request.form:
+        country_val = request.form.get("country", "").strip() or None
+    else:
+        country_val = wine["country"]
     db.execute(
         """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?,
            notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
-           maturity_data=?, taste_profile=?, food_pairings=?
+           maturity_data=?, taste_profile=?, food_pairings=?, country=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
@@ -927,6 +934,7 @@ def edit(wine_id):
             maturity_data_raw,
             taste_profile_raw,
             food_pairings_raw,
+            country_val,
             wine_id,
         ),
     )
@@ -969,8 +977,8 @@ def duplicate(wine_id):
     db.execute(
         """INSERT INTO wines (name, year, type, region, quantity, rating, notes, image, added,
            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-           maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           maturity_data, taste_profile, food_pairings, country)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             new_year,
@@ -992,6 +1000,7 @@ def duplicate(wine_id):
             wine["maturity_data"],
             wine["taste_profile"],
             wine["food_pairings"],
+            wine["country"],
         ),
     )
     db.commit()

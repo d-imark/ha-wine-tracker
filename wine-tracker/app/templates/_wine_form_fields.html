@@ -30,14 +30,20 @@
     </select>
   </div>
   <div>
-    <label>{{ t.label_region }}</label>
-    <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
-    <datalist id="regionList">
-      {% for r in used_regions_list %}
-      <option value="{{ r }}">
-      {% endfor %}
-    </datalist>
+    <label>{{ t.label_country }}</label>
+    <input type="text" name="country" id="wine_country" placeholder="{{ t.label_country }}" list="countryList" autocomplete="off" oninput="onCountryChange()">
+    <datalist id="countryList"></datalist>
   </div>
+</div>
+
+<div>
+  <label>{{ t.label_region }}</label>
+  <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
+  <datalist id="regionList">
+    {% for r in used_regions_list %}
+    <option value="{{ r }}">
+    {% endfor %}
+  </datalist>
 </div>
 
 <div class="row2">
