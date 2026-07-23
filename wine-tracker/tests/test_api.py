@@ -233,20 +233,45 @@ class TestReanalyzeWine:
 
 
 # ── GET /api/vivino-search ────────────────────────────────────────────────────
+#
+# Vivino search uses the same Algolia "WINES_prod" catalog index that
+# vivino.com's own search box queries client-side. The app extracts the public
+# search-only credentials from Vivino's live JS at runtime (never committed) and
+# replays the browser's Algolia request. These tests mock the Algolia POST and
+# pre-seed the cached credentials / grape map so no real network is hit.
 
-def _mock_vivino_session(MockSession, *, api_response=None, raise_error=None):
-    """Set up a mock requests.Session for vivino_search tests.
+def _algolia_hit(wine_id=1675990, wine_name="Gewürztraminer Alsace Grand Cru 'Goldert'",
+                 winery="Maurice Schueller", type_id=2,
+                 region="Alsace Grand Cru 'Goldert'", country="fr",
+                 grape_ids=None, rating=4.2):
+    return {
+        "id": wine_id,
+        "name": wine_name,
+        "type_id": type_id,
+        "winery": {"id": 88008, "name": winery},
+        "region": {"name": region, "country": country},
+        "grapes": grape_ids if grape_ids is not None else [7],
+        "image": {"location": "//images.vivino.com/labels/goldert.jpg"},
+        "statistics": {"ratings_count": 217, "ratings_average": rating},
+        "vintages": [{"year": "2024"}, {"year": "2023"}],
+    }
 
-    The first session.get() call is the homepage warm-up (ignored by the route).
-    The second call is the actual API request.
-    api_response: dict that session.get().json() should return
-    raise_error: exception that session.get().raise_for_status() should raise
+
+def _algolia_response(hits):
+    return {"hits": hits, "nbHits": len(hits)}
+
+
+def _mock_algolia(MockSession, monkeypatch, *, response=None, raise_error=None):
+    """Mock the Algolia POST used by vivino_search and seed cached creds + grapes.
+
+    Pre-seeds _ALGOLIA_CREDS and _GRAPE_MAP so the route does not attempt to
+    fetch Vivino's JS / grape list over the network during the test.
     """
+    monkeypatch.setattr(wine_app, "_ALGOLIA_CREDS", ("TESTAPPID", "testkey", "WINES_prod"))
+    monkeypatch.setattr(wine_app, "_GRAPE_MAP", {7: "Gewürztraminer", 1: "Shiraz/Syrah"})
+
     mock_session = MagicMock()
     MockSession.return_value = mock_session
-
-    warmup_resp = MagicMock()
-    warmup_resp.status_code = 200
 
     api_resp = MagicMock()
     api_resp.status_code = 200
@@ -254,39 +279,19 @@ def _mock_vivino_session(MockSession, *, api_response=None, raise_error=None):
         api_resp.raise_for_status.side_effect = raise_error
     else:
         api_resp.raise_for_status = MagicMock()
-        api_resp.json.return_value = api_response or {"explore_vintage": {"matches": []}}
-
-    mock_session.get.side_effect = [warmup_resp, api_resp]
+        api_resp.json.return_value = response if response is not None else _algolia_response([])
+    mock_session.post.return_value = api_resp
     return mock_session
 
 
-def _explore_response(matches):
-    """Wrap a list of match dicts in the explore_vintage envelope."""
-    return {"explore_vintage": {"matches": matches}}
-
-
-def _explore_match(name="TestWinery", wine_name="Reserve", year=2020,
-                   type_id=1, region="Bordeaux", country="France",
-                   grapes=None, rating=4.2, price=29.99, wine_id=12345):
-    return {
-        "vintage": {
-            "year": year,
-            "wine": {
-                "id": wine_id,
-                "name": wine_name,
-                "type_id": type_id,
-                "winery": {"name": name},
-                "region": {"name": region, "country": {"name": country}},
-                "grapes": [{"name": g} for g in (grapes or [])],
-            },
-            "statistics": {"wine_ratings_average": rating},
-            "image": {"location": "//images.vivino.com/test.png"},
-        },
-        "price": {"amount": price},
-    }
-
-
 class TestVivinoSearch:
+    def test_vivino_headers_do_not_request_brotli(self):
+        """requests has no brotli decoder in this project's deps, so a 'br'
+        Accept-Encoding yields undecodable bodies and breaks credential/JS
+        extraction. The Vivino session must only request gzip/deflate."""
+        enc = wine_app._VIVINO_HEADERS.get("Accept-Encoding", "")
+        assert "br" not in [e.strip() for e in enc.split(",")]
+
     def test_empty_query(self, client):
         resp = client.get("/api/vivino-search?q=")
         data = json.loads(resp.data)
@@ -299,24 +304,30 @@ class TestVivinoSearch:
         assert data.get("error") == "query_too_short"
 
     @patch("requests.Session")
-    def test_vivino_search_success(self, MockSession, client):
-        """Should return parsed results from the explore JSON API."""
-        _mock_vivino_session(MockSession, api_response=_explore_response([
-            _explore_match("TestWinery", "Reserve", grapes=["Merlot"])
-        ]))
+    def test_vivino_search_finds_catalog_producer(self, MockSession, monkeypatch, client):
+        """The real-world regression: 'maurice schueller' must return the Alsace
+        Gewürztraminer from the catalog index, with the winery in the name and
+        the grape id mapped to a name."""
+        _mock_algolia(MockSession, monkeypatch, response=_algolia_response([_algolia_hit()]))
 
-        resp = client.get("/api/vivino-search?q=TestWinery+Reserve")
+        resp = client.get("/api/vivino-search?q=maurice+schueller")
         assert resp.status_code == 200
         data = json.loads(resp.data)
         assert data["ok"] is True
         assert len(data["results"]) == 1
-        assert data["results"][0]["name"] == "TestWinery Reserve"
-        assert data["results"][0]["grape"] == "Merlot"
+        r = data["results"][0]
+        assert r["name"] == "Maurice Schueller Gewürztraminer Alsace Grand Cru 'Goldert'"
+        assert r["wine_type"] == "Weisswein"          # type_id 2
+        assert r["grape"] == "Gewürztraminer"          # grape id 7 mapped
+        assert "Alsace Grand Cru 'Goldert'" in r["region"]
+        assert r["rating"] == 4.2
+        assert r["vivino_id"] == 1675990
 
     @patch("requests.Session")
-    def test_vivino_search_no_results(self, MockSession, client):
-        """Should return empty result list when API returns no matches."""
-        _mock_vivino_session(MockSession, api_response=_explore_response([]))
+    def test_vivino_search_no_results(self, MockSession, monkeypatch, client):
+        """Empty hits list yields ok=True with an empty results array - and
+        crucially does NOT fall back to a broader, misleading query."""
+        _mock_algolia(MockSession, monkeypatch, response=_algolia_response([]))
 
         resp = client.get("/api/vivino-search?q=NonexistentWine12345")
         assert resp.status_code == 200
@@ -325,11 +336,11 @@ class TestVivinoSearch:
         assert data["results"] == []
 
     @patch("requests.Session")
-    def test_vivino_search_multiple_results(self, MockSession, client):
-        """Should return all matches from the API response."""
-        _mock_vivino_session(MockSession, api_response=_explore_response([
-            _explore_match("Winery A", "Blanc", year=2021, wine_id=1),
-            _explore_match("Winery B", "Rouge", year=2019, wine_id=2),
+    def test_vivino_search_multiple_results(self, MockSession, monkeypatch, client):
+        """Should return every hit from the Algolia response."""
+        _mock_algolia(MockSession, monkeypatch, response=_algolia_response([
+            _algolia_hit(wine_id=1, winery="Winery A", wine_name="Blanc"),
+            _algolia_hit(wine_id=2, winery="Winery B", wine_name="Rouge", type_id=1),
         ]))
 
         resp = client.get("/api/vivino-search?q=test")
@@ -339,12 +350,22 @@ class TestVivinoSearch:
         assert len(data["results"]) == 2
 
     @patch("requests.Session")
-    def test_vivino_search_blocked(self, MockSession, client):
-        """When the API returns 403, response should be 503 with error=blocked."""
+    def test_vivino_search_price_is_none(self, MockSession, monkeypatch, client):
+        """The catalog index carries no price; results must expose price=None
+        rather than a stale/boilerplate value."""
+        _mock_algolia(MockSession, monkeypatch, response=_algolia_response([_algolia_hit()]))
+
+        resp = client.get("/api/vivino-search?q=maurice+schueller")
+        data = json.loads(resp.data)
+        assert data["results"][0]["price"] is None
+
+    @patch("requests.Session")
+    def test_vivino_search_blocked(self, MockSession, monkeypatch, client):
+        """A 403 from Algolia should surface as 503 error=blocked."""
         blocked_resp = MagicMock()
         blocked_resp.status_code = 403
         http_err = requests.exceptions.HTTPError(response=blocked_resp)
-        _mock_vivino_session(MockSession, raise_error=http_err)
+        _mock_algolia(MockSession, monkeypatch, raise_error=http_err)
 
         resp = client.get("/api/vivino-search?q=merlot")
         assert resp.status_code == 503
@@ -353,48 +374,13 @@ class TestVivinoSearch:
         assert data["error"] == "blocked"
 
     @patch("requests.Session")
-    def test_vivino_search_word_reduction_fallback(self, MockSession, client):
-        """If the full query returns 0 matches, the route must retry with
-        progressively shorter search terms until it finds results."""
+    def test_vivino_search_timeout(self, MockSession, monkeypatch, client):
+        """Should return 504 when the Algolia request times out."""
+        monkeypatch.setattr(wine_app, "_ALGOLIA_CREDS", ("TESTAPPID", "testkey", "WINES_prod"))
+        monkeypatch.setattr(wine_app, "_GRAPE_MAP", {})
         mock_session = MagicMock()
         MockSession.return_value = mock_session
-
-        warmup = MagicMock()
-        warmup.status_code = 200
-
-        empty = MagicMock()
-        empty.status_code = 200
-        empty.raise_for_status = MagicMock()
-        empty.json.return_value = _explore_response([])
-
-        found = MagicMock()
-        found.status_code = 200
-        found.raise_for_status = MagicMock()
-        found.json.return_value = _explore_response([
-            _explore_match("Wynns", "John Riddoch Cabernet Sauvignon", year=2016)
-        ])
-
-        # warm-up, full query (0 results), shortened query (1 result)
-        mock_session.get.side_effect = [warmup, empty, found]
-
-        resp = client.get("/api/vivino-search?q=Wynns+Coonawarra+Riesling")
-        assert resp.status_code == 200
-        data = json.loads(resp.data)
-        assert data["ok"] is True
-        assert len(data["results"]) == 1
-        assert "Wynns" in data["results"][0]["name"]
-        assert mock_session.get.call_count == 3  # warm-up + full + shortened
-
-    @patch("requests.Session")
-    def test_vivino_search_timeout(self, MockSession, client):
-        """Should return 504 when the API request times out."""
-        mock_session = MagicMock()
-        MockSession.return_value = mock_session
-        warmup = MagicMock()
-        mock_session.get.side_effect = [
-            warmup,
-            requests.exceptions.Timeout(),
-        ]
+        mock_session.post.side_effect = requests.exceptions.Timeout()
 
         resp = client.get("/api/vivino-search?q=merlot")
         assert resp.status_code == 504

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -1904,22 +1905,119 @@ Rules:
 
 VIVINO_WINE_TYPES = {1: "Rotwein", 2: "Weisswein", 3: "Schaumwein", 4: "Rosé", 7: "Dessertwein", 24: "Likörwein"}
 
-def _vivino_country_code(currency):
-    """Map currency to Vivino country/currency codes."""
-    mapping = {
-        "CHF": ("CH", "CHF"), "EUR": ("DE", "EUR"), "USD": ("US", "USD"),
-        "GBP": ("GB", "GBP"), "CAD": ("CA", "CAD"), "AUD": ("AU", "AUD"),
-        "SEK": ("SE", "SEK"), "NOK": ("NO", "NOK"), "DKK": ("DK", "DKK"),
-        "PLN": ("PL", "PLN"), "CZK": ("CZ", "CZK"), "BRL": ("BR", "BRL"),
-    }
-    return mapping.get(currency, ("US", "USD"))
+# Vivino's own search box queries an Algolia catalog index ("WINES_prod")
+# directly from the browser, using a public, search-only API key embedded in
+# Vivino's JavaScript. The marketplace /api/explore/explore endpoint only
+# indexes wines currently for sale in the visitor's market, so catalog-only
+# producers (e.g. small Alsace estates) never surface there. We replay the
+# browser's Algolia request instead. The public credentials are extracted from
+# Vivino's live JS at runtime and cached - they are never stored in this repo,
+# so we always use the same key the website itself is currently serving.
+_ALGOLIA_CREDS = None    # (app_id, api_key, index_name), cached after first fetch
+_GRAPE_MAP = None        # {grape_id: grape_name}, cached after first fetch
+
+# ISO-3166 alpha-2 -> display name for common wine countries. Vivino's Algolia
+# records store the region country only as a 2-letter code; fall back to the
+# uppercased code for anything not listed here.
+_COUNTRY_NAMES = {
+    "fr": "France", "it": "Italy", "es": "Spain", "de": "Germany",
+    "at": "Austria", "ch": "Switzerland", "pt": "Portugal", "us": "USA",
+    "ar": "Argentina", "cl": "Chile", "au": "Australia", "nz": "New Zealand",
+    "za": "South Africa", "gr": "Greece", "hu": "Hungary", "ge": "Georgia",
+    "lb": "Lebanon", "hr": "Croatia", "si": "Slovenia", "ca": "Canada",
+    "il": "Israel", "ro": "Romania", "md": "Moldova", "uy": "Uruguay",
+}
 
 
-# Vivino's /search/wines pages are now fully redirected to the client-rendered
-# /explore page for all locales - server-side HTML scraping no longer works.
-# Instead we call the same JSON endpoint that the explore page itself uses.
-# min_rating=1 satisfies the "at least one filter" requirement of the API.
-_VIVINO_EXPLORE_URL = "https://www.vivino.com/api/explore/explore"
+def _get_algolia_credentials(session):
+    """Extract Vivino's public Algolia app-id / search-key / index from their
+    live site JS. Cached process-wide after the first success.
+
+    Returns (app_id, api_key, index) or None if extraction fails.
+    """
+    global _ALGOLIA_CREDS
+    if _ALGOLIA_CREDS:
+        return _ALGOLIA_CREDS
+
+    ssl_verify = _ssl_verify()
+    home = session.get("https://www.vivino.com/", timeout=10, verify=ssl_verify)
+    pack = re.search(r"/packs/(navigation-[0-9a-f]+\.js)", home.text)
+    if not pack:
+        return None
+
+    js = session.get("https://www.vivino.com/packs/" + pack.group(1),
+                     timeout=10, verify=ssl_verify).text
+    cred = re.search(
+        r"""default\(\s*["']([A-Z0-9]{8,})["']\s*,\s*["']([a-f0-9]{32})["']\s*\)""", js)
+    idx = re.search(r"""initIndex\(\s*["']([A-Za-z0-9_]+)["']\s*\)""", js)
+    if not (cred and idx):
+        return None
+
+    _ALGOLIA_CREDS = (cred.group(1), cred.group(2), idx.group(1))
+    return _ALGOLIA_CREDS
+
+
+def _get_grape_map(session):
+    """Fetch Vivino's grape id -> name reference list (best-effort, cached).
+
+    Algolia wine records list grapes as numeric ids; this maps them to names.
+    Returns {} on failure so search still works (grape field just stays empty).
+    """
+    global _GRAPE_MAP
+    if _GRAPE_MAP is not None:
+        return _GRAPE_MAP
+
+    result = {}
+    try:
+        resp = session.get("https://www.vivino.com/api/grapes",
+                           headers={"Accept": "application/json"},
+                           timeout=10, verify=_ssl_verify())
+        resp.raise_for_status()
+        data = resp.json()
+        grapes = data.get("grapes", data) if isinstance(data, dict) else data
+        for g in grapes or []:
+            gid, gname = g.get("id"), g.get("name")
+            if gid is not None and gname:
+                result[gid] = gname
+    except Exception:
+        result = {}
+
+    _GRAPE_MAP = result
+    return _GRAPE_MAP
+
+
+def _algolia_wine_query(session, query, hits=24):
+    """Replay the browser's Algolia catalog query for `query`.
+
+    Returns the parsed JSON dict, or None if credentials are unavailable.
+    Propagates requests exceptions (timeout, HTTP errors) to the caller.
+    """
+    from urllib.parse import urlencode
+
+    creds = _get_algolia_credentials(session)
+    if not creds:
+        return None
+    app_id, api_key, index = creds
+
+    url = f"https://{app_id}-dsn.algolia.net/1/indexes/{index}/query"
+    resp = session.post(
+        url,
+        params={
+            "x-algolia-application-id": app_id,
+            "x-algolia-api-key": api_key,
+            "x-algolia-agent": "Algolia for JavaScript (4.x); Browser (lite)",
+        },
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://www.vivino.com",
+            "Referer": "https://www.vivino.com/",
+        },
+        data=json.dumps({"params": urlencode({"query": query, "hitsPerPage": hits})}),
+        timeout=10,
+        verify=_ssl_verify(),
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 # Browser headers for the warm-up request so Cloudflare issues session cookies.
 _VIVINO_HEADERS = {
@@ -1929,21 +2027,23 @@ _VIVINO_HEADERS = {
         "Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
+    # No 'br': requests has no brotli decoder in this project's deps, and a
+    # brotli-encoded body would be undecodable, breaking JS/credential parsing.
+    "Accept-Encoding": "gzip, deflate",
     "Referer": "https://www.vivino.com/",
 }
 
 
 @app.route("/api/vivino-search")
 def vivino_search():
-    """Search wines on Vivino via their internal explore JSON API.
+    """Search wines via Vivino's Algolia catalog index ("WINES_prod").
 
-    Vivino's /search/wines pages are now always redirected to the
-    client-rendered /explore page, so HTML scraping no longer works.
-    The explore page itself fetches results from /api/explore/explore -
-    we call that endpoint directly.  A session warm-up visit to the
-    Vivino homepage seeds the session cookies so the API accepts the
-    request without a 403.
+    This is the same index vivino.com's own search box queries client-side.
+    Unlike the marketplace explore endpoint, it covers Vivino's full catalog,
+    so producers not currently for sale in the visitor's market still surface
+    (e.g. small Alsace estates). Public, search-only Algolia credentials are
+    extracted from Vivino's live JS at runtime and cached; they are never
+    stored in this repository.
     """
     import requests as req
 
@@ -1951,26 +2051,11 @@ def vivino_search():
     if len(query) < 2:
         return jsonify({"ok": False, "error": "query_too_short"}), 400
 
-    ssl_verify = _ssl_verify()
     session = req.Session()
     session.headers.update(_VIVINO_HEADERS)
 
-    # Seed session cookies so the API endpoint accepts the request.
     try:
-        session.get("https://www.vivino.com/", timeout=8, verify=ssl_verify)
-    except Exception:
-        pass
-
-    try:
-        resp = session.get(
-            _VIVINO_EXPLORE_URL,
-            params={"language": "en", "min_rating": 1, "search_term": query},
-            headers={"Accept": "application/json"},
-            timeout=10,
-            verify=ssl_verify,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _algolia_wine_query(session, query)
     except req.exceptions.Timeout:
         return jsonify({"ok": False, "error": "timeout"}), 504
     except req.exceptions.HTTPError as e:
@@ -1982,73 +2067,52 @@ def vivino_search():
         app.logger.exception("Vivino search error: %s", e)
         return jsonify({"ok": False, "error": "api_error"}), 502
 
-    # If the exact query returned nothing, retry with progressively shorter
-    # search terms (drop one word at a time from the right).  This helps with
-    # regional or obscure wines that appear under a subset of their full name,
-    # e.g. "Wynns Coonawarra Riesling" → "Wynns Coonawarra" → "Wynns".
-    matches_raw = data.get("explore_vintage", {}).get("matches", [])
-    if not matches_raw:
-        words = query.split()
-        for drop in range(1, len(words)):
-            shorter = " ".join(words[:-drop])
-            if len(shorter) < 2:
-                break
-            try:
-                r2 = session.get(
-                    _VIVINO_EXPLORE_URL,
-                    params={"language": "en", "min_rating": 1, "search_term": shorter},
-                    headers={"Accept": "application/json"},
-                    timeout=10,
-                    verify=ssl_verify,
-                )
-                r2.raise_for_status()
-                fb = r2.json().get("explore_vintage", {}).get("matches", [])
-                if fb:
-                    matches_raw = fb
-                    break
-            except Exception:
-                break
+    if data is None:
+        app.logger.warning("Vivino Algolia credentials unavailable")
+        return jsonify({"ok": False, "error": "api_error"}), 502
+
+    grape_map = _get_grape_map(session)
 
     results = []
     try:
-        for match in matches_raw:
-            vintage = match.get("vintage", {})
-            wine = vintage.get("wine", {}) or {}
-            winery = wine.get("winery", {}) or {}
-            region = wine.get("region", {}) or {}
-            country_obj = region.get("country", {}) or {}
+        for hit in data.get("hits", []):
+            winery = (hit.get("winery") or {}).get("name", "")
+            wine_name = hit.get("name", "")
+            full_name = f"{winery} {wine_name}".strip()
 
-            # Grape varieties - explore API uses {name:...} directly
-            grapes = []
-            for g_item in wine.get("grapes", []) or []:
-                name = g_item.get("name") or g_item.get("grape", {}).get("name", "")
-                if name:
-                    grapes.append(name)
+            type_id = hit.get("type_id")
+            wine_type = VIVINO_WINE_TYPES.get(type_id, "Anderes") if type_id else ""
 
-            price_obj = match.get("price", {}) or {}
-            price_val = price_obj.get("amount")
-
-            wine_type_id = wine.get("type_id")
-            wine_type = VIVINO_WINE_TYPES.get(wine_type_id, "Anderes") if wine_type_id else ""
-
-            region_name = region.get("name", "")
-            country_name = country_obj.get("name", "")
+            region_obj = hit.get("region") or {}
+            region_name = region_obj.get("name", "")
+            country_code = region_obj.get("country") or ""
+            country_name = (_COUNTRY_NAMES.get(country_code, country_code.upper())
+                            if country_code else "")
             region_str = (
                 f"{region_name}, {country_name}" if region_name and country_name
                 else region_name or country_name
             )
 
-            image_loc = vintage.get("image", {}).get("location", "") if vintage.get("image") else ""
+            grapes = [grape_map.get(g) for g in (hit.get("grapes") or [])]
+            grape = ", ".join(g for g in grapes if g)
+
+            stats = hit.get("statistics") or {}
+            rating = round(stats.get("ratings_average", 0), 1) or None
+
+            image_loc = (hit.get("image") or {}).get("location", "")
 
             results.append({
-                "vivino_id": wine.get("id"),
-                "name": f"{winery.get('name', '')} {wine.get('name', '')}".strip(),
-                "year": vintage.get("year") or None,
+                "vivino_id": hit.get("id"),
+                "name": full_name,
+                # A catalog wine spans all its vintages; the user enters the
+                # specific vintage they own, so we don't guess a year here.
+                "year": None,
                 "wine_type": wine_type,
                 "region": region_str,
-                "grape": ", ".join(grapes),
-                "rating": round(vintage.get("statistics", {}).get("wine_ratings_average", 0), 1) or None,
-                "price": round(price_val, 2) if price_val else None,
+                "grape": grape,
+                "rating": rating,
+                # The catalog index carries no price (that's marketplace data).
+                "price": None,
                 "image_url": image_loc,
             })
     except Exception as e:

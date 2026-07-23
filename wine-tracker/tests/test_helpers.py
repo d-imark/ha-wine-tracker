@@ -188,19 +188,6 @@ class TestTranslateWineType:
             assert wine_app.translate_wine_type("UnknownType") == "UnknownType"
 
 
-# ── _vivino_country_code() ────────────────────────────────────────────────────
-
-class TestVivinoCountryCode:
-    def test_known_currencies(self):
-        assert wine_app._vivino_country_code("EUR") == ("DE", "EUR")
-        assert wine_app._vivino_country_code("USD") == ("US", "USD")
-        assert wine_app._vivino_country_code("GBP") == ("GB", "GBP")
-        assert wine_app._vivino_country_code("CHF") == ("CH", "CHF")
-
-    def test_unknown_currency_default(self):
-        assert wine_app._vivino_country_code("JPY") == ("US", "USD")
-
-
 # ── _wine_json_schema() / _wine_json_rules() ─────────────────────────────────
 
 class TestWineJsonSchema:
