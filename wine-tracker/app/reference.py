@@ -70,54 +70,82 @@ def create_reference_tables(db):
 
 # ── Seeding (idempotent, update-safe: only inserts missing built-ins) ─────────
 
-def _exists(db, sql, params):
-    return db.execute(sql, params).fetchone() is not None
-
-
 def seed_reference_data(db):
     """Insert any missing built-in rows. Never overwrites or deletes existing
-    rows, so user customs and manual edits to built-ins survive re-seeding."""
-    for i, c in enumerate(rd.COUNTRIES):
-        if not _exists(db, "SELECT 1 FROM ref_countries WHERE code=?", (c["code"],)):
-            db.execute(
-                "INSERT INTO ref_countries (code,name,norm,lat,lon,aliases,is_custom,sort_order) "
-                "VALUES (?,?,?,?,?,?,0,?)",
-                (c["code"], c["name"], normalize_name(c["name"]), c["lat"], c["lon"],
-                 json.dumps(c.get("aliases", [])), i))
+    rows, so user customs and manual edits to built-ins survive re-seeding.
 
+    Uses one existence query + a single executemany per entity, so seeding a
+    fresh DB (tests, first install) is a handful of statements instead of one
+    per row.
+    """
+    def _al(x):
+        return json.dumps(x.get("aliases", []))
+
+    # `seen` starts from existing DB keys and also absorbs duplicates *within*
+    # the seed list (e.g. gavinr lists territories under a shared ISO code).
+    # countries - natural key: code
+    seen = {r[0] for r in db.execute("SELECT code FROM ref_countries")}
+    rows = []
+    for i, c in enumerate(rd.COUNTRIES):
+        if c["code"] in seen:
+            continue
+        seen.add(c["code"])
+        rows.append((c["code"], c["name"], normalize_name(c["name"]), c["lat"], c["lon"], _al(c), i))
+    if rows:
+        db.executemany("INSERT INTO ref_countries (code,name,norm,lat,lon,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?,?,?)", rows)
+
+    # regions - natural key: (norm, country_code)
+    seen = {(r[0], r[1]) for r in db.execute("SELECT norm, country_code FROM ref_regions")}
+    rows = []
     for i, r in enumerate(rd.REGIONS):
         norm = normalize_name(r["name"])
-        if not _exists(db, "SELECT 1 FROM ref_regions WHERE norm=? AND country_code=?",
-                       (norm, r["country_code"])):
-            db.execute(
-                "INSERT INTO ref_regions (name,norm,country_code,lat,lon,aliases,is_custom,sort_order) "
-                "VALUES (?,?,?,?,?,?,0,?)",
-                (r["name"], norm, r["country_code"], r.get("lat"), r.get("lon"),
-                 json.dumps(r.get("aliases", [])), i))
+        key = (norm, r["country_code"])
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append((r["name"], norm, r["country_code"], r.get("lat"), r.get("lon"), _al(r), i))
+    if rows:
+        db.executemany("INSERT INTO ref_regions (name,norm,country_code,lat,lon,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?,?,?)", rows)
 
+    # grapes - natural key: norm
+    seen = {r[0] for r in db.execute("SELECT norm FROM ref_grapes")}
+    rows = []
     for i, g in enumerate(rd.GRAPES):
         norm = normalize_name(g["name"])
-        if not _exists(db, "SELECT 1 FROM ref_grapes WHERE norm=?", (norm,)):
-            db.execute(
-                "INSERT INTO ref_grapes (name,norm,color,aliases,is_custom,sort_order) "
-                "VALUES (?,?,?,?,0,?)",
-                (g["name"], norm, g.get("color"), json.dumps(g.get("aliases", [])), i))
+        if norm in seen:
+            continue
+        seen.add(norm)
+        rows.append((g["name"], norm, g.get("color"), _al(g), i))
+    if rows:
+        db.executemany("INSERT INTO ref_grapes (name,norm,color,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?)", rows)
 
+    # wine_types - natural key: key
+    seen = {r[0] for r in db.execute("SELECT key FROM ref_wine_types")}
+    rows = []
     for i, w in enumerate(rd.WINE_TYPES):
-        if not _exists(db, "SELECT 1 FROM ref_wine_types WHERE key=?", (w["key"],)):
-            db.execute(
-                "INSERT INTO ref_wine_types (key,norm,color,aliases,is_custom,sort_order) "
-                "VALUES (?,?,?,?,0,?)",
-                (w["key"], normalize_name(w["key"]), w.get("color"),
-                 json.dumps(w.get("aliases", [])), i))
+        if w["key"] in seen:
+            continue
+        seen.add(w["key"])
+        rows.append((w["key"], normalize_name(w["key"]), w.get("color"), _al(w), i))
+    if rows:
+        db.executemany("INSERT INTO ref_wine_types (key,norm,color,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?)", rows)
 
+    # bottle_formats - natural key: norm
+    seen = {r[0] for r in db.execute("SELECT norm FROM ref_bottle_formats")}
+    rows = []
     for i, b in enumerate(rd.BOTTLE_FORMATS):
         norm = normalize_name(b["name"])
-        if not _exists(db, "SELECT 1 FROM ref_bottle_formats WHERE norm=?", (norm,)):
-            db.execute(
-                "INSERT INTO ref_bottle_formats (name,norm,liters,is_custom,sort_order) "
-                "VALUES (?,?,?,0,?)",
-                (b["name"], norm, b["liters"], i))
+        if norm in seen:
+            continue
+        seen.add(norm)
+        rows.append((b["name"], norm, b["liters"], i))
+    if rows:
+        db.executemany("INSERT INTO ref_bottle_formats (name,norm,liters,sort_order) "
+                       "VALUES (?,?,?,?)", rows)
 
 
 # ── Matching ──────────────────────────────────────────────────────────────────

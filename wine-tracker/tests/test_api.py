@@ -1274,6 +1274,15 @@ class TestChatWineEditing:
 
     CHAT_OPTS = TestWineChat.CHAT_OPTS
 
+    @pytest.fixture(autouse=True)
+    def _stub_enrichment_provider(self):
+        """Auto-enrichment on chat-add calls the provider (_call_anthropic per
+        CHAT_OPTS); unmocked it makes real HTTP with retries (~15s per test).
+        Stub it to empty JSON by default. Tests that assert enrichment mock
+        _call_anthropic themselves, and that decorator overrides this stub."""
+        with patch("app._call_anthropic", return_value="{}"):
+            yield
+
     @patch("app._call_chat")
     @patch("app.load_options")
     def test_chat_add_wine_creates_wine(self, mock_opts, mock_chat, client):
