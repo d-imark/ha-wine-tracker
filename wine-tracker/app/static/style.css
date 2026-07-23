@@ -840,16 +840,14 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .rating-slider { flex: 1; accent-color: var(--gold); cursor: pointer; height: 22px; }
 .rating-slider-val { min-width: 2.2em; text-align: right; font-weight: 600; color: var(--gold); }
 
-/* Vivino community rating - deliberately subdued, secondary to the personal note */
-.vivino-badge { font-size: .75rem; color: var(--muted); white-space: nowrap; }
-/* Separator dot, only when a personal rating precedes the Vivino note */
-.rating-num ~ .vivino-badge::before {
-  content: "\00b7"; margin: 0 .3rem 0 .1rem; color: var(--muted);
-}
+/* Vivino community rating - deliberately subdued, secondary to the personal note.
+   It sits on its own small line beneath the personal rating. */
+.vivino-badge { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.rating-line .vivino-badge { flex-basis: 100%; }
 
-/* Row combining personal stars + numeric + Vivino note (cards, detail).
-   The personal note is the hero: bigger gold stars + a bold gold number. */
-.rating-line { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+/* Row for the personal rating (hero: bigger gold stars + bold gold number);
+   the Vivino note wraps onto its own line below. */
+.rating-line { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
 .rating-line .star-rating { font-size: 1rem; }
 .rating-num { font-size: .95rem; font-weight: 700; color: var(--gold); }
 
