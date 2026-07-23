@@ -118,7 +118,7 @@ function vivinoBadgeHtml(value, label) {
   var v = Number(value);
   if (!v) return '';
   return '<span class="vivino-badge" title="' + (label || 'Vivino') +
-    '">Vivino ' + v.toFixed(1) + '</span>';
+    '"><i class="mdi mdi-glass-wine"></i>' + v.toFixed(1) + '</span>';
 }
 
 // ── Vivino ID popover ─────────────────────────────────────────────────────────

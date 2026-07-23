@@ -840,14 +840,18 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .rating-slider { flex: 1; accent-color: var(--gold); cursor: pointer; height: 22px; }
 .rating-slider-val { min-width: 2.2em; text-align: right; font-weight: 600; color: var(--gold); }
 
-/* Vivino community rating - deliberately subdued, secondary to the personal note.
-   It sits on its own small line beneath the personal rating. */
-.vivino-badge { font-size: .72rem; color: var(--muted); white-space: nowrap; }
-.rating-line .vivino-badge { flex-basis: 100%; }
+/* Vivino community rating - a small, subdued neutral pill that sits right after
+   the personal number, clearly secondary to the gold stars. */
+.vivino-badge {
+  display: inline-flex; align-items: center; gap: .15rem;
+  font-size: .7rem; color: var(--muted); white-space: nowrap;
+  background: var(--empty); padding: .06rem .38rem; border-radius: 4px;
+}
+.vivino-badge .mdi { font-size: .8rem; opacity: .85; }
 
-/* Row for the personal rating (hero: bigger gold stars + bold gold number);
-   the Vivino note wraps onto its own line below. */
-.rating-line { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+/* Row for the personal rating (hero: bigger gold stars + bold gold number),
+   followed by the small Vivino pill. */
+.rating-line { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .rating-line .star-rating { font-size: 1rem; }
 .rating-num { font-size: .95rem; font-weight: 700; color: var(--gold); }
 
