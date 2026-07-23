@@ -23,7 +23,11 @@
 .ref-badge { font-size: .68rem; padding: .08rem .4rem; border-radius: 4px; white-space: nowrap; }
 .ref-badge.builtin { background: var(--empty); color: var(--muted); }
 .ref-badge.custom { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-.ref-row-actions { display: flex; gap: .3rem; justify-content: flex-end; }
+/* Badge + actions shrink to content so the data columns get the width */
+.ref-table .ref-badge-col, .ref-table .ref-actions-col { width: 1%; white-space: nowrap; }
+.ref-table td.ref-badge-col { text-align: right; }
+.ref-row-actions { text-align: right; white-space: nowrap; padding-left: 1rem; }
+.ref-row-actions button { margin-left: .35rem; }
 .ref-row-actions button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 1.05rem; }
 .ref-row-actions button:hover { color: var(--accent); }
 .ref-row-actions button.danger:hover { color: #e74c3c; }
@@ -155,13 +159,13 @@ function refRender(){
   });
   var html = '<table class="ref-table"><thead><tr>';
   ent.cols.forEach(function(c){ html += '<th>' + escapeHtml(c[1]) + '</th>'; });
-  html += '<th></th><th></th></tr></thead><tbody>';
+  html += '<th class="ref-badge-col"></th><th class="ref-actions-col"></th></tr></thead><tbody>';
   if (!rows.length) { html += '</tbody></table><div class="ref-empty">' + L('ref_none','No entries') + '</div>'; document.getElementById('refList').innerHTML = html; return; }
   rows.forEach(function(it){
     html += '<tr>';
     ent.cols.forEach(function(c){ html += '<td>' + cellValue(it, c[0]) + '</td>'; });
-    html += '<td><span class="ref-badge ' + (it.is_custom?'custom':'builtin') + '">' + (it.is_custom?L('ref_badge_custom','Custom'):L('ref_badge_builtin','Standard')) + '</span></td>';
-    html += '<td class="ref-row-actions">';
+    html += '<td class="ref-badge-col"><span class="ref-badge ' + (it.is_custom?'custom':'builtin') + '">' + (it.is_custom?L('ref_badge_custom','Custom'):L('ref_badge_builtin','Standard')) + '</span></td>';
+    html += '<td class="ref-row-actions ref-actions-col">';
     if (it.is_custom && !AUTH_READONLY) {
       html += '<button title="' + L('ref_edit','Edit') + '" onclick=\'refOpenEdit(' + JSON.stringify(it) + ')\'><i class="mdi mdi-pencil"></i></button>';
       html += '<button class="danger" title="' + L('ref_delete','Delete') + '" onclick="refDelete(' + it.id + ')"><i class="mdi mdi-delete"></i></button>';
