@@ -9,6 +9,7 @@ from datetime import date, datetime
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify, g, session, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from translations import TRANSLATIONS
+import reference
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -577,6 +578,10 @@ def init_db():
                 updated    TEXT NOT NULL
             )
         """)
+
+        # ── reference-data tables + bundled seed (TP1) ────────────────────
+        reference.create_reference_tables(db)
+        reference.seed_reference_data(db)
 
         db.commit()
 
@@ -3024,6 +3029,17 @@ def api_get_wine(wine_id):
     if not wine:
         return jsonify({"ok": False, "error": "not found"}), 404
     return jsonify({"ok": True, "wine": wine_json(wine_id)})
+
+
+@app.route("/api/reference/<entity>")
+def api_reference(entity):
+    """List bundled + custom reference entries for an entity (TP1)."""
+    db = get_db()
+    try:
+        items = reference.list_reference(db, entity, request.args.get("country"))
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    return jsonify({"ok": True, "items": items})
 
 
 @app.route("/api/summary")
