@@ -780,7 +780,62 @@ function reloadViaAi() {
   });
 }
 
+// Merge a Vivino result into the form. allowSetId controls whether the
+// vivino_id field may be written - we only set it from a name search (when no
+// id was stored yet), never overwrite an id the user already has.
+function applyVivinoResult(item, allowSetId) {
+  var fields = {};
+  if (item.name) fields.name = item.name;
+  if (item.year) fields.vintage = item.year;
+  if (item.wine_type) fields.wine_type = item.wine_type;
+  if (item.region) fields.region = item.region;
+  if (item.grape) fields.grape = item.grape;
+  if (item.price) fields.price = item.price;
+  if (item.rating) fields.rating = item.rating;
+
+  if (allowSetId) {
+    var vivinoField = document.getElementById('wine_vivino_id');
+    if (vivinoField && item.vivino_id) {
+      vivinoField.value = item.vivino_id;
+    }
+  }
+
+  var hasImage = document.getElementById('aiImageField').value
+    || document.querySelector('#winePreview img');
+  if (!hasImage && item.image_url) {
+    downloadVivinoImage(item.image_url);
+  }
+
+  populateFormMerge(fields, null);
+}
+
+function _handleVivinoReloadResponse(data) {
+  setReloadLoading(false);
+  if (data.ok && data.results && data.results.length > 0) {
+    // ID lookup already has the right id stored; only a name search may set it.
+    var fromNameSearch = arguments.length > 1 ? arguments[1] : true;
+    applyVivinoResult(data.results[0], fromNameSearch);
+  } else {
+    showReloadToast(T.vivino_no_results, false);
+  }
+}
+
 function reloadViaVivino() {
+  // If we already know the exact wine, reload it deterministically by id
+  // instead of guessing via a name search.
+  var vivinoId = document.getElementById('wine_vivino_id').value.trim();
+  if (vivinoId) {
+    setReloadLoading(true);
+    fetch(INGRESS + '/api/vivino-search?id=' + encodeURIComponent(vivinoId))
+    .then(function(r) { return r.json(); })
+    .then(function(data) { _handleVivinoReloadResponse(data, false); })
+    .catch(function() {
+      setReloadLoading(false);
+      showReloadToast(T.vivino_error, false);
+    });
+    return;
+  }
+
   var wineName = document.getElementById('wine_name').value.trim();
   var wineYear = document.getElementById('wine_year').value.trim();
   var query = wineName + (wineYear ? ' ' + wineYear : '');
@@ -794,35 +849,7 @@ function reloadViaVivino() {
 
   fetch(INGRESS + '/api/vivino-search?q=' + encodeURIComponent(query))
   .then(function(r) { return r.json(); })
-  .then(function(data) {
-    setReloadLoading(false);
-    if (data.ok && data.results && data.results.length > 0) {
-      var item = data.results[0];
-      var fields = {};
-      if (item.name) fields.name = item.name;
-      if (item.year) fields.vintage = item.year;
-      if (item.wine_type) fields.wine_type = item.wine_type;
-      if (item.region) fields.region = item.region;
-      if (item.grape) fields.grape = item.grape;
-      if (item.price) fields.price = item.price;
-      if (item.rating) fields.rating = item.rating;
-
-      var vivinoField = document.getElementById('wine_vivino_id');
-      if (vivinoField && item.vivino_id) {
-        vivinoField.value = item.vivino_id;
-      }
-
-      var hasImage = document.getElementById('aiImageField').value
-        || document.querySelector('#winePreview img');
-      if (!hasImage && item.image_url) {
-        downloadVivinoImage(item.image_url);
-      }
-
-      populateFormMerge(fields, null);
-    } else {
-      showReloadToast(T.vivino_no_results, false);
-    }
-  })
+  .then(function(data) { _handleVivinoReloadResponse(data, true); })
   .catch(function() {
     setReloadLoading(false);
     showReloadToast(T.vivino_error, false);

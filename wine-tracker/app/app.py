@@ -2019,6 +2019,43 @@ def _algolia_wine_query(session, query, hits=24):
     resp.raise_for_status()
     return resp.json()
 
+
+def _algolia_get_wine(session, wine_id):
+    """Fetch a single wine from the Algolia catalog by its Vivino id.
+
+    Uses Algolia getObject (deterministic - the id is the objectID). Returns a
+    dict shaped like a search response ({"hits": [...]}) so the caller can reuse
+    the same parsing, an empty {"hits": []} if the id is unknown (404), or None
+    if credentials are unavailable. Propagates other requests exceptions.
+    """
+    from urllib.parse import quote
+
+    creds = _get_algolia_credentials(session)
+    if not creds:
+        return None
+    app_id, api_key, index = creds
+
+    url = f"https://{app_id}-dsn.algolia.net/1/indexes/{index}/{quote(str(wine_id))}"
+    resp = session.get(
+        url,
+        params={
+            "x-algolia-application-id": app_id,
+            "x-algolia-api-key": api_key,
+            "x-algolia-agent": "Algolia for JavaScript (4.x); Browser (lite)",
+        },
+        headers={
+            "Origin": "https://www.vivino.com",
+            "Referer": "https://www.vivino.com/",
+        },
+        timeout=10,
+        verify=_ssl_verify(),
+    )
+    if resp.status_code == 404:
+        return {"hits": []}
+    resp.raise_for_status()
+    return {"hits": [resp.json()]}
+
+
 # Browser headers for the warm-up request so Cloudflare issues session cookies.
 _VIVINO_HEADERS = {
     "User-Agent": (
@@ -2044,18 +2081,26 @@ def vivino_search():
     (e.g. small Alsace estates). Public, search-only Algolia credentials are
     extracted from Vivino's live JS at runtime and cached; they are never
     stored in this repository.
+
+    With ?id=<vivino_id> the exact wine is fetched by id (deterministic
+    getObject) instead of a name search - used to reload a wine whose Vivino id
+    is already known.
     """
     import requests as req
 
+    wine_id = request.args.get("id", "").strip()
     query = request.args.get("q", "").strip()
-    if len(query) < 2:
+    if not wine_id and len(query) < 2:
         return jsonify({"ok": False, "error": "query_too_short"}), 400
 
     session = req.Session()
     session.headers.update(_VIVINO_HEADERS)
 
     try:
-        data = _algolia_wine_query(session, query)
+        if wine_id:
+            data = _algolia_get_wine(session, wine_id)
+        else:
+            data = _algolia_wine_query(session, query)
     except req.exceptions.Timeout:
         return jsonify({"ok": False, "error": "timeout"}), 504
     except req.exceptions.HTTPError as e:

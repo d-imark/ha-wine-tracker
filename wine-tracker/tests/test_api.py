@@ -284,6 +284,22 @@ def _mock_algolia(MockSession, monkeypatch, *, response=None, raise_error=None):
     return mock_session
 
 
+def _mock_algolia_getobject(MockSession, monkeypatch, *, obj=None, status=200):
+    """Mock the Algolia getObject GET used by an ?id= lookup, seeding creds."""
+    monkeypatch.setattr(wine_app, "_ALGOLIA_CREDS", ("TESTAPPID", "testkey", "WINES_prod"))
+    monkeypatch.setattr(wine_app, "_GRAPE_MAP", {7: "Gewürztraminer"})
+
+    mock_session = MagicMock()
+    MockSession.return_value = mock_session
+
+    resp = MagicMock()
+    resp.status_code = status
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = obj if obj is not None else _algolia_hit()
+    mock_session.get.return_value = resp
+    return mock_session
+
+
 class TestVivinoSearch:
     def test_vivino_headers_do_not_request_brotli(self):
         """requests has no brotli decoder in this project's deps, so a 'br'
@@ -322,6 +338,37 @@ class TestVivinoSearch:
         assert "Alsace Grand Cru 'Goldert'" in r["region"]
         assert r["rating"] == 4.2
         assert r["vivino_id"] == 1675990
+
+    @patch("requests.Session")
+    def test_vivino_search_by_id_fetches_exact_wine(self, MockSession, monkeypatch, client):
+        """?id= must fetch exactly that wine via Algolia getObject (deterministic),
+        never a name search. This is what a reload of a wine with a stored
+        vivino_id relies on."""
+        _mock_algolia_getobject(MockSession, monkeypatch, obj=_algolia_hit())
+
+        resp = client.get("/api/vivino-search?id=1675990")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert len(data["results"]) == 1
+        assert data["results"][0]["vivino_id"] == 1675990
+        assert data["results"][0]["name"] == \
+            "Maurice Schueller Gewürztraminer Alsace Grand Cru 'Goldert'"
+        # Must have used getObject (GET), not the search query (POST)
+        assert MockSession.return_value.get.called
+        assert not MockSession.return_value.post.called
+
+    @patch("requests.Session")
+    def test_vivino_search_by_id_not_found(self, MockSession, monkeypatch, client):
+        """A 404 from getObject (unknown/deleted id) yields ok=True, empty results
+        - it must not fall through to a misleading broad search."""
+        _mock_algolia_getobject(MockSession, monkeypatch, obj=None, status=404)
+
+        resp = client.get("/api/vivino-search?id=999999999")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["results"] == []
 
     @patch("requests.Session")
     def test_vivino_search_no_results(self, MockSession, monkeypatch, client):
