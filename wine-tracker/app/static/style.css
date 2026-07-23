@@ -835,10 +835,12 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .star-rating .sr-fill::before { content: "\2605\2605\2605\2605\2605"; color: var(--gold); letter-spacing: 2px; }
 
 /* Personal rating input: slider + live star preview + numeric readout */
-.rating-input { display: flex; align-items: center; gap: .6rem; }
+.rating-input { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .rating-input .star-rating { font-size: 1.35rem; }
-.rating-slider { flex: 1; accent-color: var(--gold); cursor: pointer; height: 22px; }
+/* Narrower so the Vivino reference badge fits on the same row */
+.rating-slider { flex: 0 1 150px; accent-color: var(--gold); cursor: pointer; height: 22px; }
 .rating-slider-val { min-width: 2.2em; text-align: right; font-weight: 600; color: var(--gold); }
+.rating-input .vivino-ref:empty { display: none; }
 
 /* Vivino community rating - a small, subdued neutral pill that sits right after
    the personal number, clearly secondary to the gold stars. */

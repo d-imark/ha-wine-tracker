@@ -247,6 +247,7 @@ function openWineModal(id, wine) {
   document.getElementById('wine_rating').value = isEdit ? (w.rating || 0) : 0;
   document.getElementById('wine_vivino_rating').value = isEdit ? (w.vivino_rating || '') : '';
   updateRatingPreview();
+  updateVivinoRef();
 
   // Placeholders: show in add mode, hide in edit mode
   Object.keys(_placeholders).forEach(function(pid) {
@@ -504,6 +505,7 @@ function selectVivinoResult(index) {
   document.getElementById('wine_vivino_id').value = item.vivino_id || '';
   // The Vivino community note goes into its own field, never the personal rating.
   document.getElementById('wine_vivino_rating').value = item.rating || '';
+  updateVivinoRef();
 
   populateFormFromAi(fields, null);
 
@@ -558,6 +560,13 @@ function updateRatingPreview() {
   var val = parseFloat(document.getElementById('wine_rating').value) || 0;
   document.getElementById('ratingStarsFill').style.width = (val / 5 * 100) + '%';
   document.getElementById('ratingVal').textContent = val.toFixed(1);
+}
+
+// Show the stored Vivino rating next to the slider as a read-only reference.
+function updateVivinoRef() {
+  var el = document.getElementById('ratingVivinoRef');
+  if (!el) return;
+  el.innerHTML = vivinoBadgeHtml(document.getElementById('wine_vivino_rating').value, T.vivino_rating_label);
 }
 
 function startAiAnalysis(file) {
@@ -977,7 +986,7 @@ function _vrApplySideEffects(item) {
   // The Vivino community note is always refreshed to the current value (it's
   // read-only Vivino data, not the user's personal rating).
   var vr = document.getElementById('wine_vivino_rating');
-  if (vr && item.rating) { vr.value = item.rating; }
+  if (vr && item.rating) { vr.value = item.rating; updateVivinoRef(); }
 }
 
 function vrConfirm() {
