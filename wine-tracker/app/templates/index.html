@@ -21,6 +21,7 @@
     {% if ai_enabled %}<a class="nav-link" href="#" id="chatFab" onclick="event.preventDefault();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a class="nav-link" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
     <a class="nav-link" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
+    <a class="nav-link" href="{{ ingress }}/reference">{{ t.ref_title }}</a>
   </nav>
   <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
   <div class="nav-menu" id="navMenu">
@@ -28,6 +29,7 @@
     {% if ai_enabled %}<a href="#" class="nav-menu-item" onclick="event.preventDefault();toggleNavMenu();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a href="{{ ingress }}/timeline" class="nav-menu-item">{{ t.timeline }}</a>
     <a href="{{ ingress }}/stats" class="nav-menu-item">{{ t.stats_title }}</a>
+    <a href="{{ ingress }}/reference" class="nav-menu-item">{{ t.ref_title }}</a>
   </div>
   <div class="header-spacer"></div>
   <div id="bottleCountBadge">
@@ -101,7 +103,7 @@
   {% for w in wines %}
   <div class="card {% if w['quantity'] == 0 %}empty{% endif %}" data-id="{{ w['id'] }}"
        data-name="{{ w['name'] }}" data-year="{{ w['year'] or '' }}"
-       data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}"
+       data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}" data-country="{{ w['country'] or '' }}"
        data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}" data-vivino_rating="{{ w['vivino_rating'] or '' }}"
        data-notes="{{ w['notes'] or '' }}" data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
@@ -114,7 +116,7 @@
     {% if w['quantity'] == 0 %}
       <div class="ribbon ribbon-empty">{{ t.ribbon_empty }}</div>
     {% elif w['type'] %}
-      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}">{{ w['type'] | wine_type }}</div>
+      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}"{% if w['type'] in wine_type_custom_keys %} style="background:{{ wine_type_colors[w['type']] }};color:#fff"{% endif %}>{{ w['type'] | wine_type }}</div>
     {% endif %}
 
     <div class="card-img{% if w['image'] %} shimmer{% endif %}" onclick="cardImgClick(this)">
@@ -252,6 +254,12 @@
 const INGRESS = '{{ ingress }}';
 const CURRENCY = '{{ currency }}';
 const T = {{ t | tojson }};
+var WINE_TYPE_COLORS = {{ wine_type_colors | tojson }};
+var WINE_TYPE_CUSTOM = {{ wine_type_custom_keys | tojson }};
+function ribbonStyle(type) {
+  return (WINE_TYPE_CUSTOM.indexOf(type) >= 0 && WINE_TYPE_COLORS[type])
+    ? ' style="background:' + WINE_TYPE_COLORS[type] + ';color:#fff"' : '';
+}
 const AUTH_READONLY = {{ auth_readonly | tojson }};
 window.T = T;
 window.INGRESS = INGRESS;
@@ -763,7 +771,7 @@ function getCardData(el) {
   const d = card.dataset;
   return { id: d.id, wine: {
     name: d.name, year: d.year ? parseInt(d.year) : null,
-    type: d.type || null, region: d.region || null,
+    type: d.type || null, region: d.region || null, country: d.country || null,
     quantity: parseInt(d.quantity) || 0, rating: parseFloat(d.rating) || 0,
     vivino_rating: d.vivino_rating ? parseFloat(d.vivino_rating) : null,
     notes: d.notes || '', image: d.image || null,
@@ -964,7 +972,7 @@ function openViewModal(id, wine) {
   if (w.type) {
     var typeKey = 'wine_type_' + w.type;
     var typeLabel = T[typeKey] || w.type;
-    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '">' + escapeHtml(typeLabel) + '</span>';
+    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '"' + ribbonStyle(w.type) + '>' + escapeHtml(typeLabel) + '</span>';
   }
   if (w.image) {
     html += '<div class="view-photo-panel" onclick="openLightbox(\'' + INGRESS + '/uploads/' + encodeURIComponent(w.image) + '\')">'
@@ -985,6 +993,7 @@ function openViewModal(id, wine) {
   var meta = [];
   if (w.year) meta.push('<span>' + w.year + '</span>');
   if (w.region) meta.push('<span>' + escapeHtml(w.region) + '</span>');
+  if (w.country) meta.push('<span>' + escapeHtml(w.country) + '</span>');
   if (meta.length) html += '<div class="view-meta">' + meta.join('') + '</div>';
 
   // Rating: personal stars (partial fill) + numeric + Vivino badge
@@ -1188,7 +1197,7 @@ function renderCard(w) {
     ribbonHtml = '<div class="ribbon ribbon-empty">' + (T.ribbon_empty || '') + '</div>';
   } else if (w.type) {
     var ribbonCls = w.type.toLowerCase().replace(/é/g,'e').replace(/ö/g,'oe');
-    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls + '">' + escapeHtml(T['wine_type_' + w.type] || w.type) + '</div>';
+    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls + '"' + ribbonStyle(w.type) + '>' + escapeHtml(T['wine_type_' + w.type] || w.type) + '</div>';
   }
 
   return ribbonHtml +
@@ -1217,6 +1226,7 @@ function updateCardData(card, w) {
   card.dataset.year = w.year || '';
   card.dataset.type = w.type || '';
   card.dataset.region = w.region || '';
+  card.dataset.country = w.country || '';
   card.dataset.quantity = w.quantity;
   card.dataset.rating = w.rating || 0;
   card.dataset.vivino_rating = w.vivino_rating || '';

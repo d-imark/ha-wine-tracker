@@ -185,6 +185,18 @@
   </div>
 </div>
 
+<!-- ═══════════ REFERENCE RECONCILE (save-time, TP3b) ═══════════ -->
+<div class="modal-overlay" id="reconcileModal">
+  <div class="modal">
+    <div class="modal-header"><span>{{ t.rc_title }}</span><button class="modal-close" type="button" onclick="closeModal('reconcileModal')">&times;</button></div>
+    <div class="modal-body" id="reconcileBody"></div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:.6rem;padding:.75rem 1.25rem 1.25rem;border-top:1px solid var(--border);">
+      <button type="button" class="btn-cancel" onclick="closeModal('reconcileModal')">{{ t.btn_cancel }}</button>
+      <button type="button" class="btn-submit" style="width:auto;padding:0 1.2rem;" onclick="applyReconcile()">{{ t.rc_apply }}</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
@@ -202,6 +214,68 @@ var _placeholders = {};
   var el = document.getElementById(id);
   if (el) _placeholders[id] = el.placeholder || '';
 });
+
+// ── Reference-driven pick lists (TP3a) ────────────────────────────────────────
+var _refCountryByName = {};   // lowercased name/alias -> ISO code
+var _refListsLoaded = false;
+var _lastRegionCode;
+
+function _fillDatalist(id, values, keepExisting) {
+  var dl = document.getElementById(id);
+  if (!dl) return;
+  var out = [], seen = {};
+  if (keepExisting) {
+    Array.prototype.forEach.call(dl.querySelectorAll('option'), function(o) {
+      if (o.value && !seen[o.value.toLowerCase()]) { seen[o.value.toLowerCase()] = 1; out.push(o.value); }
+    });
+  }
+  (values || []).forEach(function(v) {
+    if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); }
+  });
+  dl.innerHTML = out.map(function(v) { return '<option value="' + String(v).replace(/"/g, '&quot;') + '">'; }).join('');
+}
+
+// Flatten reference items to their name + aliases, so typing an alias
+// (e.g. "Schweiz" for Switzerland) also finds the entry in the datalist.
+function _refValues(items) {
+  var out = [];
+  (items || []).forEach(function(it) {
+    if (it.name) out.push(it.name);
+    (it.aliases || []).forEach(function(a) { if (a) out.push(a); });
+  });
+  return out;
+}
+
+function loadReferenceLists() {
+  if (_refListsLoaded) return;
+  _refListsLoaded = true;
+  fetch(INGRESS + '/api/reference/countries').then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.ok) return;
+    d.items.forEach(function(c) {
+      _refCountryByName[c.name.toLowerCase()] = c.code;
+      (c.aliases || []).forEach(function(a) { _refCountryByName[a.toLowerCase()] = c.code; });
+    });
+    _fillDatalist('countryList', _refValues(d.items), false);
+    _lastRegionCode = undefined;
+    onCountryChange();
+  });
+  fetch(INGRESS + '/api/reference/grapes').then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) _fillDatalist('grapeList', _refValues(d.items), true);
+  });
+}
+
+// Refill region suggestions for the selected country (cascading). Guarded so we
+// only refetch when the resolved country code actually changes.
+function onCountryChange() {
+  var name = (document.getElementById('wine_country').value || '').trim().toLowerCase();
+  var code = _refCountryByName[name] || '';
+  if (code === _lastRegionCode) return;
+  _lastRegionCode = code;
+  var url = INGRESS + '/api/reference/regions' + (code ? '?country=' + encodeURIComponent(code) : '');
+  fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) _fillDatalist('regionList', _refValues(d.items), false);
+  });
+}
 
 function openWineModal(id, wine) {
   _reloadMode = false;
@@ -229,7 +303,10 @@ function openWineModal(id, wine) {
   document.getElementById('wine_year').value = w.year || '';
   document.getElementById('wine_qty').value = w.quantity !== undefined ? w.quantity : 1;
   document.getElementById('wine_type').value = w.type || '';
+  document.getElementById('wine_country').value = w.country || '';
   document.getElementById('wine_region').value = w.region || '';
+  loadReferenceLists();
+  onCountryChange();
   document.getElementById('wine_notes').value = w.notes || '';
   document.getElementById('wine_purchased_at').value = w.purchased_at || '';
   document.getElementById('wine_price').value = w.price || '';
@@ -1006,7 +1083,10 @@ function vrConfirm() {
 
 document.getElementById('wineForm').addEventListener('submit', function(e) {
   e.preventDefault();
-  var form = this;
+  reconcileThenSubmit(this);
+});
+
+function _doWineSubmit(form) {
   var fd = new FormData(form);
   fetch(form.action, {
     method: 'POST', body: fd,
@@ -1022,7 +1102,87 @@ document.getElementById('wineForm').addEventListener('submit', function(e) {
       window.location.reload();
     }
   });
-});
+}
+
+// ── Save-time reference reconciliation (TP3b) ────────────────────────────────
+var _rcPending = null;
+
+function reconcileThenSubmit(form) {
+  var payload = {
+    grape: (document.getElementById('wine_grape').value || '').trim(),
+    region: (document.getElementById('wine_region').value || '').trim(),
+    country: (document.getElementById('wine_country').value || '').trim()
+  };
+  if (!payload.grape && !payload.region) { _doWineSubmit(form); return; }
+  fetch(INGRESS + '/api/reference/reconcile', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (!d.ok || !d.items || !d.items.length) { _doWineSubmit(form); return; }
+    _rcPending = { form: form, items: d.items };
+    renderReconcile(d.items);
+    openModal('reconcileModal');
+  })
+  .catch(function() { _doWineSubmit(form); });  // reconcile must never block saving
+}
+
+function renderReconcile(items) {
+  var esc = function(s) { return (s || '').replace(/</g, '&lt;'); };
+  var entLabel = function(e) { return e === 'grape' ? (T.label_grape || 'Grape') : (T.label_region || 'Region'); };
+  document.getElementById('reconcileBody').innerHTML = items.map(function(it, i) {
+    var opts = '';
+    it.suggestions.forEach(function(s) {
+      var isAi = it.ai_pick && it.ai_pick === s.name;
+      opts += '<label class="rc-opt"><input type="radio" name="rc_' + i + '" value="known:' + s.id + '"' +
+        (isAi ? ' checked' : '') + '> ' + esc(s.name) +
+        (isAi ? ' <span class="rc-ai">' + (T.rc_ai || 'AI') + '</span>' : '') + '</label>';
+    });
+    opts += '<label class="rc-opt"><input type="radio" name="rc_' + i + '" value="new"> ' +
+      (T.rc_create_new || 'Add new') + ' „' + esc(it.value) + '“</label>';
+    opts += '<label class="rc-opt"><input type="radio" name="rc_' + i + '" value="keep"' +
+      (it.ai_pick ? '' : ' checked') + '> ' + (T.rc_keep_text || 'Keep') + '</label>';
+    return '<div class="rc-item"><div class="rc-head">' + entLabel(it.entity) + ': <b>' + esc(it.value) +
+      '</b></div><div class="rc-hint">' + (T.rc_hint || '') + '</div>' + opts + '</div>';
+  }).join('');
+}
+
+function applyReconcile() {
+  if (!_rcPending) { closeModal('reconcileModal'); return; }
+  var items = _rcPending.items, form = _rcPending.form;
+  var plural = { grape: 'grapes', region: 'regions' };
+  var tasks = [];
+  items.forEach(function(it, i) {
+    var sel = document.querySelector('input[name="rc_' + i + '"]:checked');
+    var val = sel ? sel.value : 'keep';
+    var fieldId = it.entity === 'grape' ? 'wine_grape' : 'wine_region';
+    if (val.indexOf('known:') === 0) {
+      var id = val.split(':')[1];
+      var sug = it.suggestions.filter(function(s) { return String(s.id) === id; })[0];
+      if (sug) {
+        document.getElementById(fieldId).value = sug.name;  // canonical name
+        tasks.push(fetch(INGRESS + '/api/reference/' + it.entity + '/' + id + '/alias', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify({ alias: it.value })
+        }));  // teach the alias so it matches automatically next time
+      }
+    } else if (val === 'new') {
+      var body = { name: it.value };
+      if (it.entity === 'region' && it.country_code) body.country_code = it.country_code;
+      tasks.push(fetch(INGRESS + '/api/reference/' + plural[it.entity], {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify(body)
+      }));
+    }
+    // 'keep' -> leave the free-text value as-is
+  });
+  Promise.all(tasks.map(function(p) { return p.catch(function() {}); })).then(function() {
+    _rcPending = null;
+    closeModal('reconcileModal');
+    _doWineSubmit(form);
+  });
+}
 
 // ── Modal overlay / ESC handling for wineModal ──────────────────────────────
 // Other pages set up generic overlay click handlers; we need the wineModal-specific

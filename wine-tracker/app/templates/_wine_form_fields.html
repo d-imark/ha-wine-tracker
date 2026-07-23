@@ -24,20 +24,26 @@
     <label>{{ t.label_type }}</label>
     <select name="type" id="wine_type">
       <option value="">{{ t.type_select_default }}</option>
-      {% for wt in wine_types %}
-      <option value="{{ wt }}">{{ wt | wine_type }}</option>
+      {% for wt in wine_types_ref %}
+      <option value="{{ wt.key }}">{{ wt.key | wine_type }}</option>
       {% endfor %}
     </select>
   </div>
   <div>
-    <label>{{ t.label_region }}</label>
-    <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
-    <datalist id="regionList">
-      {% for r in used_regions_list %}
-      <option value="{{ r }}">
-      {% endfor %}
-    </datalist>
+    <label>{{ t.label_country }}</label>
+    <input type="text" name="country" id="wine_country" placeholder="{{ t.label_country }}" list="countryList" autocomplete="off" oninput="onCountryChange()">
+    <datalist id="countryList"></datalist>
   </div>
+</div>
+
+<div>
+  <label>{{ t.label_region }}</label>
+  <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
+  <datalist id="regionList">
+    {% for r in used_regions_list %}
+    <option value="{{ r }}">
+    {% endfor %}
+  </datalist>
 </div>
 
 <div class="row2">

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css">
+<link rel="stylesheet" href="{{ ingress }}/static/style.css">
+<script>
+(function(){var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
+</script>
+<title>{{ t.ref_title }} - Wine Tracker</title>
+<style>
+.ref-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.ref-tab { padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: .9rem; }
+.ref-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ref-toolbar { display: flex; gap: .6rem; align-items: center; margin-bottom: 1rem; }
+.ref-toolbar input { flex: 1; height: 38px; }
+.ref-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.ref-table th, .ref-table td { text-align: left; padding: .5rem .5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ref-table th { color: var(--muted); font-weight: 600; font-size: .8rem; }
+.ref-badge { font-size: .68rem; padding: .08rem .4rem; border-radius: 4px; white-space: nowrap; }
+.ref-badge.builtin { background: var(--empty); color: var(--muted); }
+.ref-badge.custom { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+/* Badge + actions shrink to content so the data columns get the width */
+.ref-table .ref-badge-col, .ref-table .ref-actions-col { width: 1%; white-space: nowrap; }
+.ref-table td.ref-badge-col { text-align: right; }
+.ref-row-actions { text-align: right; white-space: nowrap; padding-left: 1rem; }
+.ref-row-actions button { margin-left: .35rem; }
+.ref-row-actions button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 1.05rem; }
+.ref-row-actions button:hover { color: var(--accent); }
+.ref-row-actions button.danger:hover { color: #e74c3c; }
+.ref-color-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: middle; border: 1px solid var(--border); }
+.ref-empty { text-align: center; color: var(--muted); padding: 2rem; }
+.ref-count { color: var(--muted); font-size: .8rem; margin-left: auto; }
+#refModalBody label { display: block; font-size: .8rem; color: var(--muted); margin: .6rem 0 .2rem; }
+#refModalBody input, #refModalBody select { width: 100%; height: 38px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>
+  <nav class="nav-links">
+    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_cellar }}</a>
+    {% if ai_enabled %}<a class="nav-link" href="{{ ingress }}/chat">{{ t.chat_title }}</a>{% endif %}
+    <a class="nav-link" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
+    <a class="nav-link" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
+    <a class="nav-link active" href="{{ ingress }}/reference">{{ t.ref_title }}</a>
+  </nav>
+  <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
+  <div class="nav-menu" id="navMenu">
+    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_cellar }}</a>
+    {% if ai_enabled %}<a href="{{ ingress }}/chat" class="nav-menu-item">{{ t.chat_title }}</a>{% endif %}
+    <a href="{{ ingress }}/timeline" class="nav-menu-item">{{ t.timeline }}</a>
+    <a href="{{ ingress }}/stats" class="nav-menu-item">{{ t.stats_title }}</a>
+    <a href="{{ ingress }}/reference" class="nav-menu-item active">{{ t.ref_title }}</a>
+  </div>
+  <div class="header-spacer"></div>
+  <button class="theme-toggle" onclick="openModal('settingsModal')" title="{{ t.settings_title }}"><i class="mdi mdi-cog"></i></button>
+</header>
+
+<div class="content">
+  <h1 style="font-size:1.4rem;margin:.2rem 0 1rem;">{{ t.ref_title }}</h1>
+  <div class="ref-tabs" id="refTabs"></div>
+  <div class="ref-toolbar">
+    <input type="search" id="refSearch" placeholder="{{ t.ref_search }}" oninput="refRender()">
+    {% if not auth_readonly %}<button class="btn-submit" style="height:38px;width:auto;padding:0 1rem;" onclick="refOpenAdd()"><i class="mdi mdi-plus"></i> {{ t.ref_add }}</button>{% endif %}
+  </div>
+  <div class="stat-card"><div class="stat-body" id="refList"></div></div>
+</div>
+
+<!-- Add / edit modal -->
+<div class="modal-overlay" id="refModal">
+  <div class="modal">
+    <div class="modal-header"><span id="refModalTitle"></span><button class="modal-close" onclick="closeModal('refModal')">&times;</button></div>
+    <div class="modal-body" id="refModalBody"></div>
+    <div class="modal-footer vr-footer" style="display:flex;justify-content:flex-end;gap:.6rem;padding:.75rem 1.25rem 1.25rem;border-top:1px solid var(--border);">
+      <button class="btn-cancel" onclick="closeModal('refModal')">{{ t.btn_cancel }}</button>
+      <button class="btn-submit" style="width:auto;padding:0 1.2rem;" onclick="refSave()">{{ t.btn_save }}</button>
+    </div>
+  </div>
+</div>
+
+{% include '_settings_modal.html' %}
+
+<script src="{{ ingress }}/static/theme.js"></script>
+<script>
+var INGRESS = '{{ ingress }}';
+var T = {{ t | tojson }};
+var AUTH_READONLY = {{ auth_readonly | tojson }};
+
+function toggleNavMenu(e){ if(e) e.stopPropagation(); document.getElementById('navMenu').classList.toggle('open'); }
+document.addEventListener('click', function(e){ var m=document.getElementById('navMenu'); if(m&&m.classList.contains('open')&&!e.target.closest('.nav-hamburger')&&!e.target.closest('.nav-menu')) m.classList.remove('open'); });
+function openModal(id){ document.getElementById(id).classList.add('open'); if(id==='settingsModal'){updateThemeSegmented&&updateThemeSegmented();updateThemeDropdown&&updateThemeDropdown();} }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(function(el){ el.addEventListener('click', function(e){ if(e.target===el) closeModal(el.id); }); });
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') document.querySelectorAll('.modal-overlay.open').forEach(function(el){el.classList.remove('open');}); });
+
+function L(key, fallback){ return T[key] || fallback; }
+
+// Entity definitions: columns shown + editable fields.
+var ENTITIES = {
+  countries: { label: L('ref_countries','Countries'),
+    cols: [['code', L('ref_f_code','Code')], ['name', L('ref_f_name','Name')], ['lat','Lat'], ['lon','Lon'], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['code','text',true], ['name','text',true], ['lat','number',false], ['lon','number',false], ['aliases','text',false]] },
+  regions: { label: L('ref_regions','Regions'),
+    cols: [['name', L('ref_f_name','Name')], ['country_code', L('ref_f_country','Country')], ['lat','Lat'], ['lon','Lon'], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['name','text',true], ['country_code','country',true], ['lat','number',false], ['lon','number',false], ['aliases','text',false]] },
+  grapes: { label: L('ref_grapes','Grapes'),
+    cols: [['name', L('ref_f_name','Name')], ['color', L('ref_f_color','Color')], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['name','text',true], ['color','color-select',false], ['aliases','text',false]] },
+  wine_types: { label: L('ref_wine_types','Wine types'),
+    cols: [['key', L('ref_f_name','Name')], ['color', L('ref_f_color','Color')], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['key','text',true], ['color','text',false], ['aliases','text',false]] },
+  bottle_formats: { label: L('ref_bottle_formats','Bottle formats'),
+    cols: [['name', L('ref_f_name','Name')], ['liters', L('ref_f_liters','Liters')]],
+    fields: [['name','text',true], ['liters','number',true]] }
+};
+var ENTITY_ORDER = ['countries','regions','grapes','wine_types','bottle_formats'];
+var GRAPE_COLORS = ['red','white','rose','other'];
+
+var _current = 'grapes';
+var _items = [];
+var _countries = [];
+var _editing = null;
+
+function refInitTabs(){
+  document.getElementById('refTabs').innerHTML = ENTITY_ORDER.map(function(e){
+    return '<button class="ref-tab' + (e===_current?' active':'') + '" onclick="refSwitch(\'' + e + '\')">' + escapeHtml(ENTITIES[e].label) + '</button>';
+  }).join('');
+}
+function refSwitch(e){ _current = e; refInitTabs(); document.getElementById('refSearch').value=''; refLoad(); }
+
+function escapeHtml(s){ if(s===null||s===undefined) return ''; var d=document.createElement('div'); d.appendChild(document.createTextNode(String(s))); return d.innerHTML; }
+
+function refLoad(){
+  fetch(INGRESS + '/api/reference/' + _current).then(function(r){return r.json();}).then(function(d){
+    _items = (d.ok && d.items) ? d.items : [];
+    refRender();
+  });
+}
+
+function cellValue(item, col){
+  var v = item[col];
+  if (col === 'aliases') return Array.isArray(v) ? v.join(', ') : '';
+  if (col === 'color' && v) return '<span class="ref-color-dot" style="background:' + (item.color[0]==='#'?item.color:colorHex(item.color)) + '"></span> ' + escapeHtml(v);
+  return escapeHtml(v);
+}
+function colorHex(name){ return {red:'#803039',white:'#f4ca4f',rose:'#ffd1d8',other:'#6c3461'}[name] || 'transparent'; }
+
+function refRender(){
+  var q = (document.getElementById('refSearch').value || '').toLowerCase().trim();
+  var ent = ENTITIES[_current];
+  var rows = _items.filter(function(it){
+    if (!q) return true;
+    return ent.cols.some(function(c){ return String(it[c[0]]||'').toLowerCase().indexOf(q) >= 0; });
+  });
+  var html = '<table class="ref-table"><thead><tr>';
+  ent.cols.forEach(function(c){ html += '<th>' + escapeHtml(c[1]) + '</th>'; });
+  html += '<th class="ref-badge-col"></th><th class="ref-actions-col"></th></tr></thead><tbody>';
+  if (!rows.length) { html += '</tbody></table><div class="ref-empty">' + L('ref_none','No entries') + '</div>'; document.getElementById('refList').innerHTML = html; return; }
+  rows.forEach(function(it){
+    html += '<tr>';
+    ent.cols.forEach(function(c){ html += '<td>' + cellValue(it, c[0]) + '</td>'; });
+    html += '<td class="ref-badge-col"><span class="ref-badge ' + (it.is_custom?'custom':'builtin') + '">' + (it.is_custom?L('ref_badge_custom','Custom'):L('ref_badge_builtin','Standard')) + '</span></td>';
+    html += '<td class="ref-row-actions ref-actions-col">';
+    if (it.is_custom && !AUTH_READONLY) {
+      html += '<button title="' + L('ref_edit','Edit') + '" onclick=\'refOpenEdit(' + JSON.stringify(it) + ')\'><i class="mdi mdi-pencil"></i></button>';
+      html += '<button class="danger" title="' + L('ref_delete','Delete') + '" onclick="refDelete(' + it.id + ')"><i class="mdi mdi-delete"></i></button>';
+    }
+    html += '</td></tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div class="ref-count">' + rows.length + ' / ' + _items.length + '</div>';
+  document.getElementById('refList').innerHTML = html;
+}
+
+function refFieldHtml(f, val){
+  var name = f[0], type = f[1];
+  var v = (val && val[name] !== undefined && val[name] !== null) ? val[name] : '';
+  if (name === 'aliases' && Array.isArray(v)) v = v.join(', ');
+  var label = L('ref_f_' + name, name);
+  var input;
+  if (type === 'country') {
+    input = '<select id="rf_' + name + '">' + _countries.map(function(c){
+      return '<option value="' + c.code + '"' + (c.code===v?' selected':'') + '>' + escapeHtml(c.name) + ' (' + c.code + ')</option>';
+    }).join('') + '</select>';
+  } else if (type === 'color-select') {
+    input = '<select id="rf_' + name + '"><option value="">-</option>' + GRAPE_COLORS.map(function(c){
+      return '<option value="' + c + '"' + (c===v?' selected':'') + '>' + c + '</option>';
+    }).join('') + '</select>';
+  } else {
+    input = '<input id="rf_' + name + '" type="' + (type==='number'?'number':'text') + '"' + (type==='number'?' step="any"':'') + ' value="' + escapeHtml(v) + '">';
+  }
+  return '<label>' + escapeHtml(label) + (f[2]?' *':'') + '</label>' + input;
+}
+
+function refBuildForm(val){
+  document.getElementById('refModalBody').innerHTML = ENTITIES[_current].fields.map(function(f){ return refFieldHtml(f, val); }).join('');
+}
+function refOpenAdd(){ _editing=null; document.getElementById('refModalTitle').textContent = L('ref_add','Add'); refBuildForm(null); openModal('refModal'); }
+function refOpenEdit(it){ _editing=it; document.getElementById('refModalTitle').textContent = L('ref_edit','Edit'); refBuildForm(it); openModal('refModal'); }
+
+function refSave(){
+  var payload = {};
+  ENTITIES[_current].fields.forEach(function(f){
+    var el = document.getElementById('rf_' + f[0]); if (!el) return;
+    payload[f[0]] = el.value;
+  });
+  var url = INGRESS + '/api/reference/' + _current + (_editing ? '/' + _editing.id : '');
+  fetch(url, { method: _editing?'PUT':'POST', headers: {'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body: JSON.stringify(payload) })
+    .then(function(r){ return r.json().then(function(d){ return {status:r.status, d:d}; }); })
+    .then(function(res){
+      if (res.status === 200 && res.d.ok) { closeModal('refModal'); refLoad(); }
+      else { alert(L('ref_save_error','Could not save') + (res.d.error ? ': ' + res.d.error : '')); }
+    });
+}
+
+function refDelete(id){
+  if (!confirm(L('ref_delete_confirm','Delete this entry?'))) return;
+  fetch(INGRESS + '/api/reference/' + _current + '/' + id, { method:'DELETE', headers:{'X-Requested-With':'XMLHttpRequest'} })
+    .then(function(r){ return r.json(); }).then(function(d){ if (d.ok) refLoad(); else alert(L('ref_save_error','Could not save')); });
+}
+
+// Load country list once (for the region country dropdown), then init.
+fetch(INGRESS + '/api/reference/countries').then(function(r){return r.json();}).then(function(d){
+  _countries = (d.ok && d.items) ? d.items : [];
+  refInitTabs(); refLoad();
+});
+</script>
+
+<nav class="bottom-tab-bar">
+  <a class="tab-item" href="{{ ingress }}/"><i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_cellar }}</span></a>
+  {% if ai_enabled %}<a class="tab-item" href="{{ ingress }}/chat"><i class="mdi mdi-chat"></i><span>{{ t.chat_title }}</span></a>{% endif %}
+  <a class="tab-item" href="{{ ingress }}/stats"><i class="mdi mdi-chart-bar"></i><span>{{ t.stats_title }}</span></a>
+  <a class="tab-item active" href="{{ ingress }}/reference"><i class="mdi mdi-database"></i><span>{{ t.ref_title }}</span></a>
+</nav>
+
+</body>
+</html>

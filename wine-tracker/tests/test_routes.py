@@ -324,6 +324,79 @@ class TestDualRating:
         assert data["wine"]["vivino_rating"] == 3.8
 
 
+class TestCountryMigration:
+    """Backfill wines.country from existing free-text region (TP3c)."""
+
+    def _add(self, client, **extra):
+        data = {"name": "M", "quantity": "1"}
+        data.update(extra)
+        return json.loads(client.post("/add", data=data, headers=AJAX).data)["wine"]["id"]
+
+    def test_derives_country_from_known_region(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Bordeaux")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "France"
+
+    def test_derives_country_from_region_country_suffix(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Toscana, Italien")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "Italy"
+
+    def test_unknown_region_leaves_country_empty(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Nowhereland")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert not db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0]
+
+    def test_does_not_overwrite_existing_country(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Bordeaux", country="Neverland")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "Neverland"
+
+
+class TestCountryField:
+    """Separate country field on wines (TP3a), stored as a string."""
+
+    def test_add_stores_country(self, client):
+        resp = client.post("/add", data={"name": "Ctry", "quantity": "1", "country": "France"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["country"] == "France"
+
+    def test_edit_updates_country(self, client, sample_wine):
+        wine_id = sample_wine["wine"]["id"]
+        resp = client.post(
+            f"/edit/{wine_id}",
+            data={"name": "X", "quantity": "1", "country": "Italy"},
+            headers=AJAX,
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["country"] == "Italy"
+
+    def test_duplicate_copies_country(self, client):
+        created = json.loads(client.post(
+            "/add", data={"name": "Dup", "quantity": "1", "country": "Spain"}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        resp = client.post(f"/duplicate/{wid}", data={"year": "2021"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["country"] == "Spain"
+
+    def test_api_wine_returns_country(self, client):
+        created = json.loads(client.post(
+            "/add", data={"name": "C2", "quantity": "1", "country": "Portugal"}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        data = json.loads(client.get(f"/api/wine/{wid}").data)
+        assert data["wine"]["country"] == "Portugal"
+
+
 class TestEditWine:
     def test_edit_wine(self, client, sample_wine):
         wine_id = sample_wine["wine"]["id"]

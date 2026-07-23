@@ -10,6 +10,7 @@ from datetime import date, datetime
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify, g, session, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from translations import TRANSLATIONS
+import reference
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -448,11 +449,21 @@ def inject_globals():
                 "SELECT DISTINCT location FROM wines WHERE location IS NOT NULL AND location != '' ORDER BY location"
             ).fetchall()
         ]
+        # Wine types from the reference data (built-in + custom) - TP3d
+        type_rows = db.execute(
+            "SELECT key, color, is_custom FROM ref_wine_types ORDER BY sort_order, key"
+        ).fetchall()
+        ctx["wine_types_ref"] = [dict(r) for r in type_rows]
+        ctx["wine_type_colors"] = {r["key"]: r["color"] for r in type_rows}
+        ctx["wine_type_custom_keys"] = [r["key"] for r in type_rows if r["is_custom"]]
     except Exception:
         ctx.setdefault("used_regions_list", [])
         ctx.setdefault("used_grapes", [])
         ctx.setdefault("used_purchased_at", [])
         ctx.setdefault("used_locations", [])
+        ctx.setdefault("wine_types_ref", [{"key": k, "color": None, "is_custom": 0} for k in WINE_TYPES])
+        ctx.setdefault("wine_type_colors", {})
+        ctx.setdefault("wine_type_custom_keys", [])
     return ctx
 
 
@@ -480,6 +491,7 @@ def close_db(e=None):
 
 def init_db():
     with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row  # name-based access for reference matching / migration
         db.execute("""
             CREATE TABLE IF NOT EXISTS wines (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -515,6 +527,7 @@ def init_db():
             "taste_profile":  "TEXT",
             "food_pairings":  "TEXT",
             "vivino_rating":  "REAL",
+            "country":        "TEXT",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -580,6 +593,13 @@ def init_db():
             )
         """)
 
+        # ── reference-data tables + bundled seed (TP1) ────────────────────
+        reference.create_reference_tables(db)
+        reference.seed_reference_data(db)
+
+        # ── backfill wines.country from free-text region (TP3c) ───────────
+        migrate_country_from_region(db)
+
         db.commit()
 
 
@@ -598,6 +618,77 @@ def geocode_region(region_name):
         if name in key or key in name:
             return coords
     return None
+
+
+def resolve_map_coords(db, region, country=None):
+    """Resolve [lat, lon] for the globe from the reference data (TP4).
+
+    Priority: reference region coords -> that region's country centroid ->
+    the wine's country centroid -> a country parsed from legacy free-text
+    region ("Region, Country" or the whole string). None if nothing resolves.
+    """
+    def _country_coords(row):
+        if row and row["lat"] is not None and row["lon"] is not None:
+            return [row["lat"], row["lon"]]
+        return None
+
+    if region:
+        r = reference.match_reference(db, "region", region)
+        if r:
+            if r["lat"] is not None and r["lon"] is not None:
+                return [r["lat"], r["lon"]]
+            if r["country_code"]:
+                c = db.execute("SELECT lat, lon FROM ref_countries WHERE code=?", (r["country_code"],)).fetchone()
+                coords = _country_coords(c)
+                if coords:
+                    return coords
+
+    if country:
+        coords = _country_coords(reference.match_reference(db, "country", country))
+        if coords:
+            return coords
+
+    if region:
+        cand = region.rsplit(",", 1)[-1].strip() if "," in region else region
+        coords = _country_coords(reference.match_reference(db, "country", cand))
+        if coords:
+            return coords
+
+    return None
+
+
+def _derive_country_from_region(db, region_text):
+    """Best-effort country name for a free-text region (uses TP1 matching)."""
+    if not region_text:
+        return None
+    reg = reference.match_reference(db, "region", region_text)
+    if reg and reg["country_code"]:
+        c = db.execute("SELECT name FROM ref_countries WHERE code=?", (reg["country_code"],)).fetchone()
+        if c:
+            return c["name"]
+    if "," in region_text:
+        tail = region_text.rsplit(",", 1)[-1].strip()
+        c = reference.match_reference(db, "country", tail)
+        if c:
+            return c["name"]
+    c = reference.match_reference(db, "country", region_text)
+    if c:
+        return c["name"]
+    return None
+
+
+def migrate_country_from_region(db):
+    """One-time backfill: fill wines.country (when empty) from the free-text
+    region, resolved against the reference data. Never overwrites an existing
+    country and never rewrites the region."""
+    rows = db.execute(
+        "SELECT id, region FROM wines "
+        "WHERE (country IS NULL OR country = '') AND region IS NOT NULL AND region != ''"
+    ).fetchall()
+    for w in rows:
+        country = _derive_country_from_region(db, w["region"])
+        if country:
+            db.execute("UPDATE wines SET country=? WHERE id=?", (country, w["id"]))
 
 
 def is_ajax():
@@ -827,8 +918,8 @@ def add():
         """INSERT INTO wines
            (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
             purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-            maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            maturity_data, taste_profile, food_pairings, country)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("year") or None,
@@ -851,6 +942,7 @@ def add():
             maturity_data_raw,
             taste_profile_raw,
             food_pairings_raw,
+            request.form.get("country", "").strip() or None,
         ),
     )
     db.commit()
@@ -924,11 +1016,16 @@ def edit(wine_id):
     else:
         food_pairings_raw = wine["food_pairings"]
     new_quantity = int(request.form.get("quantity", 0))
+    # Preserve stored country if the form omits it (e.g. quantity +/- FormData)
+    if "country" in request.form:
+        country_val = request.form.get("country", "").strip() or None
+    else:
+        country_val = wine["country"]
     db.execute(
         """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
            notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
-           maturity_data=?, taste_profile=?, food_pairings=?
+           maturity_data=?, taste_profile=?, food_pairings=?, country=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
@@ -951,6 +1048,7 @@ def edit(wine_id):
             maturity_data_raw,
             taste_profile_raw,
             food_pairings_raw,
+            country_val,
             wine_id,
         ),
     )
@@ -993,8 +1091,8 @@ def duplicate(wine_id):
     db.execute(
         """INSERT INTO wines (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-           maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           maturity_data, taste_profile, food_pairings, country)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             new_year,
@@ -1017,6 +1115,7 @@ def duplicate(wine_id):
             wine["maturity_data"],
             wine["taste_profile"],
             wine["food_pairings"],
+            wine["country"],
         ),
     )
     db.commit()
@@ -1071,6 +1170,11 @@ def chat_page():
 @app.route("/timeline")
 def timeline_page():
     return render_template("timeline.html")
+
+
+@app.route("/reference")
+def reference_page():
+    return render_template("reference.html")
 
 
 @app.route("/api/timeline")
@@ -1164,15 +1268,22 @@ def stats_page():
         "SELECT region, SUM(quantity) as qty FROM wines WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC LIMIT 7"
     ).fetchall()]
 
-    # All regions with coordinates (for the map)
-    all_regions = [dict(r) for r in db.execute(
-        "SELECT region, SUM(quantity) as qty FROM wines WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC"
-    ).fetchall()]
+    # Map points (for the globe), resolved via reference data with a country
+    # centroid fallback (TP4). Grouped by region+country; wines with only a
+    # country still get a marker at the country centroid.
+    map_groups = db.execute(
+        "SELECT region, country, SUM(quantity) as qty FROM wines "
+        "WHERE (region IS NOT NULL AND region != '') OR (country IS NOT NULL AND country != '') "
+        "GROUP BY region, country ORDER BY qty DESC"
+    ).fetchall()
     map_points = []
-    for r in all_regions:
-        coords = geocode_region(r["region"])
+    for r in map_groups:
+        coords = resolve_map_coords(db, r["region"], r["country"])
         if coords:
-            map_points.append({"region": r["region"], "qty": r["qty"], "lat": coords[0], "lon": coords[1]})
+            map_points.append({
+                "region": r["region"] or r["country"],
+                "qty": r["qty"], "lat": coords[0], "lon": coords[1],
+            })
 
     # Total liters (quantity * bottle_format)
     total_liters = db.execute(
@@ -3162,6 +3273,133 @@ def api_get_wine(wine_id):
     if not wine:
         return jsonify({"ok": False, "error": "not found"}), 404
     return jsonify({"ok": True, "wine": wine_json(wine_id)})
+
+
+def _ref_item(row):
+    """Serialize a reference row to a dict with aliases parsed to a list."""
+    d = dict(row)
+    if "aliases" in d:
+        try:
+            d["aliases"] = json.loads(d["aliases"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            d["aliases"] = []
+    return d
+
+
+@app.route("/api/reference/<entity>", methods=["GET", "POST"])
+def api_reference(entity):
+    """List reference entries (GET) or create a custom one (POST)."""
+    db = get_db()
+    if request.method == "POST":
+        fields = request.get_json(silent=True) or {}
+        try:
+            row = reference.create_custom(db, entity, fields)
+            db.commit()
+        except reference.UnknownEntity:
+            return jsonify({"ok": False, "error": "unknown_entity"}), 404
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, "item": _ref_item(row)})
+
+    try:
+        items = reference.list_reference(db, entity, request.args.get("country"))
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/reference/<entity>/<int:entry_id>", methods=["PUT", "DELETE"])
+def api_reference_detail(entity, entry_id):
+    """Update or delete a custom reference entry (built-in is read-only)."""
+    db = get_db()
+    try:
+        if request.method == "DELETE":
+            ok = reference.delete_custom(db, entity, entry_id)
+            if not ok:
+                return jsonify({"ok": False, "error": "not_found"}), 404
+            db.commit()
+            return jsonify({"ok": True})
+
+        fields = request.get_json(silent=True) or {}
+        row = reference.update_custom(db, entity, entry_id, fields)
+        if row is None:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+        db.commit()
+        return jsonify({"ok": True, "item": _ref_item(row)})
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    except PermissionError:
+        return jsonify({"ok": False, "error": "builtin_readonly"}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+def _ai_reconcile_pick(opts, entity, value, candidates):
+    """Ask the configured AI which known candidate equals `value`, or None."""
+    if not candidates:
+        return None
+    label = "grape variety" if entity == "grape" else "wine region"
+    prompt = (
+        f'A user entered the {label} "{value}". Which ONE of the following known '
+        f'{label}s is the same thing? Reply with the exact name from the list, or the '
+        f'single word NEW if none match.\nList:\n' + "\n".join("- " + c for c in candidates)
+    )
+    try:
+        resp = _call_chat(opts.get("ai_provider"), [{"role": "user", "content": prompt}], "", opts)
+        ans = reference.normalize_name((resp or "").strip().strip('".'))
+        for c in candidates:
+            if reference.normalize_name(c) == ans:
+                return c
+    except Exception:
+        app.logger.exception("AI reconcile pick failed")
+    return None
+
+
+@app.route("/api/reference/reconcile", methods=["POST"])
+def api_reference_reconcile():
+    """For unknown grape/region values, return known-match suggestions (+ an AI
+    pick when configured) so the save flow can ask the user to reconcile."""
+    db = get_db()
+    body = request.get_json(silent=True) or {}
+    country = (body.get("country") or "").strip()
+    country_code = None
+    if country:
+        c = reference.match_reference(db, "country", country)
+        country_code = c["code"] if c else None
+
+    opts = load_options()
+    ai_on = _is_ai_configured(opts)
+    items = []
+    for entity in ("grape", "region"):
+        value = (body.get(entity) or "").strip()
+        if not value:
+            continue
+        scope = country_code if entity == "region" else None
+        if reference.match_reference(db, entity, value, scope):
+            continue  # already known (exact/alias) - nothing to reconcile
+        suggestions = [
+            {"id": r["id"], "name": r["name"], "is_custom": r["is_custom"]}
+            for r in reference.suggest_matches(db, entity, value, scope, limit=5)
+        ]
+        ai_pick = _ai_reconcile_pick(opts, entity, value, [s["name"] for s in suggestions]) if ai_on else None
+        items.append({"entity": entity, "value": value, "country_code": country_code,
+                      "suggestions": suggestions, "ai_pick": ai_pick})
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/reference/<entity>/<int:entry_id>/alias", methods=["POST"])
+def api_reference_add_alias(entity, entry_id):
+    """Teach a reference entry an alias (self-learning from a confirmed match)."""
+    db = get_db()
+    alias = (request.get_json(silent=True) or {}).get("alias", "")
+    try:
+        ok = reference.add_alias(db, entity, entry_id, alias)
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    if not ok:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    db.commit()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/summary")

@@ -8,3 +8,6 @@ wine-tracker/tests/__pycache__/
 CLAUDE.md
 .venv/
 venv/
+scripts/reference_gap_report.md
+scripts/__pycache__/
+scripts/run-dev.local.ps1

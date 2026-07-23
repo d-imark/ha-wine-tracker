@@ -2612,3 +2612,16 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .vr-changes-table .vr-old { color: var(--muted); text-decoration: line-through; }
 .vr-changes-table .vr-arrow { color: var(--accent); text-align: center; }
 .vr-changes-table .vr-new { color: var(--text); font-weight: 600; }
+
+/* ── Reference reconcile dialog (TP3b) ─────────────────────────────────────── */
+#reconcileModal { z-index: 260; }
+.rc-item { padding: .6rem 0; border-bottom: 1px solid var(--border); }
+.rc-item:last-child { border-bottom: none; }
+.rc-head { font-size: .9rem; margin-bottom: .1rem; }
+.rc-hint { font-size: .78rem; color: var(--muted); margin-bottom: .45rem; }
+.rc-opt { display: block; font-size: .88rem; padding: .22rem 0; cursor: pointer; }
+.rc-opt input { margin-right: .4rem; }
+.rc-ai {
+  font-size: .65rem; font-weight: 600; padding: .05rem .35rem; border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
+}
