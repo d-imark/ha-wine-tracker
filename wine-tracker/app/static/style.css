@@ -828,17 +828,33 @@ select option { background: var(--bg); }
 textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 
-/* Star rating input */
-.star-input { display: flex; gap: .25rem; flex-direction: row-reverse;
-              justify-content: flex-end; }
-.star-input input { display: none; }
-.star-input label {
-  font-size: 1.5rem; cursor: pointer; color: var(--border);
-  margin: 0; padding: 0; transition: color .15s;
+/* Partial-fill star display (read-only), driven by .sr-fill width % */
+.star-rating { position: relative; display: inline-block; white-space: nowrap; line-height: 1; }
+.star-rating::before { content: "\2605\2605\2605\2605\2605"; color: var(--border); letter-spacing: 2px; }
+.star-rating .sr-fill { position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; }
+.star-rating .sr-fill::before { content: "\2605\2605\2605\2605\2605"; color: var(--gold); letter-spacing: 2px; }
+
+/* Personal rating input: slider + live star preview + numeric readout */
+.rating-input { display: flex; align-items: center; gap: .6rem; }
+.rating-input .star-rating { font-size: 1.35rem; }
+.rating-slider { flex: 1; accent-color: var(--gold); cursor: pointer; height: 22px; }
+.rating-slider-val { min-width: 2.2em; text-align: right; font-weight: 600; color: var(--gold); }
+
+/* Vivino community rating - visually distinct from the personal gold stars */
+.vivino-badge {
+  display: inline-flex; align-items: center; gap: .2rem;
+  font-size: .72rem; font-weight: 600; padding: .08rem .4rem; border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  white-space: nowrap;
 }
-.star-input input:checked ~ label,
-.star-input label:hover,
-.star-input label:hover ~ label { color: var(--gold); }
+.vivino-badge .mdi { font-size: .8rem; }
+
+/* Row combining personal stars + numeric + Vivino badge (cards, detail) */
+.rating-line { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.rating-line .star-rating { font-size: .95rem; }
+.rating-num { font-size: .78rem; font-weight: 600; color: var(--gold); }
 
 /* Image preview */
 .img-preview {

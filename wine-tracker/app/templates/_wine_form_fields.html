@@ -69,11 +69,12 @@
 
 <div>
   <label>{{ t.label_rating }}</label>
-  <div class="star-input">
-    {% for i in [5,4,3,2,1] %}
-    <input type="radio" name="rating" id="wine_star{{ i }}" value="{{ i }}">
-    <label for="wine_star{{ i }}"><i class="mdi mdi-star"></i></label>
-    {% endfor %}
+  <div class="rating-input">
+    <span class="star-rating" id="ratingStars"><span class="sr-fill" id="ratingStarsFill" style="width:0%"></span></span>
+    <span class="rating-slider-val" id="ratingVal">0.0</span>
+    <input type="range" class="rating-slider" id="wine_rating" name="rating"
+           min="0" max="5" step="0.1" value="0" aria-label="{{ t.label_rating }}"
+           title="{{ t.label_rating }}" oninput="updateRatingPreview()">
   </div>
 </div>
 

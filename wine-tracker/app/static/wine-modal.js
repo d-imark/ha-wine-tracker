@@ -104,6 +104,23 @@ function deleteWineImage() {
   document.getElementById('imgActions').style.display = 'none';
 }
 
+// ── Rating helpers (shared across pages) ──────────────────────────────────────
+
+// Partial-fill star markup for a 0-5 value (supports decimals).
+function srStarsHtml(value) {
+  var pct = Math.max(0, Math.min(100, (Number(value) || 0) / 5 * 100));
+  return '<span class="star-rating"><span class="sr-fill" style="width:' +
+    pct.toFixed(1) + '%"></span></span>';
+}
+
+// Distinct badge for the Vivino community rating (empty string when unset).
+function vivinoBadgeHtml(value, label) {
+  var v = Number(value);
+  if (!v) return '';
+  return '<span class="vivino-badge" title="' + (label || 'Vivino') +
+    '"><i class="mdi mdi-star"></i>' + v.toFixed(1) + '</span>';
+}
+
 // ── Vivino ID popover ─────────────────────────────────────────────────────────
 
 function toggleVivinoIdPopover() {

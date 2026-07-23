@@ -1,3 +1,4 @@
+{%- from '_stars.html' import star_rating -%}
 <!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
@@ -101,7 +102,7 @@
   <div class="card {% if w['quantity'] == 0 %}empty{% endif %}" data-id="{{ w['id'] }}"
        data-name="{{ w['name'] }}" data-year="{{ w['year'] or '' }}"
        data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}"
-       data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}"
+       data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}" data-vivino_rating="{{ w['vivino_rating'] or '' }}"
        data-notes="{{ w['notes'] or '' }}" data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
        data-drink_from="{{ w['drink_from'] or '' }}" data-drink_until="{{ w['drink_until'] or '' }}"
@@ -135,8 +136,11 @@
         <span>{{ w['year'] or '' }}</span>
         <span>{{ w['region'] or '' }}</span>
       </div>
-      {% if w['rating'] %}
-      <div class="stars">{% for i in range(w['rating']) %}<i class="mdi mdi-star"></i>{% endfor %}{% for i in range(5 - w['rating']) %}<i class="mdi mdi-star-outline"></i>{% endfor %}</div>
+      {% if w['rating'] or w['vivino_rating'] %}
+      <div class="rating-line">
+        {% if w['rating'] %}{{ star_rating(w['rating']) }}<span class="rating-num">{{ "%.1f"|format(w['rating']) }}</span>{% endif %}
+        {% if w['vivino_rating'] %}<span class="vivino-badge" title="{{ t.vivino_rating_label }}"><i class="mdi mdi-star"></i>{{ "%.1f"|format(w['vivino_rating']) }}</span>{% endif %}
+      </div>
       {% endif %}
       <div class="card-extra">
         {% if w['price'] %}<span class="price">{{ currency }} {{ "%.2f"|format(w['price']) }}</span>{% endif %}
@@ -760,7 +764,8 @@ function getCardData(el) {
   return { id: d.id, wine: {
     name: d.name, year: d.year ? parseInt(d.year) : null,
     type: d.type || null, region: d.region || null,
-    quantity: parseInt(d.quantity) || 0, rating: parseInt(d.rating) || 0,
+    quantity: parseInt(d.quantity) || 0, rating: parseFloat(d.rating) || 0,
+    vivino_rating: d.vivino_rating ? parseFloat(d.vivino_rating) : null,
     notes: d.notes || '', image: d.image || null,
     purchased_at: d.purchased_at || null, price: d.price ? parseFloat(d.price) : null,
     drink_from: d.drink_from ? parseInt(d.drink_from) : null,
@@ -982,11 +987,14 @@ function openViewModal(id, wine) {
   if (w.region) meta.push('<span>' + escapeHtml(w.region) + '</span>');
   if (meta.length) html += '<div class="view-meta">' + meta.join('') + '</div>';
 
-  // Rating stars
-  if (w.rating && w.rating > 0) {
-    var stars = '';
-    for (var i = 0; i < 5; i++) stars += '<i class="mdi ' + (i < w.rating ? 'mdi-star' : 'mdi-star-outline') + '"></i>';
-    html += '<div class="view-stars">' + stars + '</div>';
+  // Rating: personal stars (partial fill) + numeric + Vivino badge
+  if ((w.rating && w.rating > 0) || w.vivino_rating) {
+    var rl = '';
+    if (w.rating && w.rating > 0) {
+      rl += srStarsHtml(w.rating) + '<span class="rating-num">' + Number(w.rating).toFixed(1) + '</span>';
+    }
+    rl += vivinoBadgeHtml(w.vivino_rating, T.vivino_rating_label);
+    html += '<div class="rating-line view-stars">' + rl + '</div>';
   }
 
   // Details section
@@ -1152,8 +1160,11 @@ function escapeHtml(s) {
 
 function renderCard(w) {
   var stars = '';
-  if (w.rating) {
-    stars = '<div class="stars">' + '<i class="mdi mdi-star"></i>'.repeat(w.rating) + '<i class="mdi mdi-star-outline"></i>'.repeat(5 - w.rating) + '</div>';
+  if (w.rating || w.vivino_rating) {
+    var inner = '';
+    if (w.rating) inner += srStarsHtml(w.rating) + '<span class="rating-num">' + Number(w.rating).toFixed(1) + '</span>';
+    inner += vivinoBadgeHtml(w.vivino_rating, T.vivino_rating_label);
+    stars = '<div class="rating-line">' + inner + '</div>';
   }
   var extra = '';
   if (w.price) extra += '<span class="price">' + escapeHtml(CURRENCY) + ' ' + Number(w.price).toFixed(2) + '</span>';
@@ -1208,6 +1219,7 @@ function updateCardData(card, w) {
   card.dataset.region = w.region || '';
   card.dataset.quantity = w.quantity;
   card.dataset.rating = w.rating || 0;
+  card.dataset.vivino_rating = w.vivino_rating || '';
   card.dataset.notes = w.notes || '';
   card.dataset.image = w.image || '';
   card.dataset.purchased_at = w.purchased_at || '';

@@ -279,6 +279,7 @@ TRANSLATIONS = {
     "vr_field_type": "Typ",
     "vr_field_region": "Region",
     "vr_field_grape": "Rebsorte",
+    "vivino_rating_label": "Vivino-Bewertung",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -641,6 +642,7 @@ TRANSLATIONS = {
     "vr_field_type": "Type",
     "vr_field_region": "Region",
     "vr_field_grape": "Grape",
+    "vivino_rating_label": "Vivino rating",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -1000,6 +1002,7 @@ TRANSLATIONS = {
     "vr_field_type": "Type",
     "vr_field_region": "Région",
     "vr_field_grape": "Cépage",
+    "vivino_rating_label": "Note Vivino",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -1359,6 +1362,7 @@ TRANSLATIONS = {
     "vr_field_type": "Tipo",
     "vr_field_region": "Regione",
     "vr_field_grape": "Vitigno",
+    "vivino_rating_label": "Valutazione Vivino",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -1718,6 +1722,7 @@ TRANSLATIONS = {
     "vr_field_type": "Tipo",
     "vr_field_region": "Región",
     "vr_field_grape": "Uva",
+    "vivino_rating_label": "Valoración Vivino",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -2077,6 +2082,7 @@ TRANSLATIONS = {
     "vr_field_type": "Tipo",
     "vr_field_region": "Região",
     "vr_field_grape": "Casta",
+    "vivino_rating_label": "Avaliação Vivino",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",
@@ -2436,6 +2442,7 @@ TRANSLATIONS = {
     "vr_field_type": "Type",
     "vr_field_region": "Regio",
     "vr_field_grape": "Druif",
+    "vivino_rating_label": "Vivino-beoordeling",
 
     # Vivino ID
     "vivino_id_title": "Vivino ID",

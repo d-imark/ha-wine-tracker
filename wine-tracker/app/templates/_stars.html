@@ -1,0 +1,5 @@
+{# Partial-fill star display for a 0-5 rating (supports decimals).
+   Usage: {% from '_stars.html' import star_rating %}{{ star_rating(w['rating']) }} #}
+{%- macro star_rating(value) -%}
+<span class="star-rating" title="{{ '%.1f'|format(value|float) }}"><span class="sr-fill" style="width: {{ (value|float / 5 * 100)|round(1) }}%"></span></span>
+{%- endmacro -%}

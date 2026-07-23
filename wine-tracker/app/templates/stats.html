@@ -1,3 +1,4 @@
+{%- from '_stars.html' import star_rating -%}
 <!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
@@ -260,7 +261,7 @@
               {% if w['year'] %}{{ w['year'] }}{% endif %}
             </div>
           </div>
-          <div class="stars">{% for i in range(w['rating']) %}<i class="mdi mdi-star"></i>{% endfor %}{% for i in range(5 - w['rating']) %}<i class="mdi mdi-star-outline"></i>{% endfor %}</div>
+          <div class="rating-line">{{ star_rating(w['rating']) }}<span class="rating-num">{{ "%.1f"|format(w['rating']|float) }}</span></div>
         </a>
         {% endfor %}
       </div>
@@ -550,10 +551,13 @@ function openViewModal(id, wine) {
   if (w.region) meta.push('<span>' + escapeHtml(w.region) + '</span>');
   if (meta.length) html += '<div class="view-meta">' + meta.join('') + '</div>';
 
-  if (w.rating && w.rating > 0) {
-    var stars = '';
-    for (var i = 0; i < 5; i++) stars += '<i class="mdi ' + (i < w.rating ? 'mdi-star' : 'mdi-star-outline') + '"></i>';
-    html += '<div class="view-stars">' + stars + '</div>';
+  if ((w.rating && w.rating > 0) || w.vivino_rating) {
+    var rl = '';
+    if (w.rating && w.rating > 0) {
+      rl += srStarsHtml(w.rating) + '<span class="rating-num">' + Number(w.rating).toFixed(1) + '</span>';
+    }
+    rl += vivinoBadgeHtml(w.vivino_rating, T.vivino_rating_label);
+    html += '<div class="rating-line view-stars">' + rl + '</div>';
   }
 
   var details = '';

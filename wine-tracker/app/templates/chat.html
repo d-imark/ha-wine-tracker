@@ -223,10 +223,13 @@ function openViewModal(id, wine) {
   if (w.region) meta.push('<span>' + escapeHtml(w.region) + '</span>');
   if (meta.length) html += '<div class="view-meta">' + meta.join('') + '</div>';
 
-  if (w.rating && w.rating > 0) {
-    var stars = '';
-    for (var i = 0; i < 5; i++) stars += '<i class="mdi ' + (i < w.rating ? 'mdi-star' : 'mdi-star-outline') + '"></i>';
-    html += '<div class="view-stars">' + stars + '</div>';
+  if ((w.rating && w.rating > 0) || w.vivino_rating) {
+    var rl = '';
+    if (w.rating && w.rating > 0) {
+      rl += srStarsHtml(w.rating) + '<span class="rating-num">' + Number(w.rating).toFixed(1) + '</span>';
+    }
+    rl += vivinoBadgeHtml(w.vivino_rating, T.vivino_rating_label);
+    html += '<div class="rating-line view-stars">' + rl + '</div>';
   }
 
   var details = '';

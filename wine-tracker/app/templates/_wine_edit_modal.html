@@ -103,6 +103,7 @@
     <form method="post" id="wineForm" enctype="multipart/form-data">
       <input type="hidden" name="ai_image" id="aiImageField" value="">
       <input type="hidden" name="vivino_id" id="wine_vivino_id" value="">
+      <input type="hidden" name="vivino_rating" id="wine_vivino_rating" value="">
       <input type="hidden" name="delete_image" id="deleteImageField" value="">
       <input type="hidden" name="maturity_data" id="wine_maturity_data" value="">
       <input type="hidden" name="taste_profile" id="wine_taste_profile" value="">
@@ -242,11 +243,10 @@ function openWineModal(id, wine) {
   document.getElementById('wine_taste_profile').value = w.taste_profile ? JSON.stringify(w.taste_profile) : '';
   document.getElementById('wine_food_pairings').value = w.food_pairings ? JSON.stringify(w.food_pairings) : '';
 
-  // Stars
-  for (var i = 1; i <= 5; i++) {
-    var el = document.getElementById('wine_star' + i);
-    if (el) el.checked = isEdit ? (w.rating == i) : false;
-  }
+  // Personal rating (slider) + Vivino rating (read-only, hidden)
+  document.getElementById('wine_rating').value = isEdit ? (w.rating || 0) : 0;
+  document.getElementById('wine_vivino_rating').value = isEdit ? (w.vivino_rating || '') : '';
+  updateRatingPreview();
 
   // Placeholders: show in add mode, hide in edit mode
   Object.keys(_placeholders).forEach(function(pid) {
@@ -500,19 +500,12 @@ function selectVivinoResult(index) {
   if (item.region) fields.region = item.region;
   if (item.grape) fields.grape = item.grape;
   if (item.price) fields.price = item.price;
-  if (item.rating) fields.rating = item.rating;
 
   document.getElementById('wine_vivino_id').value = item.vivino_id || '';
+  // The Vivino community note goes into its own field, never the personal rating.
+  document.getElementById('wine_vivino_rating').value = item.rating || '';
 
   populateFormFromAi(fields, null);
-
-  if (item.rating) {
-    var starVal = Math.round(item.rating);
-    if (starVal >= 1 && starVal <= 5) {
-      var starEl = document.getElementById('wine_star' + starVal);
-      if (starEl) starEl.checked = true;
-    }
-  }
 
   if (item.image_url) {
     downloadVivinoImage(item.image_url);
@@ -558,6 +551,13 @@ function handleAiImage(file) {
   reader.readAsDataURL(file);
 
   startAiAnalysis(file);
+}
+
+// Sync the star preview + numeric readout to the rating slider's value.
+function updateRatingPreview() {
+  var val = parseFloat(document.getElementById('wine_rating').value) || 0;
+  document.getElementById('ratingStarsFill').style.width = (val / 5 * 100) + '%';
+  document.getElementById('ratingVal').textContent = val.toFixed(1);
 }
 
 function startAiAnalysis(file) {
@@ -680,17 +680,12 @@ function populateFormMerge(fields, imageFilename) {
     filled++;
   }
 
+  // Only fill the personal rating when it's still unset (slider at 0).
   if (fields.rating) {
-    var anyChecked = false;
-    for (var i = 1; i <= 5; i++) {
-      if (document.getElementById('wine_star' + i) && document.getElementById('wine_star' + i).checked) anyChecked = true;
-    }
-    if (!anyChecked) {
-      var starVal = Math.round(Number(fields.rating));
-      if (starVal >= 1 && starVal <= 5) {
-        var starEl = document.getElementById('wine_star' + starVal);
-        if (starEl) { starEl.checked = true; filled++; }
-      }
+    var slider = document.getElementById('wine_rating');
+    if (slider && (parseFloat(slider.value) || 0) === 0) {
+      var rv = Math.max(0, Math.min(5, Math.round(Number(fields.rating) * 10) / 10));
+      if (rv > 0) { slider.value = rv; updateRatingPreview(); filled++; }
     }
   }
 
@@ -979,6 +974,10 @@ function _vrApplySideEffects(item) {
     var vf = document.getElementById('wine_vivino_id');
     if (vf && !vf.value.trim()) { vf.value = item.vivino_id; }
   }
+  // The Vivino community note is always refreshed to the current value (it's
+  // read-only Vivino data, not the user's personal rating).
+  var vr = document.getElementById('wine_vivino_rating');
+  if (vr && item.rating) { vr.value = item.rating; }
 }
 
 function vrConfirm() {

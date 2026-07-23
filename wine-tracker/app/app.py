@@ -514,6 +514,7 @@ def init_db():
             "maturity_data":  "TEXT",
             "taste_profile":  "TEXT",
             "food_pairings":  "TEXT",
+            "vivino_rating":  "REAL",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -782,6 +783,31 @@ def index():
     )
 
 
+def _parse_rating(raw):
+    """Parse a rating form value to a float in [0.0, 5.0] rounded to 1 decimal.
+
+    Empty/invalid -> 0.0. SQLite's INTEGER affinity on the `rating` column stores
+    whole numbers (5.0) as ints and keeps decimals (4.3) as REAL.
+    """
+    try:
+        v = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(5.0, round(v, 1)))
+
+
+def _vivino_rating_for_edit(form, wine):
+    """Resolve vivino_rating on edit.
+
+    If the form omits the key entirely (e.g. the quantity +/- buttons send a
+    minimal FormData), keep the stored value instead of wiping it. An explicitly
+    present but empty value clears it.
+    """
+    if "vivino_rating" in form:
+        return _parse_rating(form.get("vivino_rating", "")) or None
+    return wine["vivino_rating"]
+
+
 @app.route("/add", methods=["POST"])
 def add():
     db = get_db()
@@ -799,17 +825,18 @@ def add():
     food_pairings_raw = request.form.get("food_pairings", "").strip() or None
     cur = db.execute(
         """INSERT INTO wines
-           (name, year, type, region, quantity, rating, notes, image, added,
+           (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
             purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
             maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("year") or None,
             request.form.get("type"),
             request.form.get("region", "").strip(),
             int(request.form.get("quantity", 1)),
-            int(request.form.get("rating", 0)),
+            _parse_rating(request.form.get("rating", 0)),
+            _parse_rating(request.form.get("vivino_rating", "")) or None,
             request.form.get("notes", "").strip(),
             image,
             str(date.today()),
@@ -898,7 +925,7 @@ def edit(wine_id):
         food_pairings_raw = wine["food_pairings"]
     new_quantity = int(request.form.get("quantity", 0))
     db.execute(
-        """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?,
+        """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
            notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
            maturity_data=?, taste_profile=?, food_pairings=?
@@ -909,7 +936,8 @@ def edit(wine_id):
             request.form.get("type"),
             request.form.get("region", "").strip(),
             new_quantity,
-            int(request.form.get("rating", 0)),
+            _parse_rating(request.form.get("rating", 0)),
+            _vivino_rating_for_edit(request.form, wine),
             request.form.get("notes", "").strip(),
             image,
             request.form.get("purchased_at", "").strip() or None,
@@ -963,10 +991,10 @@ def duplicate(wine_id):
             shutil.copy2(src, os.path.join(UPLOAD_DIR, new_image))
 
     db.execute(
-        """INSERT INTO wines (name, year, type, region, quantity, rating, notes, image, added,
+        """INSERT INTO wines (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
            maturity_data, taste_profile, food_pairings)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             new_year,
@@ -974,6 +1002,7 @@ def duplicate(wine_id):
             wine["region"],
             int(request.form.get("quantity", wine["quantity"])),
             wine["rating"],
+            wine["vivino_rating"],
             wine["notes"],
             new_image,
             str(date.today()),

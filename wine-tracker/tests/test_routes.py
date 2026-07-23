@@ -281,6 +281,49 @@ class TestAddWine:
 
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
+class TestDualRating:
+    """Personal rating (decimal) and a separate, Vivino-sourced rating."""
+
+    def test_add_stores_decimal_personal_rating(self, client):
+        resp = client.post("/add", data={"name": "Deci", "quantity": "1", "rating": "4.3"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["rating"] == 4.3
+
+    def test_add_stores_vivino_rating_separately(self, client):
+        resp = client.post(
+            "/add",
+            data={"name": "Viv", "quantity": "1", "rating": "3", "vivino_rating": "4.2"},
+            headers=AJAX,
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["rating"] == 3          # personal, untouched
+        assert data["wine"]["vivino_rating"] == 4.2  # Vivino, stored separately
+
+    def test_edit_updates_both_ratings(self, client, sample_wine):
+        wine_id = sample_wine["wine"]["id"]
+        resp = client.post(
+            f"/edit/{wine_id}",
+            data={"name": "R", "quantity": "1", "rating": "2.5", "vivino_rating": "4.7"},
+            headers=AJAX,
+        )
+        data = json.loads(resp.data)
+        assert data["wine"]["rating"] == 2.5
+        assert data["wine"]["vivino_rating"] == 4.7
+
+    def test_rating_clamped_and_rounded(self, client):
+        resp = client.post("/add", data={"name": "Clamp", "quantity": "1", "rating": "9.87"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["wine"]["rating"] == 5  # clamped to 5.0, stored as int 5
+
+    def test_api_wine_returns_vivino_rating(self, client, sample_wine):
+        wine_id = sample_wine["wine"]["id"]
+        client.post(f"/edit/{wine_id}", data={"name": "R", "quantity": "1", "vivino_rating": "3.8"}, headers=AJAX)
+        resp = client.get(f"/api/wine/{wine_id}")
+        data = json.loads(resp.data)
+        assert data["wine"]["vivino_rating"] == 3.8
+
+
 class TestEditWine:
     def test_edit_wine(self, client, sample_wine):
         wine_id = sample_wine["wine"]["id"]
