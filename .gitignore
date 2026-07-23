@@ -10,3 +10,4 @@ CLAUDE.md
 venv/
 scripts/reference_gap_report.md
 scripts/__pycache__/
+scripts/run-dev.local.ps1
