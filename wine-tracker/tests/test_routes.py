@@ -281,6 +281,43 @@ class TestAddWine:
 
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
+class TestCountryMigration:
+    """Backfill wines.country from existing free-text region (TP3c)."""
+
+    def _add(self, client, **extra):
+        data = {"name": "M", "quantity": "1"}
+        data.update(extra)
+        return json.loads(client.post("/add", data=data, headers=AJAX).data)["wine"]["id"]
+
+    def test_derives_country_from_known_region(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Bordeaux")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "France"
+
+    def test_derives_country_from_region_country_suffix(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Toscana, Italien")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "Italy"
+
+    def test_unknown_region_leaves_country_empty(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Nowhereland")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert not db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0]
+
+    def test_does_not_overwrite_existing_country(self, client, db):
+        import app as wine_app
+        wid = self._add(client, region="Bordeaux", country="Neverland")
+        wine_app.migrate_country_from_region(db)
+        db.commit()
+        assert db.execute("SELECT country FROM wines WHERE id=?", (wid,)).fetchone()[0] == "Neverland"
+
+
 class TestCountryField:
     """Separate country field on wines (TP3a), stored as a string."""
 

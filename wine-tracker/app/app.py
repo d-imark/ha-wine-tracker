@@ -584,6 +584,9 @@ def init_db():
         reference.create_reference_tables(db)
         reference.seed_reference_data(db)
 
+        # ── backfill wines.country from free-text region (TP3c) ───────────
+        migrate_country_from_region(db)
+
         db.commit()
 
 
@@ -602,6 +605,40 @@ def geocode_region(region_name):
         if name in key or key in name:
             return coords
     return None
+
+
+def _derive_country_from_region(db, region_text):
+    """Best-effort country name for a free-text region (uses TP1 matching)."""
+    if not region_text:
+        return None
+    reg = reference.match_reference(db, "region", region_text)
+    if reg and reg["country_code"]:
+        c = db.execute("SELECT name FROM ref_countries WHERE code=?", (reg["country_code"],)).fetchone()
+        if c:
+            return c["name"]
+    if "," in region_text:
+        tail = region_text.rsplit(",", 1)[-1].strip()
+        c = reference.match_reference(db, "country", tail)
+        if c:
+            return c["name"]
+    c = reference.match_reference(db, "country", region_text)
+    if c:
+        return c["name"]
+    return None
+
+
+def migrate_country_from_region(db):
+    """One-time backfill: fill wines.country (when empty) from the free-text
+    region, resolved against the reference data. Never overwrites an existing
+    country and never rewrites the region."""
+    rows = db.execute(
+        "SELECT id, region FROM wines "
+        "WHERE (country IS NULL OR country = '') AND region IS NOT NULL AND region != ''"
+    ).fetchall()
+    for w in rows:
+        country = _derive_country_from_region(db, w["region"])
+        if country:
+            db.execute("UPDATE wines SET country=? WHERE id=?", (country, w["id"]))
 
 
 def is_ajax():
