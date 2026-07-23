@@ -2625,3 +2625,13 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   font-size: .65rem; font-weight: 600; padding: .05rem .35rem; border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
 }
+
+/* ── AI reload confirm dialog ──────────────────────────────────────────────── */
+#aiReloadModal { z-index: 260; }  /* above the edit modal (200) it opens from */
+#aiReloadModal .ar-identified {
+  font-size: .9rem; margin: 0 0 .6rem; padding: .5rem .6rem;
+  background: var(--surface); border-radius: 6px;
+}
+#aiReloadModal .ar-identified .ar-id-label { color: var(--muted); margin-right: .3rem; }
+.ar-changes-table .ar-check { width: 1%; white-space: nowrap; padding-right: .3rem; }
+.ar-changes-table .ar-check input { cursor: pointer; }

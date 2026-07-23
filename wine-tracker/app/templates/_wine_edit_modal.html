@@ -197,6 +197,25 @@
   </div>
 </div>
 
+<!-- ═══════════ AI RELOAD CONFIRM (per-field, KI) ═══════════ -->
+<div class="modal-overlay" id="aiReloadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.ar_title }}</span>
+      <button class="modal-close" type="button" onclick="arCancel()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="ar-identified" id="aiIdentified"></p>
+      <p class="vr-hint">{{ t.ar_hint }}</p>
+      <table class="vr-changes-table ar-changes-table"><tbody id="aiChanges"></tbody></table>
+    </div>
+    <div class="modal-footer vr-footer">
+      <button type="button" class="btn-cancel" onclick="arCancel()">{{ t.btn_cancel }}</button>
+      <button type="button" class="btn-submit" onclick="applyAiReload()">{{ t.ar_apply }}</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
