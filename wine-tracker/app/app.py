@@ -1048,6 +1048,11 @@ def timeline_page():
     return render_template("timeline.html")
 
 
+@app.route("/reference")
+def reference_page():
+    return render_template("reference.html")
+
+
 @app.route("/api/timeline")
 def api_timeline():
     db = get_db()
@@ -3031,15 +3036,63 @@ def api_get_wine(wine_id):
     return jsonify({"ok": True, "wine": wine_json(wine_id)})
 
 
-@app.route("/api/reference/<entity>")
+def _ref_item(row):
+    """Serialize a reference row to a dict with aliases parsed to a list."""
+    d = dict(row)
+    if "aliases" in d:
+        try:
+            d["aliases"] = json.loads(d["aliases"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            d["aliases"] = []
+    return d
+
+
+@app.route("/api/reference/<entity>", methods=["GET", "POST"])
 def api_reference(entity):
-    """List bundled + custom reference entries for an entity (TP1)."""
+    """List reference entries (GET) or create a custom one (POST)."""
     db = get_db()
+    if request.method == "POST":
+        fields = request.get_json(silent=True) or {}
+        try:
+            row = reference.create_custom(db, entity, fields)
+            db.commit()
+        except reference.UnknownEntity:
+            return jsonify({"ok": False, "error": "unknown_entity"}), 404
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, "item": _ref_item(row)})
+
     try:
         items = reference.list_reference(db, entity, request.args.get("country"))
     except reference.UnknownEntity:
         return jsonify({"ok": False, "error": "unknown_entity"}), 404
     return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/reference/<entity>/<int:entry_id>", methods=["PUT", "DELETE"])
+def api_reference_detail(entity, entry_id):
+    """Update or delete a custom reference entry (built-in is read-only)."""
+    db = get_db()
+    try:
+        if request.method == "DELETE":
+            ok = reference.delete_custom(db, entity, entry_id)
+            if not ok:
+                return jsonify({"ok": False, "error": "not_found"}), 404
+            db.commit()
+            return jsonify({"ok": True})
+
+        fields = request.get_json(silent=True) or {}
+        row = reference.update_custom(db, entity, entry_id, fields)
+        if row is None:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+        db.commit()
+        return jsonify({"ok": True, "item": _ref_item(row)})
+    except reference.UnknownEntity:
+        return jsonify({"ok": False, "error": "unknown_entity"}), 404
+    except PermissionError:
+        return jsonify({"ok": False, "error": "builtin_readonly"}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 @app.route("/api/summary")

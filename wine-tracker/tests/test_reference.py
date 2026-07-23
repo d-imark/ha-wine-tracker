@@ -11,6 +11,7 @@ sys.path.insert(0, APP_DIR)
 import app as wine_app
 import reference
 
+AJAX = {"X-Requested-With": "XMLHttpRequest"}
 
 REF_TABLES = ["ref_countries", "ref_regions", "ref_grapes", "ref_wine_types", "ref_bottle_formats"]
 
@@ -118,6 +119,93 @@ class TestSuggestAndAlias:
         import json
         aliases = json.loads(db.execute("SELECT aliases FROM ref_grapes WHERE id=?", (syrah["id"],)).fetchone()[0])
         assert aliases.count("Sirah") == 1
+
+
+class TestCustomCrud:
+    def test_create_custom_grape(self, db):
+        row = reference.create_custom(db, "grapes", {"name": "Zibibbo", "color": "white"})
+        db.commit()
+        assert row["is_custom"] == 1 and row["norm"] == "zibibbo"
+        assert db.execute("SELECT COUNT(*) FROM ref_grapes WHERE name='Zibibbo'").fetchone()[0] == 1
+
+    def test_create_requires_required_fields(self, db):
+        with pytest.raises(ValueError):
+            reference.create_custom(db, "grapes", {"color": "red"})       # no name
+        with pytest.raises(ValueError):
+            reference.create_custom(db, "regions", {"name": "X"})          # no country_code
+
+    def test_create_rejects_duplicate(self, db):
+        with pytest.raises(ValueError):
+            reference.create_custom(db, "grapes", {"name": "Merlot"})      # already built-in
+
+    def test_update_custom(self, db):
+        row = reference.create_custom(db, "grapes", {"name": "Nerello", "color": "red"})
+        db.commit()
+        reference.update_custom(db, "grapes", row["id"], {"name": "Nerello", "color": "white"})
+        db.commit()
+        assert db.execute("SELECT color FROM ref_grapes WHERE id=?", (row["id"],)).fetchone()[0] == "white"
+
+    def test_update_builtin_forbidden(self, db):
+        builtin = db.execute("SELECT id FROM ref_grapes WHERE is_custom=0 LIMIT 1").fetchone()[0]
+        with pytest.raises(PermissionError):
+            reference.update_custom(db, "grapes", builtin, {"name": "Hacked"})
+
+    def test_delete_custom(self, db):
+        row = reference.create_custom(db, "grapes", {"name": "Deleteme"})
+        db.commit()
+        assert reference.delete_custom(db, "grapes", row["id"]) is True
+        db.commit()
+        assert db.execute("SELECT COUNT(*) FROM ref_grapes WHERE id=?", (row["id"],)).fetchone()[0] == 0
+
+    def test_delete_builtin_forbidden(self, db):
+        builtin = db.execute("SELECT id FROM ref_grapes WHERE is_custom=0 LIMIT 1").fetchone()[0]
+        with pytest.raises(PermissionError):
+            reference.delete_custom(db, "grapes", builtin)
+
+
+class TestCrudApi:
+    def _first_custom(self, client, entity, create):
+        import json
+        r = client.post(f"/api/reference/{entity}", data=json.dumps(create),
+                        content_type="application/json", headers=AJAX)
+        return json.loads(r.data)
+
+    def test_post_creates_custom(self, client):
+        import json
+        r = client.post("/api/reference/grapes",
+                        data=json.dumps({"name": "Xynomavro Test", "color": "red"}),
+                        content_type="application/json", headers=AJAX)
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data["ok"] and data["item"]["is_custom"] == 1
+
+    def test_put_builtin_forbidden(self, client, db):
+        import json
+        bid = db.execute("SELECT id FROM ref_grapes WHERE is_custom=0 LIMIT 1").fetchone()[0]
+        r = client.put(f"/api/reference/grapes/{bid}",
+                       data=json.dumps({"name": "Nope"}), content_type="application/json", headers=AJAX)
+        assert r.status_code == 403
+
+    def test_delete_custom_via_api(self, client):
+        import json
+        created = json.loads(client.post("/api/reference/grapes",
+                             data=json.dumps({"name": "TempGrape"}),
+                             content_type="application/json", headers=AJAX).data)
+        gid = created["item"]["id"]
+        r = client.delete(f"/api/reference/grapes/{gid}", headers=AJAX)
+        assert r.status_code == 200
+
+    def test_post_validation_error(self, client):
+        import json
+        r = client.post("/api/reference/grapes", data=json.dumps({"color": "red"}),
+                        content_type="application/json", headers=AJAX)
+        assert r.status_code == 400
+
+    def test_post_unknown_entity(self, client):
+        import json
+        r = client.post("/api/reference/bogus", data=json.dumps({"name": "x"}),
+                        content_type="application/json", headers=AJAX)
+        assert r.status_code == 404
 
 
 class TestReadApi:

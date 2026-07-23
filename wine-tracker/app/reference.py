@@ -254,6 +254,132 @@ def add_alias(db, entity, entry_id, alias):
     return True
 
 
+# ── Custom CRUD (management UI backs onto this) ───────────────────────────────
+# Per plural entity: table, columns we accept, required columns, the name column,
+# and how to detect a duplicate of a candidate row.
+_CRUD = {
+    "countries":      {"table": "ref_countries", "cols": ["code", "name", "lat", "lon", "aliases"],
+                        "required": ["code", "name"], "namecol": "name"},
+    "regions":        {"table": "ref_regions", "cols": ["name", "country_code", "lat", "lon", "aliases"],
+                        "required": ["name", "country_code"], "namecol": "name"},
+    "grapes":         {"table": "ref_grapes", "cols": ["name", "color", "aliases"],
+                        "required": ["name"], "namecol": "name"},
+    "wine_types":     {"table": "ref_wine_types", "cols": ["key", "color", "aliases"],
+                        "required": ["key"], "namecol": "key"},
+    "bottle_formats": {"table": "ref_bottle_formats", "cols": ["name", "liters"],
+                        "required": ["name", "liters"], "namecol": "name"},
+}
+
+_FLOAT_COLS = {"lat", "lon", "liters"}
+
+
+def _coerce(col, value):
+    if col == "aliases":
+        if isinstance(value, str):
+            value = [a.strip() for a in value.split(",") if a.strip()]
+        return json.dumps(list(value or []))
+    if col in _FLOAT_COLS:
+        if value in (None, ""):
+            return None
+        return float(value)
+    if col == "code":
+        return str(value).strip().upper()
+    return str(value).strip() if value is not None else None
+
+
+def _norm_value(entity, fields):
+    spec = _CRUD[entity]
+    return normalize_name(fields.get(spec["namecol"], ""))
+
+
+def _duplicate_exists(db, entity, norm, fields, exclude_id=None):
+    spec = _CRUD[entity]
+    table = spec["table"]
+    if entity == "regions":
+        sql = "SELECT id FROM %s WHERE norm=? AND country_code=?" % table
+        params = [norm, _coerce("country_code", fields.get("country_code"))]
+    elif entity == "countries":
+        sql = "SELECT id FROM %s WHERE code=?" % table
+        params = [_coerce("code", fields.get("code"))]
+    else:
+        sql = "SELECT id FROM %s WHERE norm=?" % table
+        params = [norm]
+    if exclude_id:
+        sql += " AND id != ?"
+        params.append(exclude_id)
+    return db.execute(sql, params).fetchone() is not None
+
+
+def get_entry(db, entity, entry_id):
+    if entity not in _CRUD:
+        raise UnknownEntity(entity)
+    return db.execute(f"SELECT * FROM {_CRUD[entity]['table']} WHERE id=?", (entry_id,)).fetchone()
+
+
+def create_custom(db, entity, fields):
+    if entity not in _CRUD:
+        raise UnknownEntity(entity)
+    spec = _CRUD[entity]
+    for req in spec["required"]:
+        if not str(fields.get(req, "")).strip():
+            raise ValueError(f"missing_required:{req}")
+    norm = _norm_value(entity, fields)
+    if _duplicate_exists(db, entity, norm, fields):
+        raise ValueError("duplicate")
+
+    cols = ["norm", "is_custom", "sort_order"]
+    vals = [norm, 1, 9999]
+    for c in spec["cols"]:
+        cols.append(c)
+        vals.append(_coerce(c, fields.get(c)))
+    placeholders = ",".join("?" for _ in cols)
+    cur = db.execute(f"INSERT INTO {spec['table']} ({','.join(cols)}) VALUES ({placeholders})", vals)
+    return get_entry(db, entity, cur.lastrowid)
+
+
+def update_custom(db, entity, entry_id, fields):
+    if entity not in _CRUD:
+        raise UnknownEntity(entity)
+    spec = _CRUD[entity]
+    row = get_entry(db, entity, entry_id)
+    if not row:
+        return None
+    if row["is_custom"] != 1:
+        raise PermissionError("builtin_readonly")
+    for req in spec["required"]:
+        if req in fields and not str(fields.get(req, "")).strip():
+            raise ValueError(f"missing_required:{req}")
+
+    merged = dict(row)
+    for c in spec["cols"]:
+        if c in fields:
+            merged[c] = fields[c]
+    norm = _norm_value(entity, merged)
+    if _duplicate_exists(db, entity, norm, merged, exclude_id=entry_id):
+        raise ValueError("duplicate")
+
+    sets = ["norm=?"]
+    vals = [norm]
+    for c in spec["cols"]:
+        sets.append(f"{c}=?")
+        vals.append(_coerce(c, merged.get(c)))
+    vals.append(entry_id)
+    db.execute(f"UPDATE {spec['table']} SET {','.join(sets)} WHERE id=?", vals)
+    return get_entry(db, entity, entry_id)
+
+
+def delete_custom(db, entity, entry_id):
+    if entity not in _CRUD:
+        raise UnknownEntity(entity)
+    row = get_entry(db, entity, entry_id)
+    if not row:
+        return False
+    if row["is_custom"] != 1:
+        raise PermissionError("builtin_readonly")
+    db.execute(f"DELETE FROM {_CRUD[entity]['table']} WHERE id=?", (entry_id,))
+    return True
+
+
 # ── Listing (read API) ─────────────────────────────────────────────────────────
 
 _LIST = {
