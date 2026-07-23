@@ -1212,6 +1212,30 @@ function closeAiReload() {
 }
 function arCancel() { closeAiReload(); }
 
+function applyAiReload() {
+  if (!_arPending) { closeAiReload(); return; }
+  var changes = _arPending.changes, enrich = _arPending.enrich;
+  changes.forEach(function(c, i) {
+    var chk = document.getElementById('arChk_' + i);
+    if (!chk || !chk.checked) return;
+    if (c.f.rating) {
+      var slider = document.getElementById('wine_rating');
+      if (slider) { slider.value = c.nv; updateRatingPreview(); }
+      return;
+    }
+    var el = document.getElementById(c.f.el);
+    if (el) el.value = c.nv;
+  });
+  enrich.forEach(function(en, j) {
+    var chk = document.getElementById('arEnr_' + j);
+    if (!chk || !chk.checked) return;
+    var el = document.getElementById(en.e.el);
+    if (el) el.value = JSON.stringify(en.val);
+  });
+  closeAiReload();
+  showReloadToast(T.vr_applied || T.reload_filled, true);
+}
+
 // ── AJAX form submit (wineModal) ──────────────────────────────────────────────
 // Uses a callback pattern: if window._onWineSaved is defined, call it;
 // otherwise reload the page.
