@@ -883,17 +883,19 @@ function initGlobe() {
   const isLight = document.documentElement.classList.contains('light');
   const theme = isLight ? GLOBE_THEMES.light : GLOBE_THEMES.dark;
 
-  // Canvas sizing
-  const w = canvas.offsetWidth;
-  const dpr = window.devicePixelRatio || 1;
+  // Canvas sizing — the buffer (width/height) and the per-frame render size must
+  // use the SAME value (size * dpr), otherwise COBE draws the globe at the wrong
+  // scale and only a fraction of it is visible.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = canvas.offsetWidth || 500;
 
   // Destroy existing globe
   if (globeInstance) { globeInstance.destroy(); globeInstance = null; }
 
   globeInstance = createGlobe(canvas, {
-    devicePixelRatio: Math.min(dpr, 2),
-    width: w * 2,
-    height: w * 2,
+    devicePixelRatio: dpr,
+    width: size * dpr,
+    height: size * dpr,
     phi: phi,
     theta: 0.3,
     dark: theme.dark,
@@ -915,8 +917,8 @@ function initGlobe() {
       if (Math.abs(velocity) < 0.00001) velocity = 0;
       state.phi = phi;
       state.theta = theta;
-      state.width = canvas.offsetWidth * 2;
-      state.height = canvas.offsetWidth * 2;
+      state.width = size * dpr;
+      state.height = size * dpr;
     }
   });
 
