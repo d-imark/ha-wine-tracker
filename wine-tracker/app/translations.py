@@ -289,6 +289,8 @@ TRANSLATIONS = {
     "ar_apply": "Übernehmen",
     "ar_no_changes": "Keine neuen Daten",
     "ar_hint": "Wähle, welche Vorschläge übernommen werden:",
+    "ar_rationale_save": "Begründung speichern",
+    "ai_basis_label": "KI-Basis",
     # Reference data management (TP2)
     "ref_title": "Referenzdaten",
     "rc_title": "Referenz-Abgleich",
@@ -690,6 +692,8 @@ TRANSLATIONS = {
     "ar_apply": "Apply",
     "ar_no_changes": "No new data",
     "ar_hint": "Choose which suggestions to apply:",
+    "ar_rationale_save": "Save rationale",
+    "ai_basis_label": "AI basis",
     # Reference data management (TP2)
     "ref_title": "Reference data",
     "rc_title": "Reference match",
@@ -1088,6 +1092,8 @@ TRANSLATIONS = {
     "ar_apply": "Appliquer",
     "ar_no_changes": "Aucune nouvelle donnée",
     "ar_hint": "Choisissez les suggestions à appliquer :",
+    "ar_rationale_save": "Enregistrer la justification",
+    "ai_basis_label": "Base IA",
     # Reference data management (TP2)
     "ref_title": "Données de référence",
     "rc_title": "Correspondance référence",
@@ -1486,6 +1492,8 @@ TRANSLATIONS = {
     "ar_apply": "Applica",
     "ar_no_changes": "Nessun dato nuovo",
     "ar_hint": "Scegli quali suggerimenti applicare:",
+    "ar_rationale_save": "Salva motivazione",
+    "ai_basis_label": "Base IA",
     # Reference data management (TP2)
     "ref_title": "Dati di riferimento",
     "rc_title": "Confronto referenza",
@@ -1884,6 +1892,8 @@ TRANSLATIONS = {
     "ar_apply": "Aplicar",
     "ar_no_changes": "Sin datos nuevos",
     "ar_hint": "Elige qué sugerencias aplicar:",
+    "ar_rationale_save": "Guardar justificación",
+    "ai_basis_label": "Base IA",
     # Reference data management (TP2)
     "ref_title": "Datos de referencia",
     "rc_title": "Cotejo de referencia",
@@ -2282,6 +2292,8 @@ TRANSLATIONS = {
     "ar_apply": "Aplicar",
     "ar_no_changes": "Sem dados novos",
     "ar_hint": "Escolhe quais sugestões aplicar:",
+    "ar_rationale_save": "Guardar justificação",
+    "ai_basis_label": "Base IA",
     # Reference data management (TP2)
     "ref_title": "Dados de referência",
     "rc_title": "Correspondência de referência",
@@ -2680,6 +2692,8 @@ TRANSLATIONS = {
     "ar_apply": "Toepassen",
     "ar_no_changes": "Geen nieuwe gegevens",
     "ar_hint": "Kies welke suggesties je toepast:",
+    "ar_rationale_save": "Motivering opslaan",
+    "ai_basis_label": "AI-basis",
     # Reference data management (TP2)
     "ref_title": "Referentiegegevens",
     "rc_title": "Referentievergelijking",

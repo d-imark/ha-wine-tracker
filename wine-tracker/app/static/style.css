@@ -2640,3 +2640,9 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 /* Give the new-value column room and let long text (notes) wrap cleanly. */
 .ar-changes-table .vr-old { max-width: 12rem; overflow-wrap: break-word; }
 .ar-changes-table .vr-new { width: 55%; overflow-wrap: break-word; }
+#aiReloadModal .ar-rationale {
+  font-size: .85rem; margin: 0 0 .8rem; padding: .55rem .65rem;
+  background: var(--surface); border-radius: 6px; border-left: 3px solid var(--accent);
+}
+#aiReloadModal .ar-rationale-text { margin: 0 0 .45rem; line-height: 1.45; overflow-wrap: break-word; }
+#aiReloadModal .ar-rationale-save { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--muted); cursor: pointer; }

@@ -108,6 +108,7 @@
       <input type="hidden" name="maturity_data" id="wine_maturity_data" value="">
       <input type="hidden" name="taste_profile" id="wine_taste_profile" value="">
       <input type="hidden" name="food_pairings" id="wine_food_pairings" value="">
+      <input type="hidden" name="ai_rationale" id="wine_ai_rationale" value="">
       <div class="modal-body" id="formStep">
 
         <!-- Photo: shown inline on mobile, side panel on wide screens -->
@@ -206,6 +207,10 @@
     </div>
     <div class="modal-body">
       <p class="ar-identified" id="aiIdentified"></p>
+      <div class="ar-rationale" id="aiRationaleBlock" style="display:none">
+        <p class="ar-rationale-text" id="aiRationaleText"></p>
+        <label class="ar-rationale-save"><input type="checkbox" id="arRationaleSave" checked> {{ t.ar_rationale_save }}</label>
+      </div>
       <p class="vr-hint">{{ t.ar_hint }}</p>
       <table class="vr-changes-table ar-changes-table"><tbody id="aiChanges"></tbody></table>
     </div>
@@ -357,6 +362,7 @@ function openWineModal(id, wine) {
   document.getElementById('wine_maturity_data').value = w.maturity_data ? JSON.stringify(w.maturity_data) : '';
   document.getElementById('wine_taste_profile').value = w.taste_profile ? JSON.stringify(w.taste_profile) : '';
   document.getElementById('wine_food_pairings').value = w.food_pairings ? JSON.stringify(w.food_pairings) : '';
+  document.getElementById('wine_ai_rationale').value = w.ai_rationale || '';
 
   // Personal rating (slider) + Vivino rating (read-only, hidden)
   document.getElementById('wine_rating').value = isEdit ? (w.rating || 0) : 0;
@@ -1192,16 +1198,27 @@ function renderAiReload(fields, changes, enrich) {
     '</tr>';
   });
   document.getElementById('aiChanges').innerHTML = rows;
+
+  var rationale = (fields.ai_rationale || '').trim();
+  var rblock = document.getElementById('aiRationaleBlock');
+  if (rationale) {
+    document.getElementById('aiRationaleText').textContent = rationale;
+    document.getElementById('arRationaleSave').checked = true;
+    rblock.style.display = '';
+  } else {
+    rblock.style.display = 'none';
+  }
 }
 
 function openAiReload(fields) {
   var changes = arComputeChanges(fields);
   var enrich = arComputeEnrich(fields);
-  if (changes.length === 0 && enrich.length === 0) {
+  var rationale = (fields.ai_rationale || '').trim();
+  if (changes.length === 0 && enrich.length === 0 && !rationale) {
     showReloadToast(T.ar_no_changes || T.reload_nothing, false);
     return;
   }
-  _arPending = { fields: fields, changes: changes, enrich: enrich };
+  _arPending = { fields: fields, changes: changes, enrich: enrich, rationale: rationale };
   renderAiReload(fields, changes, enrich);
   document.getElementById('aiReloadModal').classList.add('open');
 }
@@ -1232,6 +1249,13 @@ function applyAiReload() {
     var el = document.getElementById(en.e.el);
     if (el) el.value = JSON.stringify(en.val);
   });
+  if (_arPending.rationale) {
+    var save = document.getElementById('arRationaleSave');
+    if (save && save.checked) {
+      var rel = document.getElementById('wine_ai_rationale');
+      if (rel) rel.value = _arPending.rationale;
+    }
+  }
   closeAiReload();
   showReloadToast(T.vr_applied || T.reload_filled, true);
 }
