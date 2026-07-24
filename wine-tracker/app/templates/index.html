@@ -967,7 +967,7 @@ function viewGalleryHtml(w, ribbonHtml) {
       var u = url(im.filename);
       var active = (u === mainSrc) ? ' vthumb-active' : '';
       return '<img class="vthumb' + active + '" src="' + u + '" alt="" loading="lazy" ' +
-             'onclick="openLightbox(\'' + u + '\')">';
+             'onclick="viewSelectThumb(this, \'' + u + '\')">';
     }).join('');
     return '<div class="view-photo-panel view-has-gallery">' + ribbonHtml +
       '<img id="viewMainImg" src="' + mainSrc + '" alt="' + escapeHtml(w.name) + '" ' +
@@ -981,6 +981,16 @@ function viewGalleryHtml(w, ribbonHtml) {
   }
   if (ribbonHtml) return '<div class="view-photo-panel view-no-image">' + ribbonHtml + '</div>';
   return '';
+}
+
+function viewSelectThumb(el, url) {
+  var main = document.getElementById('viewMainImg');
+  if (main) main.src = url;
+  var strip = el.parentNode;
+  if (strip) {
+    strip.querySelectorAll('.vthumb').forEach(function(t) { t.classList.remove('vthumb-active'); });
+  }
+  el.classList.add('vthumb-active');
 }
 
 function openViewModal(id, wine) {
