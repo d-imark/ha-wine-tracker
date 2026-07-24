@@ -3432,6 +3432,60 @@ def api_summary():
     return jsonify({"total_bottles": total, "by_type": [dict(r) for r in rows]})
 
 
+# ── Wine images (BP1) ─────────────────────────────────────────────────────────
+
+@app.route("/api/wine/<int:wine_id>/images", methods=["GET"])
+def api_wine_images(wine_id):
+    db = get_db()
+    if not db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({"ok": True,
+                    "images": images.list_images(db, wine_id),
+                    "default": images.get_default_filename(db, wine_id)})
+
+
+@app.route("/api/wine/<int:wine_id>/images", methods=["POST"])
+def api_wine_image_add(wine_id):
+    db = get_db()
+    if not db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    category = (request.form.get("category") or "manuell").strip()
+    if category not in images.CATEGORIES:
+        return jsonify({"ok": False, "error": "bad_category"}), 400
+    fname = save_image(request.files.get("image"))
+    if not fname:
+        return jsonify({"ok": False, "error": "no_image"}), 400
+    img_id = images.add_image(db, wine_id, category, fname)
+    db.commit()
+    return jsonify({"ok": True,
+                    "image": {"id": img_id, "category": category, "filename": fname}})
+
+
+@app.route("/api/wine/<int:wine_id>/images/<int:image_id>/default", methods=["POST"])
+def api_wine_image_default(wine_id, image_id):
+    db = get_db()
+    if images.set_default(db, wine_id, image_id):
+        db.commit()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "not_found"}), 404
+
+
+@app.route("/api/wine/<int:wine_id>/images/<int:image_id>", methods=["DELETE"])
+def api_wine_image_delete(wine_id, image_id):
+    db = get_db()
+    fname = images.remove_image(db, wine_id, image_id)
+    if fname is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    db.commit()
+    try:
+        path = os.path.join(UPLOAD_DIR, fname)
+        if os.path.isfile(path):
+            os.remove(path)
+    except OSError:
+        pass
+    return jsonify({"ok": True})
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -1895,3 +1895,71 @@ class TestMaturityTasteFood:
         assert data["wine"]["maturity_data"]["peak"] == [2028, 2035]
         assert data["wine"]["taste_profile"]["acidity"] == 4
         assert "Fish" in data["wine"]["food_pairings"]
+
+
+import io
+import json as _json
+
+
+class TestWineImagesApi:
+    AJAX = {"X-Requested-With": "XMLHttpRequest"}
+
+    def _add_wine(self, client):
+        return _json.loads(client.post("/add", data={"name": "W", "quantity": "1"},
+                           headers=self.AJAX).data)["wine"]["id"]
+
+    def test_get_images_empty(self, client):
+        wid = self._add_wine(client)
+        data = _json.loads(client.get(f"/api/wine/{wid}/images").data)
+        assert data["ok"] is True and data["images"] == [] and data["default"] is None
+
+    def test_get_images_unknown_wine_404(self, client):
+        resp = client.get("/api/wine/999999/images")
+        assert resp.status_code == 404
+
+    def test_post_image_adds_row(self, client):
+        wid = self._add_wine(client)
+        resp = client.post(f"/api/wine/{wid}/images",
+                           data={"category": "vivino",
+                                 "image": (io.BytesIO(b"\xff\xd8\xff\xe0fake"), "v.jpg")},
+                           content_type="multipart/form-data")
+        data = _json.loads(resp.data)
+        assert data["ok"] is True and data["image"]["category"] == "vivino"
+        listed = _json.loads(client.get(f"/api/wine/{wid}/images").data)["images"]
+        assert len(listed) == 1 and listed[0]["is_default"] == 1
+
+    def test_post_image_bad_category_400(self, client):
+        wid = self._add_wine(client)
+        resp = client.post(f"/api/wine/{wid}/images",
+                           data={"category": "bogus",
+                                 "image": (io.BytesIO(b"x"), "b.jpg")},
+                           content_type="multipart/form-data")
+        assert resp.status_code == 400
+
+    def test_set_default_switches(self, client):
+        wid = self._add_wine(client)
+        for name, cat in (("a.jpg", "scan"), ("b.jpg", "vivino")):
+            client.post(f"/api/wine/{wid}/images",
+                        data={"category": cat, "image": (io.BytesIO(b"x"), name)},
+                        content_type="multipart/form-data")
+        imgs = _json.loads(client.get(f"/api/wine/{wid}/images").data)["images"]
+        second = imgs[1]["id"]
+        resp = client.post(f"/api/wine/{wid}/images/{second}/default")
+        assert _json.loads(resp.data)["ok"] is True
+        after = _json.loads(client.get(f"/api/wine/{wid}/images").data)
+        assert after["default"] == imgs[1]["filename"]
+
+    def test_delete_image(self, client):
+        wid = self._add_wine(client)
+        r = client.post(f"/api/wine/{wid}/images",
+                        data={"category": "manuell", "image": (io.BytesIO(b"x"), "d.jpg")},
+                        content_type="multipart/form-data")
+        iid = _json.loads(r.data)["image"]["id"]
+        resp = client.delete(f"/api/wine/{wid}/images/{iid}")
+        assert _json.loads(resp.data)["ok"] is True
+        assert _json.loads(client.get(f"/api/wine/{wid}/images").data)["images"] == []
+
+    def test_delete_unknown_404(self, client):
+        wid = self._add_wine(client)
+        resp = client.delete(f"/api/wine/{wid}/images/999999")
+        assert resp.status_code == 404
