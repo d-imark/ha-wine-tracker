@@ -1263,22 +1263,26 @@ function loadWineGallery() {
 function renderWineGallery(imgs) {
   var grid = document.getElementById('galGrid');
   if (!grid) return;
-  var catLabel = function(c) { return T['img_cat_' + c] || c; };
   if (!imgs.length) {
     grid.innerHTML = '<div class="gal-empty">' + (T.ref_none || '') + '</div>';
     return;
   }
-  grid.innerHTML = imgs.map(function(im) {
-    var star = im.is_default ? 'mdi-star' : 'mdi-star-outline';
-    return '<div class="gal-item' + (im.is_default ? ' is-default' : '') + '">' +
-      '<img src="' + INGRESS + '/uploads/' + im.filename + '" alt="" loading="lazy">' +
-      '<span class="gal-badge">' + catLabel(im.category) + '</span>' +
-      '<button type="button" class="gal-star" title="' + (T.img_default || '') +
-        '" onclick="galSetDefault(' + im.id + ')"><i class="mdi ' + star + '"></i></button>' +
-      '<button type="button" class="gal-del" onclick="galDelete(' + im.id + ')">' +
+  var url = function(fn) { return INGRESS + '/uploads/' + fn; };
+  var def = imgs.filter(function(i) { return i.is_default; })[0] || imgs[0];
+  // Big default image on top; small thumbnails below (click = set as display
+  // image, × = delete) — same layout as the detail view.
+  var thumbs = imgs.map(function(im) {
+    var active = im.is_default ? ' vthumb-active' : '';
+    return '<div class="gthumb-wrap">' +
+      '<img class="gthumb' + active + '" src="' + url(im.filename) + '" alt="" loading="lazy" ' +
+        'title="' + (T.img_default || '') + '" onclick="galSetDefault(' + im.id + ')">' +
+      '<button type="button" class="gthumb-del" onclick="galDelete(' + im.id + ')">' +
         '<i class="mdi mdi-close"></i></button>' +
     '</div>';
   }).join('');
+  grid.innerHTML =
+    '<img class="gal-main" id="galMainImg" src="' + url(def.filename) + '" alt="">' +
+    '<div class="gal-thumbs">' + thumbs + '</div>';
 }
 
 function galSetDefault(imageId) {
