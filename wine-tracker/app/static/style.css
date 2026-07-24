@@ -2659,10 +2659,12 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .gal-item.is-default { border-color: var(--accent); }
 .gal-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gal-badge { position: absolute; left: 4px; bottom: 4px; font-size: .6rem; padding: .05rem .3rem; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; }
-.gal-star, .gal-del { position: absolute; top: 3px; border: none; cursor: pointer; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); color: #fff; font-size: .9rem; }
-.gal-star { left: 3px; }
+.gal-item::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 34px; background: linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,0)); pointer-events: none; }
+.gal-star, .gal-del { position: absolute; top: 4px; border: none; cursor: pointer; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.62); color: #fff; font-size: .95rem; box-shadow: 0 1px 3px rgba(0,0,0,.55); }
+.gal-star { left: 4px; }
+.gal-star .mdi, .gal-del .mdi { text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 .gal-star .mdi-star { color: var(--accent); }
-.gal-del { right: 3px; }
+.gal-del { right: 4px; }
 .gal-del:hover { background: var(--danger, #c0392b); }
 .gal-upload { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .gal-cat { flex: 0 1 auto; width: auto; }

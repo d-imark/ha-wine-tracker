@@ -126,12 +126,6 @@
           <div class="wine-gallery" id="wineGallery" style="display:none">
             <div class="gal-grid" id="galGrid"></div>
             <div class="gal-upload" id="galUpload">
-              <select id="galCategory" class="gal-cat">
-                <option value="scan">{{ t.img_cat_scan }}</option>
-                <option value="vivino">{{ t.img_cat_vivino }}</option>
-                <option value="ki">{{ t.img_cat_ki }}</option>
-                <option value="manuell" selected>{{ t.img_cat_manuell }}</option>
-              </select>
               <button type="button" class="gal-add-btn" onclick="document.getElementById('galFile').click()">
                 <i class="mdi mdi-plus"></i> {{ t.img_add }}
               </button>
@@ -1308,7 +1302,7 @@ function galUpload(inputEl) {
   if (!inputEl.files || !inputEl.files[0]) return;
   var fd = new FormData();
   fd.append('image', inputEl.files[0]);
-  fd.append('category', document.getElementById('galCategory').value);
+  fd.append('category', 'manuell');  // manual uploads are always "manuell"
   fetch(INGRESS + '/api/wine/' + _editWineId + '/images',
         { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
     .then(function(r) { return r.json(); })
