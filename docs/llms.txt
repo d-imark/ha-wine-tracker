@@ -124,15 +124,15 @@ ha-wine-tracker/
 
 ## Key URLs
 
-- **Homepage**: https://xenofex7.github.io/ha-wine-tracker/
-- **GitHub**: https://github.com/xenofex7/ha-wine-tracker
+- **Homepage**: https://d-imark.github.io/ha-wine-tracker/
+- **GitHub**: https://github.com/d-imark/ha-wine-tracker
 - **Home Assistant Community**: https://community.home-assistant.io/t/wine-tracker-home-assistant-app-add-on/989021
-- **Docker Image**: ghcr.io/xenofex7/wine-tracker:latest
+- **Docker Image**: ghcr.io/d-imark/wine-tracker:latest
 
 ## Quick Start
 
 ### Home Assistant Add-on
-1. Add repository: `https://github.com/xenofex7/ha-wine-tracker`
+1. Add repository: `https://github.com/d-imark/ha-wine-tracker`
 2. Install "Wine Tracker" from the add-on store
 3. Configure currency, language, and AI provider (optional)
 4. Start → access from the HA sidebar
@@ -141,7 +141,7 @@ ha-wine-tracker/
 ```yaml
 services:
   wine-tracker:
-    image: ghcr.io/xenofex7/wine-tracker:latest
+    image: ghcr.io/d-imark/wine-tracker:latest
     ports:
       - "5050:5050"
     volumes:

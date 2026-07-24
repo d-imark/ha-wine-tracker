@@ -1,6 +1,6 @@
 services:
   wine-tracker:
-    image: ghcr.io/xenofex7/wine-tracker:latest
+    image: ghcr.io/d-imark/wine-tracker:latest
     # To build locally instead, comment out 'image' and uncomment:
     # build:
     #   context: ..

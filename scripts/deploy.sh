@@ -228,7 +228,7 @@ if command -v gh &> /dev/null; then
   ok "GitHub Release created"
 else
   warn "gh CLI not installed — create the release manually on GitHub"
-  warn "Go to: https://github.com/xenofex7/ha-wine-tracker/releases/new?tag=${TAG}"
+  warn "Go to: https://github.com/d-imark/ha-wine-tracker/releases/new?tag=${TAG}"
 fi
 
 echo ""
@@ -237,5 +237,5 @@ echo -e "${GREEN}  Release ${TAG} complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "  Docker/GHCR image will be built by GitHub Actions."
-echo "  Monitor the build: https://github.com/xenofex7/ha-wine-tracker/actions"
+echo "  Monitor the build: https://github.com/d-imark/ha-wine-tracker/actions"
 echo ""

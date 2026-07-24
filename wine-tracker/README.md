@@ -39,7 +39,7 @@ updates and restarts.
 [stage-badge]: https://img.shields.io/badge/project%20stage-stable-brightgreen.svg
 [maintained-badge]: https://img.shields.io/badge/maintained-yes-brightgreen.svg
 [license-badge]: https://img.shields.io/badge/license-MIT-green.svg
-[stars-badge]: https://img.shields.io/github/stars/xenofex7/ha-wine-tracker?style=flat&logo=github
-[issues-badge]: https://img.shields.io/github/issues/xenofex7/ha-wine-tracker?style=flat&logo=github
-[github-url]: https://github.com/xenofex7/ha-wine-tracker
-[issues-url]: https://github.com/xenofex7/ha-wine-tracker/issues
+[stars-badge]: https://img.shields.io/github/stars/d-imark/ha-wine-tracker?style=flat&logo=github
+[issues-badge]: https://img.shields.io/github/issues/d-imark/ha-wine-tracker?style=flat&logo=github
+[github-url]: https://github.com/d-imark/ha-wine-tracker
+[issues-url]: https://github.com/d-imark/ha-wine-tracker/issues

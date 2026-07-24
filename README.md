@@ -21,7 +21,7 @@
 
 A wine cellar tracker for Home Assistant or Docker - manage your entire collection from label photo to tasting notes.
 
-**📖 [Documentation & Demo →](https://xenofex7.github.io/ha-wine-tracker/)**
+**📖 [Documentation & Demo →](https://d-imark.github.io/ha-wine-tracker/)**
 
 ## Screenshots
 
@@ -98,7 +98,7 @@ Or install manually:
 
 1. Go to **Settings → Add-ons → Add-on Store**
 2. Top right: **⋮ → Repositories**
-3. Add the repository URL: `https://github.com/xenofex7/ha-wine-tracker`
+3. Add the repository URL: `https://github.com/d-imark/ha-wine-tracker`
 4. **Wine Tracker** will appear in the store
 5. Click **Install → Start**
 
@@ -115,7 +115,7 @@ Run Wine Tracker without Home Assistant using Docker Compose.
 ```yaml
 services:
   wine-tracker:
-    image: ghcr.io/xenofex7/wine-tracker:latest
+    image: ghcr.io/d-imark/wine-tracker:latest
     ports:
       - "5050:5050"
     volumes:
@@ -304,10 +304,10 @@ MIT
 [ha-badge]: https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5.svg?logo=homeassistant&logoColor=white
 [ai-badge]: https://img.shields.io/badge/AI%20powered-label%20recognition-blueviolet.svg
 [arch-badge]: https://img.shields.io/badge/arch-aarch64-informational.svg
-[stars-badge]: https://img.shields.io/github/stars/xenofex7/ha-wine-tracker?style=flat&logo=github
-[issues-badge]: https://img.shields.io/github/issues/xenofex7/ha-wine-tracker?style=flat&logo=github
-[commit-badge]: https://img.shields.io/github/last-commit/xenofex7/ha-wine-tracker?style=flat&logo=github
-[activity-badge]: https://img.shields.io/github/commit-activity/y/xenofex7/ha-wine-tracker?style=flat&logo=github
+[stars-badge]: https://img.shields.io/github/stars/d-imark/ha-wine-tracker?style=flat&logo=github
+[issues-badge]: https://img.shields.io/github/issues/d-imark/ha-wine-tracker?style=flat&logo=github
+[commit-badge]: https://img.shields.io/github/last-commit/d-imark/ha-wine-tracker?style=flat&logo=github
+[activity-badge]: https://img.shields.io/github/commit-activity/y/d-imark/ha-wine-tracker?style=flat&logo=github
 [docker-badge]: https://img.shields.io/badge/Docker-standalone-2496ED.svg?logo=docker&logoColor=white
 [my-ha-badge]: https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg
-[my-ha-url]: https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fxenofex7%2Fha-wine-tracker
+[my-ha-url]: https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fd-imark%2Fha-wine-tracker

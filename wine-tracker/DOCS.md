@@ -1,7 +1,7 @@
 # Home Assistant App: Wine Tracker
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xenofex7/ha-wine-tracker/main/logo.png" alt="Wine Tracker Logo" width="128">
+  <img src="https://raw.githubusercontent.com/d-imark/ha-wine-tracker/main/logo.png" alt="Wine Tracker Logo" width="128">
 </p>
 
 ![version][version-badge]
@@ -12,14 +12,14 @@ A sleek, modern wine cellar tracker running directly in your Home Assistant side
 ## Screenshots
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xenofex7/ha-wine-tracker/main/assets/260220_main_screen.png" alt="Wine Cellar Overview" width="800">
+  <img src="https://raw.githubusercontent.com/d-imark/ha-wine-tracker/main/assets/260220_main_screen.png" alt="Wine Cellar Overview" width="800">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xenofex7/ha-wine-tracker/main/assets/260220_statistics_screen.png" alt="Statistics with Globe & Charts" width="800">
+  <img src="https://raw.githubusercontent.com/d-imark/ha-wine-tracker/main/assets/260220_statistics_screen.png" alt="Statistics with Globe & Charts" width="800">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xenofex7/ha-wine-tracker/main/assets/260220_add_wine_screen.png" alt="Add Wine - AI, Vivino or Manual" width="800">
-  <img src="https://raw.githubusercontent.com/xenofex7/ha-wine-tracker/main/assets/260220_wine_edit_screen.png" alt="Edit Wine Details" width="800">
+  <img src="https://raw.githubusercontent.com/d-imark/ha-wine-tracker/main/assets/260220_add_wine_screen.png" alt="Add Wine - AI, Vivino or Manual" width="800">
+  <img src="https://raw.githubusercontent.com/d-imark/ha-wine-tracker/main/assets/260220_wine_edit_screen.png" alt="Edit Wine Details" width="800">
 </p>
 
 ## Features
@@ -111,7 +111,7 @@ sensor:
 
 ## Documentation
 
-See the full documentation and changelog on [GitHub](https://github.com/xenofex7/ha-wine-tracker).
+See the full documentation and changelog on [GitHub](https://github.com/d-imark/ha-wine-tracker).
 
 [version-badge]: https://img.shields.io/badge/version-v1.11.0-blue.svg
 [ai-badge]: https://img.shields.io/badge/AI%20powered-label%20recognition-blueviolet.svg
