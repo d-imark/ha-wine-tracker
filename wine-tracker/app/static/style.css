@@ -2646,3 +2646,8 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 }
 #aiReloadModal .ar-rationale-text { margin: 0 0 .45rem; line-height: 1.45; overflow-wrap: break-word; }
 #aiReloadModal .ar-rationale-save { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--muted); cursor: pointer; }
+.view-ai-basis {
+  margin-top: .6rem; font-size: .82rem; color: var(--muted); line-height: 1.45;
+  padding: .5rem .6rem; background: var(--surface); border-radius: 6px; overflow-wrap: break-word;
+}
+.view-ai-basis .view-ai-basis-label { font-weight: 600; margin-right: .3rem; }

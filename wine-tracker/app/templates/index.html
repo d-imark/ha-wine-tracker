@@ -1055,6 +1055,12 @@ function openViewModal(id, wine) {
     html += '<div class="view-notes">' + escapeHtml(w.notes) + '</div>';
   }
 
+  // AI rationale ("Quellen")
+  if (w.ai_rationale) {
+    html += '<div class="view-ai-basis"><span class="view-ai-basis-label">' +
+      (T.ai_basis_label || 'AI basis') + '</span> ' + escapeHtml(w.ai_rationale) + '</div>';
+  }
+
   // Maturity graph, taste profile, food pairings
   if (typeof buildWineExtrasHtml === 'function') {
     html += buildWineExtrasHtml(w);
