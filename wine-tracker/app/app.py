@@ -528,6 +528,7 @@ def init_db():
             "food_pairings":  "TEXT",
             "vivino_rating":  "REAL",
             "country":        "TEXT",
+            "ai_rationale":   "TEXT",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -918,8 +919,8 @@ def add():
         """INSERT INTO wines
            (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
             purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-            maturity_data, taste_profile, food_pairings, country)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            maturity_data, taste_profile, food_pairings, country, ai_rationale)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("year") or None,
@@ -943,6 +944,7 @@ def add():
             taste_profile_raw,
             food_pairings_raw,
             request.form.get("country", "").strip() or None,
+            request.form.get("ai_rationale", "").strip() or None,
         ),
     )
     db.commit()
@@ -1021,11 +1023,15 @@ def edit(wine_id):
         country_val = request.form.get("country", "").strip() or None
     else:
         country_val = wine["country"]
+    if "ai_rationale" in request.form:
+        ai_rationale_val = request.form.get("ai_rationale", "").strip() or None
+    else:
+        ai_rationale_val = wine["ai_rationale"]
     db.execute(
         """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
            notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
-           maturity_data=?, taste_profile=?, food_pairings=?, country=?
+           maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
@@ -1049,6 +1055,7 @@ def edit(wine_id):
             taste_profile_raw,
             food_pairings_raw,
             country_val,
+            ai_rationale_val,
             wine_id,
         ),
     )
@@ -1091,8 +1098,8 @@ def duplicate(wine_id):
     db.execute(
         """INSERT INTO wines (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-           maturity_data, taste_profile, food_pairings, country)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           maturity_data, taste_profile, food_pairings, country, ai_rationale)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             new_year,
@@ -1116,6 +1123,7 @@ def duplicate(wine_id):
             wine["taste_profile"],
             wine["food_pairings"],
             wine["country"],
+            wine["ai_rationale"],
         ),
     )
     db.commit()
@@ -2366,7 +2374,8 @@ def _wine_json_schema():
   "bottle_format": number or null,
   "maturity_data": {"youth": [start_year, end_year], "maturity": [start_year, end_year], "peak": [start_year, end_year], "decline": [start_year, end_year]},
   "taste_profile": {"body": 1-5, "tannin": 1-5, "acidity": 1-5, "sweetness": 1-5},
-  "food_pairings": ["dish1", "dish2", "dish3"]
+  "food_pairings": ["dish1", "dish2", "dish3"],
+  "ai_rationale": "1-2 sentence basis for the identification and estimates, or null"
 }"""
 
 
@@ -2383,6 +2392,7 @@ def _wine_json_rules(lang="en"):
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
 - food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown.
+- ai_rationale: 1-2 short sentences in {lang_name} explaining what the identification and estimates are based on (label text, producer, region/grape typicity). Do NOT invent URLs or citations. Set to null if you have no real basis.
 - If a field cannot be determined, set it to null or empty string
 - The "notes" and "food_pairings" fields MUST be written in {lang_name}
 - Return ONLY the JSON object, no markdown, no explanation"""

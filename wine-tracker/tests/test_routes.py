@@ -1373,3 +1373,36 @@ class TestDevAuth:
         resp = client.get("/", follow_redirects=False)
         assert resp.status_code == 302
         assert "/login" in resp.headers["Location"]
+
+
+class TestAiRationale:
+    """AI rationale ("Quellen") stored on wines (ai_rationale)."""
+
+    def test_add_stores_ai_rationale(self, client):
+        resp = client.post("/add", data={"name": "R", "quantity": "1",
+                            "ai_rationale": "Erkannt anhand Label."}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+        assert data["wine"]["ai_rationale"] == "Erkannt anhand Label."
+
+    def test_edit_updates_ai_rationale(self, client, sample_wine):
+        wine_id = sample_wine["wine"]["id"]
+        resp = client.post(f"/edit/{wine_id}", data={"name": "X", "quantity": "1",
+                            "ai_rationale": "Neue Basis."}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["wine"]["ai_rationale"] == "Neue Basis."
+
+    def test_duplicate_copies_ai_rationale(self, client):
+        created = json.loads(client.post("/add", data={"name": "Dup", "quantity": "1",
+                             "ai_rationale": "Basis."}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        resp = client.post(f"/duplicate/{wid}", data={"year": "2021"}, headers=AJAX)
+        data = json.loads(resp.data)
+        assert data["wine"]["ai_rationale"] == "Basis."
+
+    def test_api_wine_returns_ai_rationale(self, client):
+        created = json.loads(client.post("/add", data={"name": "C2", "quantity": "1",
+                             "ai_rationale": "Weinführer-Wissen."}, headers=AJAX).data)
+        wid = created["wine"]["id"]
+        data = json.loads(client.get(f"/api/wine/{wid}").data)
+        assert data["wine"]["ai_rationale"] == "Weinführer-Wissen."
