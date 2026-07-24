@@ -191,6 +191,7 @@
       <div class="modal-body">
         <p class="vr-hint">{{ t.vr_changes_hint }}</p>
         <table class="vr-changes-table"><tbody id="vrChanges"></tbody></table>
+        <div class="vr-image-block" id="vrImagePreview" style="display:none"></div>
       </div>
       <div class="modal-footer vr-footer">
         <button type="button" class="btn-cancel vr-back" onclick="vrBack()">{{ t.vr_back }}</button>
@@ -1102,6 +1103,17 @@ function vrSelectCandidate(idx) {
       '<td class="vr-new">' + esc(_vrDisplay(c.f, c.nv)) + '</td>' +
     '</tr>';
   }).join('');
+  var ip = document.getElementById('vrImagePreview');
+  if (ip) {
+    if (_vrSelected.image_url) {
+      ip.innerHTML = '<img class="vr-image-preview" src="' + _vrSelected.image_url + '" alt="">' +
+        '<span class="vr-image-label">' + (T.vr_image_add || '') + '</span>';
+      ip.style.display = '';
+    } else {
+      ip.innerHTML = '';
+      ip.style.display = 'none';
+    }
+  }
   vrShowStep(2);
 }
 
