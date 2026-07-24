@@ -2651,3 +2651,20 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   padding: .5rem .6rem; background: var(--surface); border-radius: 6px; overflow-wrap: break-word;
 }
 .view-ai-basis .view-ai-basis-label { font-weight: 600; margin-right: .3rem; }
+
+/* ── Edit-dialog image gallery (BP2) ───────────────────────────────────────── */
+.wine-gallery { display: flex; flex-direction: column; gap: .6rem; }
+.gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .5rem; }
+.gal-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 2px solid transparent; background: var(--surface); }
+.gal-item.is-default { border-color: var(--accent); }
+.gal-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gal-badge { position: absolute; left: 4px; bottom: 4px; font-size: .6rem; padding: .05rem .3rem; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; }
+.gal-star, .gal-del { position: absolute; top: 3px; border: none; cursor: pointer; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); color: #fff; font-size: .9rem; }
+.gal-star { left: 3px; }
+.gal-star .mdi-star { color: var(--accent); }
+.gal-del { right: 3px; }
+.gal-del:hover { background: var(--danger, #c0392b); }
+.gal-upload { display: flex; align-items: center; gap: .5rem; }
+.gal-cat { flex: 0 0 auto; }
+.gal-add-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; color: var(--text); }
+.gal-empty { color: var(--muted); font-size: .85rem; padding: .4rem 0; }

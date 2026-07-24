@@ -123,6 +123,21 @@
               <button type="button" class="img-action-btn danger" onclick="deleteWineImage()" title="Delete"><i class="mdi mdi-delete"></i></button>
             </div>
           </div>
+          <div class="wine-gallery" id="wineGallery" style="display:none">
+            <div class="gal-grid" id="galGrid"></div>
+            <div class="gal-upload" id="galUpload">
+              <select id="galCategory" class="gal-cat">
+                <option value="scan">{{ t.img_cat_scan }}</option>
+                <option value="vivino">{{ t.img_cat_vivino }}</option>
+                <option value="ki">{{ t.img_cat_ki }}</option>
+                <option value="manuell" selected>{{ t.img_cat_manuell }}</option>
+              </select>
+              <button type="button" class="gal-add-btn" onclick="document.getElementById('galFile').click()">
+                <i class="mdi mdi-plus"></i> {{ t.img_add }}
+              </button>
+              <input type="file" id="galFile" accept="image/*" style="display:none" onchange="galUpload(this)">
+            </div>
+          </div>
         </div>
 
         <div class="form-fields-panel">
