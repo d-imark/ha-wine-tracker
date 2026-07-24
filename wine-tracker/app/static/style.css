@@ -2628,10 +2628,15 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 
 /* ── AI reload confirm dialog ──────────────────────────────────────────────── */
 #aiReloadModal { z-index: 260; }  /* above the edit modal (200) it opens from */
+#aiReloadModal .modal { max-width: 620px; }
+#aiReloadModal .modal-body { max-height: 68vh; overflow-y: auto; }
 #aiReloadModal .ar-identified {
-  font-size: .9rem; margin: 0 0 .6rem; padding: .5rem .6rem;
+  font-size: .9rem; line-height: 1.4; margin: 0 0 .6rem; padding: .5rem .6rem;
   background: var(--surface); border-radius: 6px;
 }
 #aiReloadModal .ar-identified .ar-id-label { color: var(--muted); margin-right: .3rem; }
 .ar-changes-table .ar-check { width: 1%; white-space: nowrap; padding-right: .3rem; }
 .ar-changes-table .ar-check input { cursor: pointer; }
+/* Give the new-value column room and let long text (notes) wrap cleanly. */
+.ar-changes-table .vr-old { max-width: 12rem; overflow-wrap: break-word; }
+.ar-changes-table .vr-new { width: 55%; overflow-wrap: break-word; }
