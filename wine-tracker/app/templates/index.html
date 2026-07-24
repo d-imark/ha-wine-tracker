@@ -958,6 +958,31 @@ function viewRow(icon, label, value) {
        + '<span class="view-value">' + escapeHtml(String(value)) + '</span></div>';
 }
 
+function viewGalleryHtml(w, ribbonHtml) {
+  var imgs = w.images || [];
+  var url = function(fn) { return INGRESS + '/uploads/' + encodeURIComponent(fn); };
+  if (imgs.length > 1) {
+    var mainSrc = url(w.image || imgs[0].filename);
+    var thumbs = imgs.map(function(im) {
+      var u = url(im.filename);
+      var active = (u === mainSrc) ? ' vthumb-active' : '';
+      return '<img class="vthumb' + active + '" src="' + u + '" alt="" loading="lazy" ' +
+             'onclick="viewSelectThumb(this, \'' + u + '\')">';
+    }).join('');
+    return '<div class="view-photo-panel view-has-gallery">' + ribbonHtml +
+      '<img id="viewMainImg" src="' + mainSrc + '" alt="' + escapeHtml(w.name) + '" ' +
+        'onclick="openLightbox(document.getElementById(\'viewMainImg\').src)">' +
+      '<div class="view-thumbs">' + thumbs + '</div>' +
+    '</div>';
+  }
+  if (w.image) {
+    return '<div class="view-photo-panel" onclick="openLightbox(\'' + url(w.image) + '\')">' +
+      ribbonHtml + '<img src="' + url(w.image) + '" alt="' + escapeHtml(w.name) + '"></div>';
+  }
+  if (ribbonHtml) return '<div class="view-photo-panel view-no-image">' + ribbonHtml + '</div>';
+  return '';
+}
+
 function openViewModal(id, wine) {
   var w = wine || {};
   window._viewWineId = id;
@@ -974,14 +999,7 @@ function openViewModal(id, wine) {
     var typeLabel = T[typeKey] || w.type;
     ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '"' + ribbonStyle(w.type) + '>' + escapeHtml(typeLabel) + '</span>';
   }
-  if (w.image) {
-    html += '<div class="view-photo-panel" onclick="openLightbox(\'' + INGRESS + '/uploads/' + encodeURIComponent(w.image) + '\')">'
-          + ribbonHtml
-          + '<img src="' + INGRESS + '/uploads/' + encodeURIComponent(w.image) + '" alt="' + escapeHtml(w.name) + '">'
-          + '</div>';
-  } else if (ribbonHtml) {
-    html += '<div class="view-photo-panel view-no-image">' + ribbonHtml + '</div>';
-  }
+  html += viewGalleryHtml(w, ribbonHtml);
 
   // Fields panel (on left on desktop)
   html += '<div class="view-fields-panel">';
