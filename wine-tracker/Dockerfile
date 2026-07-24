@@ -13,4 +13,5 @@ WORKDIR /app
 COPY app/ /app/
 
 EXPOSE 5050
+ENV DATA_DIR=/share/wine-tracker-di
 CMD ["python3", "app.py"]
