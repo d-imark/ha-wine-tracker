@@ -1121,11 +1121,16 @@ function vrBack() { vrShowStep(1); }
 function vrCancel() { closeVivinoReload(); }
 
 function _vrApplySideEffects(item) {
-  // Image only when none is set yet.
-  var hasImage = document.getElementById('aiImageField').value
-    || document.querySelector('#winePreview img');
-  if (!hasImage && item.image_url) {
-    downloadVivinoImage(item.image_url);
+  // Add the Vivino image to the wine's image collection (edit mode → wine exists).
+  if (item.image_url && _editWineId) {
+    fetch(INGRESS + '/api/wine/' + _editWineId + '/images/vivino', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ url: item.image_url })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.ok && typeof loadWineGallery === 'function') loadWineGallery(); })
+    .catch(function() {});
   }
   // vivino_id only on the name-search path and only when empty (never overwrite).
   if (_vrAllowSetId && item.vivino_id) {
