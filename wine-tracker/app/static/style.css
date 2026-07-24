@@ -2664,8 +2664,8 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .gal-star .mdi-star { color: var(--accent); }
 .gal-del { right: 3px; }
 .gal-del:hover { background: var(--danger, #c0392b); }
-.gal-upload { display: flex; align-items: center; gap: .5rem; }
-.gal-cat { flex: 0 0 auto; }
+.gal-upload { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.gal-cat { flex: 0 1 auto; width: auto; }
 .gal-add-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; color: var(--text); }
 .gal-empty { color: var(--muted); font-size: .85rem; padding: .4rem 0; }
 
