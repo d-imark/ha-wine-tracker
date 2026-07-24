@@ -430,6 +430,7 @@ function openWineModal(id, wine) {
     showFormStep();
   }
 
+  initWineGallery(_editWineId);
   openModal('wineModal');
 
   // Snapshot form state for dirty-tracking (after a tick so DOM settles)
@@ -1223,6 +1224,50 @@ function renderAiReload(fields, changes, enrich) {
   } else {
     rblock.style.display = 'none';
   }
+}
+
+// ── Edit-dialog image gallery (BP2) ───────────────────────────────────────────
+function initWineGallery(wineId) {
+  var gal = document.getElementById('wineGallery');
+  var single = document.getElementById('winePreview');
+  if (wineId) {
+    if (single) single.style.display = 'none';
+    if (gal) gal.style.display = '';
+    loadWineGallery();
+  } else {
+    if (gal) gal.style.display = 'none';
+    if (single) single.style.display = '';
+  }
+}
+
+function loadWineGallery() {
+  if (!_editWineId) return;
+  fetch(INGRESS + '/api/wine/' + _editWineId + '/images',
+        { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.ok) renderWineGallery(d.images); })
+    .catch(function() {});
+}
+
+function renderWineGallery(imgs) {
+  var grid = document.getElementById('galGrid');
+  if (!grid) return;
+  var catLabel = function(c) { return T['img_cat_' + c] || c; };
+  if (!imgs.length) {
+    grid.innerHTML = '<div class="gal-empty">' + (T.ref_none || '') + '</div>';
+    return;
+  }
+  grid.innerHTML = imgs.map(function(im) {
+    var star = im.is_default ? 'mdi-star' : 'mdi-star-outline';
+    return '<div class="gal-item' + (im.is_default ? ' is-default' : '') + '">' +
+      '<img src="' + INGRESS + '/uploads/' + im.filename + '" alt="" loading="lazy">' +
+      '<span class="gal-badge">' + catLabel(im.category) + '</span>' +
+      '<button type="button" class="gal-star" title="' + (T.img_default || '') +
+        '" onclick="galSetDefault(' + im.id + ')"><i class="mdi ' + star + '"></i></button>' +
+      '<button type="button" class="gal-del" onclick="galDelete(' + im.id + ')">' +
+        '<i class="mdi mdi-close"></i></button>' +
+    '</div>';
+  }).join('');
 }
 
 function openAiReload(fields) {
