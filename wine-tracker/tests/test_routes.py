@@ -1406,3 +1406,45 @@ class TestAiRationale:
         wid = created["wine"]["id"]
         data = json.loads(client.get(f"/api/wine/{wid}").data)
         assert data["wine"]["ai_rationale"] == "Weinführer-Wissen."
+
+
+class TestImageSync:
+    """BP1: wines.image is mirrored into the wine_images table."""
+
+    def test_add_creates_scan_default_row(self, client, db):
+        import io
+        data = {"name": "Img", "quantity": "1",
+                "image": (io.BytesIO(b"\xff\xd8\xff\xe0fakejpeg"), "x.jpg")}
+        wid = json.loads(client.post("/add", data=data, headers=AJAX,
+                          content_type="multipart/form-data").data)["wine"]["id"]
+        rows = db.execute("SELECT category, is_default FROM wine_images WHERE wine_id=?", (wid,)).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["category"] == "scan" and rows[0]["is_default"] == 1
+
+    def test_wine_json_includes_images(self, client):
+        import io
+        data = {"name": "Img2", "quantity": "1",
+                "image": (io.BytesIO(b"\xff\xd8\xff\xe0fakejpeg"), "y.jpg")}
+        wid = json.loads(client.post("/add", data=data, headers=AJAX,
+                          content_type="multipart/form-data").data)["wine"]["id"]
+        wine = json.loads(client.get(f"/api/wine/{wid}").data)["wine"]
+        assert "images" in wine and len(wine["images"]) == 1
+        assert wine["image"] == wine["images"][0]["filename"]  # default mirrored
+
+    def test_add_without_image_has_no_rows(self, client, db):
+        wid = json.loads(client.post("/add", data={"name": "NoImg", "quantity": "1"},
+                          headers=AJAX).data)["wine"]["id"]
+        rows = db.execute("SELECT * FROM wine_images WHERE wine_id=?", (wid,)).fetchall()
+        assert rows == []
+
+    def test_migrate_legacy_backfills(self, client, db):
+        import app as wine_app
+        db.execute("INSERT INTO wines (name, quantity, image) VALUES ('Legacy', 1, 'leg.jpg')")
+        db.commit()
+        wid = db.execute("SELECT id FROM wines WHERE name='Legacy'").fetchone()[0]
+        db.execute("DELETE FROM wine_images WHERE wine_id=?", (wid,))
+        db.commit()
+        wine_app.images.migrate_legacy_images(db)
+        db.commit()
+        rows = db.execute("SELECT category, is_default FROM wine_images WHERE wine_id=?", (wid,)).fetchall()
+        assert len(rows) == 1 and rows[0]["category"] == "scan" and rows[0]["is_default"] == 1

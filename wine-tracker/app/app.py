@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, redirect, url_for, send_from_
 from werkzeug.security import generate_password_hash, check_password_hash
 from translations import TRANSLATIONS
 import reference
+import images
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -598,6 +599,10 @@ def init_db():
         reference.create_reference_tables(db)
         reference.seed_reference_data(db)
 
+        # ── wine images table + legacy single-image migration (BP1) ───────
+        images.create_images_table(db)
+        images.migrate_legacy_images(db)
+
         # ── backfill wines.country from free-text region (TP3c) ───────────
         migrate_country_from_region(db)
 
@@ -711,6 +716,7 @@ def wine_json(wine_id):
                 d[key] = json.loads(raw)
             except (json.JSONDecodeError, TypeError):
                 d[key] = None
+    d["images"] = images.list_images(db, wine_id)
     return d
 
 
@@ -949,6 +955,8 @@ def add():
     )
     db.commit()
     new_id = cur.lastrowid
+    images.sync_primary(db, new_id, "", image)
+    db.commit()
     # Log the addition
     qty = int(request.form.get("quantity", 1))
     db.execute(
@@ -1070,6 +1078,7 @@ def edit(wine_id):
             "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
             (wine_id, "restocked", new_quantity - old_quantity, datetime.now().isoformat()),
         )
+    images.sync_primary(db, wine_id, wine["image"], image)
     db.commit()
     if is_ajax():
         return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
@@ -1128,6 +1137,7 @@ def duplicate(wine_id):
     )
     db.commit()
     new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    images.sync_primary(db, new_id, "", new_image)
     # Log the duplicated wine as added
     dup_qty = int(request.form.get("quantity", wine["quantity"]))
     db.execute(
