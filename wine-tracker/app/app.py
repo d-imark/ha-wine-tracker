@@ -2325,26 +2325,21 @@ def vivino_search():
     return jsonify({"ok": True, "results": results})
 
 
-@app.route("/api/vivino-image", methods=["POST"])
-def vivino_image():
-    """Download a Vivino wine image and save it locally."""
+def _download_vivino_image(url):
+    """Download a Vivino image (SSRF-limited to Vivino hosts). Returns
+    (filename, None) on success, or (None, error) with error in
+    {"invalid_host", "download_failed"}."""
     import requests as req
     from urllib.parse import urlparse
 
-    body = request.get_json(silent=True) or {}
-    url = body.get("url", "").strip()
-    if not url:
-        return jsonify({"ok": False, "error": "no_url"}), 400
+    url = (url or "").strip()
     # Protocol-relative URLs (//images.vivino.com/...) need a scheme
     if url.startswith("//"):
         url = "https:" + url
-
     # SSRF protection: only allow Vivino image domains
     ALLOWED_HOSTS = {"images.vivino.com", "pictures.vivino.com"}
-    parsed = urlparse(url)
-    if parsed.hostname not in ALLOWED_HOSTS:
-        return jsonify({"ok": False, "error": "invalid_host"}), 400
-
+    if urlparse(url).hostname not in ALLOWED_HOSTS:
+        return None, "invalid_host"
     try:
         resp = req.get(url, timeout=10, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -2362,10 +2357,25 @@ def vivino_image():
         with open(filepath, "wb") as f:
             f.write(resp.content)
         _downscale(filepath)
-        return jsonify({"ok": True, "filename": filename})
+        return filename, None
     except Exception as e:
         app.logger.exception("Vivino image download error: %s", e)
+        return None, "download_failed"
+
+
+@app.route("/api/vivino-image", methods=["POST"])
+def vivino_image():
+    """Download a Vivino wine image and save it locally."""
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "no_url"}), 400
+    fname, err = _download_vivino_image(url)
+    if err == "invalid_host":
+        return jsonify({"ok": False, "error": "invalid_host"}), 400
+    if err:
         return jsonify({"ok": False, "error": "download_failed"}), 500
+    return jsonify({"ok": True, "filename": fname})
 
 
 # ── AI Re-analysis (image, text, or both) ─────────────────────────────────────
@@ -3484,6 +3494,22 @@ def api_wine_image_delete(wine_id, image_id):
     except OSError:
         pass
     return jsonify({"ok": True})
+
+
+@app.route("/api/wine/<int:wine_id>/images/vivino", methods=["POST"])
+def api_wine_image_vivino(wine_id):
+    db = get_db()
+    if not db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "no_url"}), 400
+    fname, err = _download_vivino_image(url)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    img_id = images.add_image(db, wine_id, "vivino", fname)
+    db.commit()
+    return jsonify({"ok": True, "image": {"id": img_id, "category": "vivino", "filename": fname}})
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

@@ -1963,3 +1963,45 @@ class TestWineImagesApi:
         wid = self._add_wine(client)
         resp = client.delete(f"/api/wine/{wid}/images/999999")
         assert resp.status_code == 404
+
+
+class TestWineVivinoImage:
+    AJAX = {"X-Requested-With": "XMLHttpRequest"}
+
+    def _add_wine(self, client):
+        return json.loads(client.post("/add", data={"name": "VW", "quantity": "1"},
+                          headers=self.AJAX).data)["wine"]["id"]
+
+    @patch("app._download_vivino_image", return_value=("viv1.jpg", None))
+    def test_adds_vivino_image_default_when_first(self, mock_dl, client):
+        wid = self._add_wine(client)
+        resp = client.post(f"/api/wine/{wid}/images/vivino",
+                           json={"url": "https://images.vivino.com/x.jpg"})
+        data = json.loads(resp.data)
+        assert data["ok"] is True and data["image"]["category"] == "vivino"
+        imgs = json.loads(client.get(f"/api/wine/{wid}/images").data)["images"]
+        assert len(imgs) == 1 and imgs[0]["is_default"] == 1
+
+    @patch("app._download_vivino_image", return_value=("viv2.jpg", None))
+    def test_vivino_not_default_when_image_exists(self, mock_dl, client):
+        wid = self._add_wine(client)
+        client.post(f"/api/wine/{wid}/images",
+                    data={"category": "manuell", "image": (io.BytesIO(b"x"), "m.jpg")},
+                    content_type="multipart/form-data")
+        client.post(f"/api/wine/{wid}/images/vivino",
+                    json={"url": "https://images.vivino.com/x.jpg"})
+        imgs = json.loads(client.get(f"/api/wine/{wid}/images").data)["images"]
+        cats = {i["category"]: i["is_default"] for i in imgs}
+        assert cats["manuell"] == 1 and cats["vivino"] == 0
+
+    def test_unknown_wine_404(self, client):
+        resp = client.post("/api/wine/999999/images/vivino",
+                           json={"url": "https://images.vivino.com/x.jpg"})
+        assert resp.status_code == 404
+
+    @patch("app._download_vivino_image", return_value=(None, "download_failed"))
+    def test_download_failure_400(self, mock_dl, client):
+        wid = self._add_wine(client)
+        resp = client.post(f"/api/wine/{wid}/images/vivino",
+                           json={"url": "https://images.vivino.com/x.jpg"})
+        assert resp.status_code == 400
