@@ -983,6 +983,16 @@ function viewGalleryHtml(w, ribbonHtml) {
   return '';
 }
 
+function viewSelectThumb(el, url) {
+  var main = document.getElementById('viewMainImg');
+  if (main) main.src = url;
+  var strip = el.parentNode;
+  if (strip) {
+    strip.querySelectorAll('.vthumb').forEach(function(t) { t.classList.remove('vthumb-active'); });
+  }
+  el.classList.add('vthumb-active');
+}
+
 function openViewModal(id, wine) {
   var w = wine || {};
   window._viewWineId = id;
