@@ -2035,3 +2035,49 @@ class TestWebSearchOption:
         monkeypatch.setenv("OPENAI_WEB_SEARCH", "true")
         monkeypatch.setattr(wine_app, "OPTIONS_PATH", "/nonexistent/options.json")
         assert wine_app.load_options()["openai_web_search"] is True
+
+
+# ── OpenAI web_search research path ──────────────────────────────────────────
+
+class TestAiWebResearch:
+    @patch("openai.OpenAI")
+    def test_websearch_uses_responses_api(self, MockOpenAI):
+        inst = MockOpenAI.return_value
+        inst.responses.create.return_value = MagicMock(
+            output_text='{"name":"X","ai_rationale":"Offizielle Website: winzer.de. Haendler: shop.de"}')
+        out = wine_app._call_openai_websearch(
+            None, "image/jpeg", "PROMPT",
+            {"openai_api_key": "k", "openai_model": "gpt-5.6-luna"})
+        assert "winzer.de" in out
+        kwargs = inst.responses.create.call_args.kwargs
+        assert kwargs["model"] == "gpt-5.6-luna"
+        assert any(t.get("type") == "web_search" for t in kwargs["tools"])
+
+    def test_smart_falls_back_on_error(self, monkeypatch):
+        def boom(*a, **k):
+            raise RuntimeError("no web_search on this model")
+        monkeypatch.setattr(wine_app, "_call_openai_websearch", boom)
+        monkeypatch.setattr(wine_app, "_call_openai", lambda *a, **k: '{"name":"FB"}')
+        assert wine_app._call_openai_smart(None, "image/jpeg", "P", {}) == '{"name":"FB"}'
+
+    def test_gate_websearch_when_flag_on(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(wine_app, "_call_openai_smart",
+                            lambda *a, **k: (calls.append("smart"), '{"name":"X"}')[1])
+        monkeypatch.setattr(wine_app, "_call_openai",
+                            lambda *a, **k: (calls.append("plain"), '{"name":"X"}')[1])
+        opts = {"ai_provider": "openai", "openai_api_key": "k",
+                "openai_model": "gpt-5.6-luna", "openai_web_search": True}
+        wine_app._analyze_wine_from_context(opts, None, "image/jpeg", {"name": "X"})
+        assert calls == ["smart"]
+
+    def test_gate_plain_when_flag_off(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(wine_app, "_call_openai_smart",
+                            lambda *a, **k: (calls.append("smart"), '{"name":"X"}')[1])
+        monkeypatch.setattr(wine_app, "_call_openai",
+                            lambda *a, **k: (calls.append("plain"), '{"name":"X"}')[1])
+        opts = {"ai_provider": "openai", "openai_api_key": "k",
+                "openai_model": "gpt-5.6-luna", "openai_web_search": False}
+        wine_app._analyze_wine_from_context(opts, None, "image/jpeg", {"name": "X"})
+        assert calls == ["plain"]

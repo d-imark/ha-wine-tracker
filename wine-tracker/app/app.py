@@ -1690,6 +1690,47 @@ def _call_openai(image_b64, media_type, prompt, opts):
     return response.choices[0].message.content
 
 
+_WEB_RESEARCH_PROMPT = (
+    "\n\nZusätzlich: Nutze die Websuche, um diesen Wein zu recherchieren.\n"
+    "1. Finde und verifiziere die OFFIZIELLE Website des Winzers/Guts; nutze deren "
+    "Detailinfos, um region, grape, drink_from/drink_until und notes so genau wie "
+    "möglich zu bestimmen.\n"
+    "2. Finde Händler/Online-Shops, bei denen der Wein kaufbar ist.\n"
+    "Schreibe in \"ai_rationale\" (in derselben Sprache wie die übrigen Textfelder) "
+    "eine kurze Zusammenfassung: offizielle Website-URL (oder 'nicht gefunden'), "
+    "worauf die Angaben beruhen, und Händler-URLs. Erfinde KEINE URLs — nenne nur, "
+    "was die Suche wirklich geliefert hat."
+)
+
+
+def _call_openai_websearch(image_b64, media_type, prompt, opts):
+    """Call OpenAI via the Responses API with the web_search tool."""
+    from openai import OpenAI
+    api_key = opts.get("openai_api_key", "").strip()
+    model = opts.get("openai_model", "gpt-5.5").strip() or "gpt-5.5"
+    client = OpenAI(api_key=api_key)
+    content = [{"type": "input_text", "text": prompt + _WEB_RESEARCH_PROMPT}]
+    if image_b64:
+        content.append({"type": "input_image",
+                        "image_url": f"data:{media_type};base64,{image_b64}"})
+    response = client.responses.create(
+        model=model,
+        tools=[{"type": "web_search"}],
+        input=[{"role": "user", "content": content}],
+        max_output_tokens=1500,
+    )
+    return response.output_text
+
+
+def _call_openai_smart(image_b64, media_type, prompt, opts):
+    """OpenAI with web search; fall back to plain chat.completions on any error."""
+    try:
+        return _call_openai_websearch(image_b64, media_type, prompt, opts)
+    except Exception as e:
+        app.logger.warning("OpenAI web_search failed, falling back to chat.completions: %s", e)
+        return _call_openai(image_b64, media_type, prompt, opts)
+
+
 def _call_openrouter(image_b64, media_type, prompt, opts):
     """Call OpenRouter API (OpenAI-compatible with custom base_url)."""
     from openai import OpenAI
@@ -2484,6 +2525,8 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
     call_fn = dispatch.get(provider)
     if not call_fn:
         raise ValueError("invalid_provider")
+    if provider == "openai" and opts.get("openai_web_search", True):
+        call_fn = _call_openai_smart
 
     raw = call_fn(image_b64, media_type, prompt, opts).strip()
 
