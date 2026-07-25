@@ -1182,13 +1182,47 @@ function arComputeChanges(fields) {
   return changes;
 }
 
+function _arEnrichSummary(key, value) {
+  if (value === null || value === undefined) return '—';
+  if (key === 'food_pairings') {
+    return Array.isArray(value) && value.length ? value.join(', ') : '—';
+  }
+  if (key === 'maturity_data') {
+    var pk = value && value.peak;
+    if (Array.isArray(pk) && pk.length === 2 && pk[0] && pk[1]) {
+      return (T.maturity_peak || 'Peak') + ' ' + pk[0] + '–' + pk[1];
+    }
+    var n = value && typeof value === 'object' ? Object.keys(value).length : 0;
+    return n ? n + ' ' + (T.maturity_phases || 'phases') : '—';
+  }
+  if (key === 'taste_profile') {
+    var dims = [['body','taste_body'],['tannin','taste_tannin'],
+                ['acidity','taste_acidity'],['sweetness','taste_sweetness']];
+    var parts = [];
+    dims.forEach(function(d) {
+      var v = value ? value[d[0]] : undefined;
+      if (v !== undefined && v !== null && v !== '') parts.push((T[d[1]] || d[0]) + ' ' + v);
+    });
+    return parts.length ? parts.join(' · ') : '—';
+  }
+  return '—';
+}
+
 function arComputeEnrich(fields) {
   var out = [];
   _AR_ENRICH.forEach(function(e) {
     var val = fields[e.key];
     if (val === null || val === undefined) return;
-    if (Array.isArray(val)) { if (val.length === 0) return; out.push({ e: e, val: val, count: val.length }); return; }
-    if (typeof val === 'object') { var n = Object.keys(val).length; if (n === 0) return; out.push({ e: e, val: val, count: n }); return; }
+    if (Array.isArray(val) && val.length === 0) return;
+    if (typeof val === 'object' && !Array.isArray(val) && Object.keys(val).length === 0) return;
+    var oldRaw = null;
+    var el = document.getElementById(e.el);
+    if (el && el.value) { try { oldRaw = JSON.parse(el.value); } catch (ex) { oldRaw = null; } }
+    out.push({
+      e: e, val: val,
+      oldSummary: _arEnrichSummary(e.key, oldRaw),
+      newSummary: _arEnrichSummary(e.key, val)
+    });
   });
   return out;
 }
@@ -1220,8 +1254,9 @@ function renderAiReload(fields, changes, enrich) {
     rows += '<tr>' +
       '<td class="ar-check"><input type="checkbox" id="arEnr_' + j + '" checked></td>' +
       '<td class="vr-field">' + (T[en.e.labelKey] || en.e.key) + '</td>' +
-      '<td class="vr-new" colspan="3"><i class="mdi mdi-check"></i>' +
-        (en.count ? ' (' + en.count + ')' : '') + '</td>' +
+      '<td class="vr-old">' + esc(en.oldSummary) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(en.newSummary) + '</td>' +
     '</tr>';
   });
   document.getElementById('aiChanges').innerHTML = rows;
