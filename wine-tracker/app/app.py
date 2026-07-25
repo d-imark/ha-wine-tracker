@@ -2294,11 +2294,6 @@ def vivino_search():
             country_code = region_obj.get("country") or ""
             country_name = (_COUNTRY_NAMES.get(country_code, country_code.upper())
                             if country_code else "")
-            region_str = (
-                f"{region_name}, {country_name}" if region_name and country_name
-                else region_name or country_name
-            )
-
             grapes = [grape_map.get(g) for g in (hit.get("grapes") or [])]
             grape = ", ".join(g for g in grapes if g)
 
@@ -2314,7 +2309,8 @@ def vivino_search():
                 # specific vintage they own, so we don't guess a year here.
                 "year": None,
                 "wine_type": wine_type,
-                "region": region_str,
+                "region": region_name,
+                "country": country_name,
                 "grape": grape,
                 "rating": rating,
                 # The catalog index carries no price (that's marketplace data).

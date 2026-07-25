@@ -340,6 +340,17 @@ class TestVivinoSearch:
         assert r["vivino_id"] == 1675990
 
     @patch("requests.Session")
+    def test_vivino_search_splits_region_and_country(self, MockSession, monkeypatch, client):
+        """Region and country come back as two separate fields, not 'Region, Country'."""
+        _mock_algolia(MockSession, monkeypatch, response=_algolia_response([_algolia_hit()]))
+        resp = client.get("/api/vivino-search?q=maurice+schueller")
+        assert resp.status_code == 200
+        r = json.loads(resp.data)["results"][0]
+        assert r["region"] == "Alsace Grand Cru 'Goldert'"   # region only, no country
+        assert "," not in r["region"]
+        assert r["country"] == "France"                       # fr -> France via _COUNTRY_NAMES
+
+    @patch("requests.Session")
     def test_vivino_search_by_id_fetches_exact_wine(self, MockSession, monkeypatch, client):
         """?id= must fetch exactly that wine via Algolia getObject (deterministic),
         never a name search. This is what a reload of a wine with a stored
