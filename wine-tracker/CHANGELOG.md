@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.12.0
+
+- **Fork „Wine Tracker DI"** - eigenständiges Add-on (Slug `wine_tracker_di`, Host-Port 5051, eigenes Datenverzeichnis `/share/wine-tracker-di`), das parallel zum Original betrieben werden kann.
+- **Vivino-Katalogsuche (Algolia)** - findet Weine zuverlässig im vollen Katalog; Nachladen per gespeicherter Vivino-ID.
+- **Zwei-Dialog-Reload** - Vivino-Abgleich bestätigt zuerst den Treffer, dann die zu ändernden Felder, bevor überschrieben wird.
+- **Getrennte Bewertungen** - persönliche Wertung und Vivino-Wertung separat, je auf eine Nachkommastelle.
+- **Referenzdaten** - gepflegte Listen für Länder/Regionen/Rebsorten/Weintypen/Flaschenformate inkl. Verwaltungs-UI, Formular-Integration und KI-/Fuzzy-Abgleich beim Speichern.
+- **KI-Update mit Bestätigung** - die KI-Aktualisierung zeigt vorab die zu ändernden Felder (pro Feld wählbar) plus eine kurze KI-Begründung, die optional gespeichert wird.
+- **Mehrere Bilder pro Wein** - Scan/Vivino/KI/Manuell nebeneinander, Auswahl des Anzeige-Bildes, Galerie in Bearbeiten- und Detailansicht; Vivino-Bild wird im Abgleich mit übernommen.
+- **Weltkarten-Fix** - der Globus auf der Statistik-Seite wird wieder vollständig dargestellt.
+
 ## 1.11.0
 
 - **Out-of-stock wines stay visible** - wines that drop to zero bottles no longer vanish from the cellar. They now show an "Empty" ribbon, and a new persistent "Show empty bottles" toggle in Settings remembers your choice across sessions (the existing quick-toggle in the filter bar still works as a temporary shortcut). Thanks @rogercrocha for the contribution.
