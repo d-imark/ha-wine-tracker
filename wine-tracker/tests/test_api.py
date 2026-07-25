@@ -2016,3 +2016,22 @@ class TestWineVivinoImage:
         resp = client.post(f"/api/wine/{wid}/images/vivino",
                            json={"url": "https://images.vivino.com/x.jpg"})
         assert resp.status_code == 400
+
+
+# ── openai_web_search option (load_options) ──────────────────────────────────
+
+class TestWebSearchOption:
+    def test_default_true(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_WEB_SEARCH", raising=False)
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", "/nonexistent/options.json")
+        assert wine_app.load_options()["openai_web_search"] is True
+
+    def test_env_false(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_WEB_SEARCH", "false")
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", "/nonexistent/options.json")
+        assert wine_app.load_options()["openai_web_search"] is False
+
+    def test_env_true(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_WEB_SEARCH", "true")
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", "/nonexistent/options.json")
+        assert wine_app.load_options()["openai_web_search"] is True

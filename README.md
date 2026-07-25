@@ -184,6 +184,7 @@ docker-compose up -d
 |----------|---------|
 | `OPENAI_API_KEY` | _(empty)_ |
 | `OPENAI_MODEL` | `gpt-5.5` |
+| `OPENAI_WEB_SEARCH` | `true` |
 
 **OpenRouter (multi-provider):**
 

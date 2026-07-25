@@ -28,6 +28,7 @@ options:
   anthropic_model: "claude-opus-4-8"
   openai_api_key: ""
   openai_model: "gpt-5.5"
+  openai_web_search: true
   openrouter_api_key: ""
   openrouter_model: "anthropic/claude-opus-4.8"
   ollama_host: "http://localhost:11434"
@@ -44,6 +45,7 @@ schema:
   anthropic_model: str?
   openai_api_key: str?
   openai_model: str?
+  openai_web_search: bool?
   openrouter_api_key: str?
   openrouter_model: str?
   ollama_host: str?
