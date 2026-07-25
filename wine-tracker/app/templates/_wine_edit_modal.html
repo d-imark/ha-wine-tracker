@@ -600,6 +600,7 @@ function renderVivinoResults(items) {
     if (item.year) meta.push(item.year);
     if (item.wine_type) meta.push(T['wine_type_' + item.wine_type] || item.wine_type);
     if (item.region) meta.push(item.region);
+    if (item.country) meta.push(item.country);
 
     var ratingHtml = '';
     if (item.rating) {
@@ -631,6 +632,7 @@ function selectVivinoResult(index) {
   if (item.year) fields.vintage = item.year;
   if (item.wine_type) fields.wine_type = item.wine_type;
   if (item.region) fields.region = item.region;
+  if (item.country) fields.country = item.country;
   if (item.grape) fields.grape = item.grape;
   if (item.price) fields.price = item.price;
 
@@ -738,6 +740,7 @@ function populateFormFromAi(fields, imageFilename) {
   if (fields.vintage) document.getElementById('wine_year').value = fields.vintage;
   if (fields.wine_type) document.getElementById('wine_type').value = fields.wine_type;
   if (fields.region) document.getElementById('wine_region').value = fields.region;
+  if (fields.country) document.getElementById('wine_country').value = fields.country;
   if (fields.grape) document.getElementById('wine_grape').value = fields.grape;
   if (fields.price) document.getElementById('wine_price').value = fields.price;
   if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
@@ -957,10 +960,11 @@ function reloadViaAi() {
 // Fields the reload may overwrite once confirmed. rating (personal), year and
 // price (catalog wines carry neither) are intentionally excluded.
 var _VR_FIELDS = [
-  { key: 'name',      el: 'wine_name',   labelKey: 'vr_field_name' },
-  { key: 'wine_type', el: 'wine_type',   labelKey: 'vr_field_type', type: 'wine_type' },
-  { key: 'region',    el: 'wine_region', labelKey: 'vr_field_region' },
-  { key: 'grape',     el: 'wine_grape',  labelKey: 'vr_field_grape' }
+  { key: 'name',      el: 'wine_name',    labelKey: 'vr_field_name' },
+  { key: 'wine_type', el: 'wine_type',    labelKey: 'vr_field_type', type: 'wine_type' },
+  { key: 'region',    el: 'wine_region',  labelKey: 'vr_field_region' },
+  { key: 'country',   el: 'wine_country', labelKey: 'label_country' },
+  { key: 'grape',     el: 'wine_grape',   labelKey: 'vr_field_grape' }
 ];
 var _vrCandidates = [];
 var _vrSelected = null;
@@ -1032,6 +1036,7 @@ function vrRenderCandidates() {
     if (item.year) meta.push(item.year);
     if (item.wine_type) meta.push(T['wine_type_' + item.wine_type] || item.wine_type);
     if (item.region) meta.push(item.region);
+    if (item.country) meta.push(item.country);
     var ratingHtml = item.rating
       ? '<span class="vivino-result-rating"><i class="mdi mdi-star"></i> ' +
         Number(item.rating).toFixed(1) + '</span>' : '';
