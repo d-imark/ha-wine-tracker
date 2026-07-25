@@ -1086,11 +1086,11 @@ function openViewModal(id, wine) {
   // AI rationale ("Quellen") — behind an info toggle so the long web-research
   // text (URLs etc.) never blows up the 2-column layout. Collapsed by default.
   if (w.ai_rationale) {
+    var aiTitle = T.ai_basis_label || 'AI basis';
     html += '<div class="view-ai-basis-wrap">' +
-      '<button type="button" class="view-ai-basis-toggle" aria-expanded="false" onclick="toggleAiBasis(this)">' +
-        '<i class="mdi mdi-information-outline"></i>' +
-        '<span>' + (T.ai_basis_label || 'AI basis') + '</span>' +
-        '<i class="mdi mdi-chevron-down view-ai-basis-caret"></i>' +
+      '<button type="button" class="view-ai-basis-toggle" aria-expanded="false" ' +
+        'title="' + aiTitle + '" aria-label="' + aiTitle + '" onclick="toggleAiBasis(this)">' +
+        '<i class="mdi mdi-creation"></i>' +
       '</button>' +
       '<div class="view-ai-basis" hidden>' + escapeHtml(w.ai_rationale) + '</div>' +
     '</div>';
