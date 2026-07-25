@@ -163,9 +163,12 @@ HA_OPTIONS = load_options()
 
 # Persist data in /share so it survives app restarts/updates
 # Falls /share nicht existiert (lokale Entwicklung), nutze ./data stattdessen
-# DATA_DIR ENV override enables standalone Docker deployment
+# DATA_DIR ENV override enables standalone Docker deployment.
+# Fork "Wine Tracker DI": own /share subfolder so it runs independently of the
+# upstream add-on (its data lives in /share/wine-tracker) — even if the add-on
+# runtime does not carry the Dockerfile ENV.
 DATA_DIR = os.environ.get("DATA_DIR",
-    "/share/wine-tracker" if os.path.isdir("/share")
+    "/share/wine-tracker-di" if os.path.isdir("/share")
     else os.path.join(os.path.dirname(__file__), "data"))
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 IMPORT_TMP_DIR = os.path.join(DATA_DIR, "import_tmp")

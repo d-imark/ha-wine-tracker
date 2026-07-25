@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.1
+
+- **Getrennte Datenbank garantiert** - der Fork nutzt sein eigenes Verzeichnis `/share/wine-tracker-di` jetzt direkt im App-Default (nicht nur über die Docker-Env), damit er unabhängig vom Original läuft, selbst wenn die Add-on-Laufzeit die Dockerfile-Env nicht übernimmt.
+
 ## 1.12.0
 
 - **Fork „Wine Tracker DI"** - eigenständiges Add-on (Slug `wine_tracker_di`, Host-Port 5051, eigenes Datenverzeichnis `/share/wine-tracker-di`), das parallel zum Original betrieben werden kann.
