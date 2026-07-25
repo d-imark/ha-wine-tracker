@@ -64,6 +64,21 @@ Felder laufen durch den bestehenden KI-Abgleich-Dialog.
   wie bei den übrigen bool-Optionen (String „true"/„false" bzw. HA liefert bool).
 - Erscheint in der HA-Add-on-**Konfiguration** als Schalter neben den AI-Optionen.
 
+### Konfiguration in allen Deployment-Varianten
+Die Option muss in allen drei Betriebsarten setzbar sein (die App liest sie
+einheitlich über `load_options`):
+- **Home Assistant Add-on:** `config.yaml` `options`/`schema` (siehe oben) →
+  Schalter in der Add-on-Konfiguration.
+- **Standalone Docker:** in `docker/docker-compose.yml` unter `environment` ein
+  auskommentiertes Beispiel `# - OPENAI_WEB_SEARCH=true` bei den OpenAI-Zeilen;
+  gelesen via Env-Map `OPENAI_WEB_SEARCH`.
+- **Lokale Entwicklung:** Env-Variable `OPENAI_WEB_SEARCH` (kein `/data/options.json`
+  lokal). Der Dev-Launcher **`scripts/run-dev.local.ps1`** (GITIGNORED, nur lokal)
+  setzt zusätzlich `$env:OPENAI_WEB_SEARCH = "true"` neben den bestehenden
+  OpenAI-Env-Variablen; Änderung wird **nicht** committet.
+- Doku/README (Docker-Abschnitt) erhält die neue Env-Zeile analog zu den übrigen
+  AI-Variablen.
+
 ### Prompt / Regeln (`_wine_json_rules`)
 Für OpenAI wird der Prompt um einen Recherche-Block erweitert (die übrigen
 Provider bekommen ihn nicht, da ohne Web wirkungslos — Umsetzung: der Web-Prompt
