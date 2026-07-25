@@ -19,8 +19,11 @@ Felder laufen durch den bestehenden KI-Abgleich-Dialog.
 
 ## Entscheidungen (aus dem Brainstorming)
 
-- **Nur OpenAI** (web_search ist OpenAI-spezifisch); läuft **immer** beim
-  KI-Reload, wenn Provider = openai.
+- **Nur OpenAI** (web_search ist OpenAI-spezifisch).
+- **Umschaltbar** über eine neue Add-on-Option `openai_web_search` (bei den
+  anderen AI-Optionen in der HA-Konfiguration, wo Provider/Keys/Modelle stehen):
+  an → neue Methode (Web-Recherche), aus → bisherige Analyse ohne Web.
+  **Default: an.**
 - **Zweck:** Info **und** Feld-Verbesserung (Winzer-Details fließen in die Felder).
 - **Ein Aufruf**, Ergebnis als Prozess-Info (kein Live-Status, keine 2 Calls).
 - **Quellen in die Begründung** integriert (kein eigenes Feld, keine klickbaren
@@ -48,6 +51,18 @@ Felder laufen durch den bestehenden KI-Abgleich-Dialog.
   (bestehender `chat.completions`-Pfad, ohne Web). So bricht nichts, wenn das
   Modell/Tool die Websuche nicht unterstützt.
 - `_call_openai` bleibt unverändert (Fallback + weiterhin für nicht-web Zwecke).
+- **Schalter-Gate (aus der Config):** Nur wenn Provider=openai **und**
+  `opts.get("openai_web_search", True)` → `_call_openai_smart` (Web-Pfad mit
+  Fallback); sonst direkt `_call_openai` (alte Methode ohne Web). Das Gate wird
+  in `_analyze_wine_from_context` anhand von `opts` ausgewertet (kein Request-Flag).
+
+### Add-on-Option `openai_web_search`
+- `wine-tracker/config.yaml`: unter `options` `openai_web_search: true`, unter
+  `schema` `openai_web_search: bool`.
+- `load_options()`: Default `"openai_web_search": True` im Defaults-Dict; Env-Map
+  `OPENAI_WEB_SEARCH` → `openai_web_search` (für Standalone-Docker). Boolean-Parse
+  wie bei den übrigen bool-Optionen (String „true"/„false" bzw. HA liefert bool).
+- Erscheint in der HA-Add-on-**Konfiguration** als Schalter neben den AI-Optionen.
 
 ### Prompt / Regeln (`_wine_json_rules`)
 Für OpenAI wird der Prompt um einen Recherche-Block erweitert (die übrigen
@@ -66,16 +81,16 @@ Das JSON-Schema (`_wine_json_schema`) bleibt **unverändert** (Felder + `ai_rati
 
 ## Frontend
 
-**Kein/kaum Umbau.** Die verbesserten Felder erscheinen wie gehabt pro Feld im
+**Kein Umbau.** Der Umschalter ist eine HA-Add-on-Option (kein In-App-Toggle,
+kein Request-Flag). Die verbesserten Felder erscheinen wie gehabt pro Feld im
 KI-Abgleich-Dialog; die Recherche-Info steht in `ai_rationale` und wird im
 Begründungs-Block sowie als „KI-Basis" in der Detailansicht angezeigt (beides
-existiert bereits). Ggf. minimal: Begründungs-Block bleibt `white-space`/Wrap-fest
-(bereits via `overflow-wrap`).
+existiert bereits, Wrap via `overflow-wrap`).
 
 ## Robustheit / Kosten
 
-- Web-Recherche ist langsamer + teurer pro Reload; läuft „immer" bei OpenAI
-  (bewusst so gewünscht). Kein Toggle (später leicht als Option ergänzbar).
+- Web-Recherche ist langsamer + teurer pro Reload; **standardmäßig an** bei
+  OpenAI, per Add-on-Option `openai_web_search` abschaltbar (dann alte Methode).
 - Jeder Fehler im Web-Pfad → transparenter Fallback auf die bisherige Analyse.
 - Timeouts/`max_output_tokens` moderat setzen, damit der Reload nicht hängt.
 
@@ -88,6 +103,11 @@ Backend (pytest, OpenAI gemockt):
   `gpt-5.6-luna`) liefert die Felder inkl. `ai_rationale` mit den Quellen.
 - **Fallback:** `client.responses.create` wirft → `_call_openai_smart` ruft
   `_call_openai` (gemockt) und liefert dessen Ergebnis; kein Fehler nach außen.
+- **Schalter aus:** `openai_web_search=False` in `opts` → auch bei Provider=openai
+  wird `_call_openai_websearch` **nicht** aufgerufen (nur `_call_openai`).
+- **Schalter an (Default):** `openai_web_search` fehlt/True → Web-Pfad aktiv.
+- `load_options`: `OPENAI_WEB_SEARCH=false` (Env) bzw. `false` in options.json →
+  `openai_web_search == False`; Default True.
 - Nicht-OpenAI-Provider unverändert (kein Web-Pfad).
 
 Frontend (Playwright): gestubbte `/api/reanalyze-wine` mit `ai_rationale`, die
@@ -107,4 +127,5 @@ genaue Aufruf-Syntax; der Fallback deckt Abweichungen ab.
 - Andere Provider (nur OpenAI).
 - Klickbare Quell-Links / eigenes Quellen-Feld (Quellen bleiben Text in der
   Begründung).
-- Kosten-Toggle, Live-Fortschrittsanzeige, zweistufiger Aufruf.
+- Live-Fortschrittsanzeige, zweistufiger Aufruf (ein Call, Ergebnis als Info).
+- Kein In-App-Toggle — der Schalter ist die Add-on-Option `openai_web_search`.
