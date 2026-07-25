@@ -1083,19 +1083,6 @@ function openViewModal(id, wine) {
     html += '<div class="view-notes">' + escapeHtml(w.notes) + '</div>';
   }
 
-  // AI rationale ("Quellen") — behind an info toggle so the long web-research
-  // text (URLs etc.) never blows up the 2-column layout. Collapsed by default.
-  if (w.ai_rationale) {
-    var aiTitle = T.ai_basis_label || 'AI basis';
-    html += '<div class="view-ai-basis-wrap">' +
-      '<button type="button" class="view-ai-basis-toggle" aria-expanded="false" ' +
-        'title="' + aiTitle + '" aria-label="' + aiTitle + '" onclick="toggleAiBasis(this)">' +
-        '<i class="mdi mdi-creation"></i>' +
-      '</button>' +
-      '<div class="view-ai-basis" hidden>' + escapeHtml(w.ai_rationale) + '</div>' +
-    '</div>';
-  }
-
   // Maturity graph, taste profile, food pairings
   if (typeof buildWineExtrasHtml === 'function') {
     html += buildWineExtrasHtml(w);
@@ -1112,16 +1099,44 @@ function openViewModal(id, wine) {
   html += '</div>';
 
   document.getElementById('viewModalBody').innerHTML = html;
+
+  // Header KI icon: only shown when there is an AI basis; opens the KI info dialog.
+  var aiBtn = document.getElementById('viewAiBasisBtn');
+  if (aiBtn) {
+    if (w.ai_rationale) {
+      var aiTitle = T.ai_basis_label || 'AI basis';
+      aiBtn.hidden = false;
+      aiBtn.title = aiTitle;
+      aiBtn.setAttribute('aria-label', aiTitle);
+    } else {
+      aiBtn.hidden = true;
+    }
+  }
+
   openModal('viewModal');
 }
 
-function toggleAiBasis(btn) {
-  var panel = btn.parentNode.querySelector('.view-ai-basis');
-  if (!panel) return;
-  var show = panel.hasAttribute('hidden');
-  if (show) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
-  btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-  btn.classList.toggle('is-open', show);
+// Open the KI-Basis ("Quellen") as its own dialog from the detail view.
+function openAiInfo() {
+  var w = window._viewWineData || {};
+  document.getElementById('aiInfoText').textContent = w.ai_rationale || '';
+  openModal('aiInfoModal');
+}
+
+// Refresh button inside the KI info dialog: close it, then run the AI process.
+function refreshFromAiInfo() {
+  closeModal('aiInfoModal');
+  refreshAiFromView();
+}
+
+// Refresh from the detail view: open the edit modal for this wine and kick off
+// the AI re-analysis, which then shows the per-field reconcile dialog.
+function refreshAiFromView() {
+  var id = window._viewWineId, w = window._viewWineData;
+  if (!id) return;
+  closeModal('viewModal');
+  openWineModal(id, w);
+  reloadViaAi();
 }
 
 function editFromView() {

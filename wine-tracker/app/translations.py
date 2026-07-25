@@ -299,6 +299,7 @@ TRANSLATIONS = {
     "img_cat_ki": "KI",
     "img_cat_manuell": "Manuell",
     "ai_basis_label": "KI-Basis",
+    "view_ai_refresh": "KI aktualisieren",
     # Reference data management (TP2)
     "ref_title": "Referenzdaten",
     "rc_title": "Referenz-Abgleich",
@@ -710,6 +711,7 @@ TRANSLATIONS = {
     "img_cat_ki": "AI",
     "img_cat_manuell": "Manual",
     "ai_basis_label": "AI basis",
+    "view_ai_refresh": "Refresh with AI",
     # Reference data management (TP2)
     "ref_title": "Reference data",
     "rc_title": "Reference match",
@@ -1118,6 +1120,7 @@ TRANSLATIONS = {
     "img_cat_ki": "IA",
     "img_cat_manuell": "Manuel",
     "ai_basis_label": "Base IA",
+    "view_ai_refresh": "Actualiser avec l'IA",
     # Reference data management (TP2)
     "ref_title": "Données de référence",
     "rc_title": "Correspondance référence",
@@ -1526,6 +1529,7 @@ TRANSLATIONS = {
     "img_cat_ki": "IA",
     "img_cat_manuell": "Manuale",
     "ai_basis_label": "Base IA",
+    "view_ai_refresh": "Aggiorna con l'IA",
     # Reference data management (TP2)
     "ref_title": "Dati di riferimento",
     "rc_title": "Confronto referenza",
@@ -1934,6 +1938,7 @@ TRANSLATIONS = {
     "img_cat_ki": "IA",
     "img_cat_manuell": "Manual",
     "ai_basis_label": "Base IA",
+    "view_ai_refresh": "Actualizar con IA",
     # Reference data management (TP2)
     "ref_title": "Datos de referencia",
     "rc_title": "Cotejo de referencia",
@@ -2342,6 +2347,7 @@ TRANSLATIONS = {
     "img_cat_ki": "IA",
     "img_cat_manuell": "Manual",
     "ai_basis_label": "Base IA",
+    "view_ai_refresh": "Atualizar com IA",
     # Reference data management (TP2)
     "ref_title": "Dados de referência",
     "rc_title": "Correspondência de referência",
@@ -2750,6 +2756,7 @@ TRANSLATIONS = {
     "img_cat_ki": "AI",
     "img_cat_manuell": "Handmatig",
     "ai_basis_label": "AI-basis",
+    "view_ai_refresh": "Bijwerken met AI",
     # Reference data management (TP2)
     "ref_title": "Referentiegegevens",
     "rc_title": "Referentievergelijking",

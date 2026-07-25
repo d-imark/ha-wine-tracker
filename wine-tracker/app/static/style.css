@@ -1272,8 +1272,18 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 
 .view-actions {
-  display: flex; gap: .75rem; padding-top: .5rem;
+  display: flex; gap: .75rem; padding-top: .5rem; align-items: center;
 }
+.view-actions .btn-submit { width: auto; flex: 1; margin-top: 0; }
+.view-ai-refresh {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  flex: none; height: 38px; padding: 0 1.2rem; border-radius: 8px;
+  background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  font-size: .95rem; font-weight: 700; cursor: pointer; transition: background .2s;
+}
+.view-ai-refresh:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.view-ai-refresh .mdi { font-size: 1.1rem; }
+.view-header-actions { display: flex; align-items: center; gap: .5rem; }
 
 /* ── View Modal: Maturity Graph ───────────────────────────────────────────── */
 .maturity-section {
@@ -2648,22 +2658,25 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 }
 #aiReloadModal .ar-rationale-text { margin: 0 0 .45rem; line-height: 1.45; overflow-wrap: break-word; }
 #aiReloadModal .ar-rationale-save { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--muted); cursor: pointer; }
-.view-ai-basis-wrap { margin-top: .6rem; }
+/* KI icon in the detail-view header — opens the KI info dialog. */
 .view-ai-basis-toggle {
   display: inline-flex; align-items: center; justify-content: center;
   width: 2rem; height: 2rem; padding: 0;
   background: var(--surface); color: var(--muted);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
 }
-.view-ai-basis-toggle:hover { color: var(--text); }
+.view-ai-basis-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.view-ai-basis-toggle[hidden] { display: none; }
 .view-ai-basis-toggle .mdi { font-size: 1.15rem; }
-.view-ai-basis-toggle.is-open { color: var(--accent); border-color: var(--accent); }
-.view-ai-basis {
-  margin-top: .5rem; font-size: .82rem; color: var(--muted); line-height: 1.45;
-  padding: .5rem .6rem; background: var(--surface); border-radius: 6px;
-  overflow-wrap: anywhere; word-break: break-word;
+
+/* KI-Basis info dialog */
+#aiInfoModal { z-index: 265; }
+#aiInfoModal .modal { max-width: 520px; }
+.ai-info-text {
+  margin: 0 0 1rem; font-size: .9rem; line-height: 1.5; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
-.view-ai-basis[hidden] { display: none; }
+.ai-info-actions { display: flex; justify-content: flex-end; }
 
 /* ── Edit-dialog image gallery (BP2) ───────────────────────────────────────── */
 .wine-gallery { display: flex; flex-direction: column; gap: .6rem; }

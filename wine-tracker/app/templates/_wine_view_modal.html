@@ -3,8 +3,32 @@
   <div class="modal">
     <div class="modal-header">
       <span id="viewModalTitle"></span>
-      <button class="modal-close" onclick="closeModal('viewModal')">&times;</button>
+      <div class="view-header-actions">
+        <button type="button" id="viewAiBasisBtn" class="view-ai-basis-toggle" hidden
+                onclick="openAiInfo()">
+          <i class="mdi mdi-creation"></i>
+        </button>
+        <button class="modal-close" type="button" onclick="closeModal('viewModal')">&times;</button>
+      </div>
     </div>
     <div class="modal-body" id="viewModalBody"></div>
+  </div>
+</div>
+
+{# KI-Basis ("Quellen") info dialog — opened from the detail view header icon #}
+<div class="modal-overlay" id="aiInfoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.ai_basis_label }}</span>
+      <button class="modal-close" type="button" onclick="closeModal('aiInfoModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="ai-info-text" id="aiInfoText"></p>
+      <div class="ai-info-actions">
+        <button type="button" class="view-ai-refresh" onclick="refreshFromAiInfo()">
+          <i class="mdi mdi-refresh"></i> <span>{{ t.view_ai_refresh }}</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
