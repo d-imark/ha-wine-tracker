@@ -2669,6 +2669,16 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .view-ai-basis-toggle[hidden] { display: none; }
 .view-ai-basis-toggle .mdi { font-size: 1.15rem; }
 
+/* Match the header close (×) to the KI icon button so they sit as a pair. */
+.view-header-actions { gap: .5rem; }
+.view-header-actions .modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; padding: 0; font-size: 1.25rem; line-height: 1;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.view-header-actions .modal-close:hover { color: var(--accent); border-color: var(--accent); }
+
 /* KI-Basis info dialog */
 #aiInfoModal { z-index: 265; }
 #aiInfoModal .modal { max-width: 520px; }
