@@ -1229,6 +1229,7 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 .view-meta span {
   background: var(--bg); padding: .15rem .5rem; border-radius: 4px;
+  overflow-wrap: anywhere; max-width: 100%;
 }
 
 .view-stars {
@@ -1267,7 +1268,7 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 
 .view-notes {
   font-size: .88rem; color: var(--muted); line-height: 1.5;
-  padding: .75rem 0; white-space: pre-wrap;
+  padding: .75rem 0; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 
 .view-actions {
@@ -2606,6 +2607,7 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .vr-changes-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .vr-changes-table td {
   padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top;
+  overflow-wrap: anywhere;
 }
 .vr-changes-table tr:last-child td { border-bottom: none; }
 .vr-changes-table .vr-field { color: var(--muted); white-space: nowrap; }
@@ -2617,9 +2619,9 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 #reconcileModal { z-index: 260; }
 .rc-item { padding: .6rem 0; border-bottom: 1px solid var(--border); }
 .rc-item:last-child { border-bottom: none; }
-.rc-head { font-size: .9rem; margin-bottom: .1rem; }
+.rc-head { font-size: .9rem; margin-bottom: .1rem; overflow-wrap: anywhere; }
 .rc-hint { font-size: .78rem; color: var(--muted); margin-bottom: .45rem; }
-.rc-opt { display: block; font-size: .88rem; padding: .22rem 0; cursor: pointer; }
+.rc-opt { display: block; font-size: .88rem; padding: .22rem 0; cursor: pointer; overflow-wrap: anywhere; }
 .rc-opt input { margin-right: .4rem; }
 .rc-ai {
   font-size: .65rem; font-weight: 600; padding: .05rem .35rem; border-radius: 4px;
