@@ -45,6 +45,7 @@ WINE_COLUMNS = [
     "drink_until",
     "location",
     "grape",
+    "country",
     "vivino_id",
     "bottle_format",
     "maturity_data",
@@ -60,6 +61,7 @@ CSV_COLUMNS = [
     "type",
     "region",
     "grape",
+    "country",
     "quantity",
     "rating",
     "price",
@@ -122,6 +124,7 @@ def _build_readme(manifest: dict) -> str:
 | `type` | string | One of `Rotwein`, `Weisswein`, `Rosé`, `Schaumwein`, `Dessertwein`, `Likörwein`, `Anderes` |
 | `region` | string | Region / appellation |
 | `grape` | string | Grape variety / blend |
+| `country` | string | Country |
 | `quantity` | integer | Bottles currently in cellar |
 | `rating` | integer | 0 - 5 personal rating |
 | `price` | number | Purchase price |
@@ -248,6 +251,8 @@ CSV_ALIASES = {
     "type": "type",
     "typ": "type",
     "region": "region",
+    "country": "country",
+    "land": "country",
     "grape": "grape",
     "rebsorte": "grape",
     "quantity": "quantity",

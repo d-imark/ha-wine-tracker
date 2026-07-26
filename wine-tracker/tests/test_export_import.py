@@ -239,6 +239,18 @@ class TestImportParsing:
         assert parsed["wines"][0]["year"] == 2020
         assert parsed["wines"][0]["grape"] == "Riesling"
 
+    def test_parse_csv_country(self):
+        from export_import import parse_import_file
+        csv_bytes = "name,country\nRioja Wine,Spain\n".encode()
+        parsed = parse_import_file(csv_bytes, filename="c.csv")
+        assert parsed["wines"][0]["country"] == "Spain"
+
+    def test_parse_csv_country_german_alias(self):
+        from export_import import parse_import_file
+        csv_bytes = "name,land\nBordeaux,Frankreich\n".encode()
+        parsed = parse_import_file(csv_bytes, filename="c.csv")
+        assert parsed["wines"][0]["country"] == "Frankreich"
+
     def test_parse_csv_without_name_raises(self):
         from export_import import parse_import_file, ImportError
         with pytest.raises(ImportError):
@@ -426,6 +438,19 @@ class TestImportRoutes:
         row = db.execute("SELECT name, year FROM wines").fetchone()
         assert row["name"] == "Nebbiolo Import"
         assert row["year"] == 2015
+
+    def test_commit_inserts_country_from_csv(self, client, db):
+        csv_bytes = b"name,year,country\nCountry Wine,2018,Switzerland\n"
+        preview = json.loads(self._upload(client, csv_bytes, "country.csv").data)
+        assert preview["counts"]["new"] == 1
+        resp = client.post(
+            "/import/commit",
+            data=json.dumps({"token": preview["token"], "strategy": "skip"}),
+            content_type="application/json",
+        )
+        assert json.loads(resp.data)["inserted"] == 1
+        row = db.execute("SELECT country FROM wines").fetchone()
+        assert row["country"] == "Switzerland"
 
     def test_commit_rejects_invalid_token(self, client):
         resp = client.post(
