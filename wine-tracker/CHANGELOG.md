@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.0
+
+- **Einkaufs-Preisverwaltung** - der eigene Preis ist jetzt der mengengewichtete Durchschnitt deiner erfassten Einkäufe (Datum, Menge, Stückpreis, Ort, Notiz) über den neuen Dialog „Einkäufe verwalten"; der KI-/Marktpreis wird davon getrennt ausgewiesen. Bestehende Preise werden automatisch als erster Einkaufsposten migriert.
+- **Reifeprofil, Geschmack & Food-Pairings editierbar** - im Bearbeiten-Dialog erfassbar: Reifephasen als Grenzjahre mit Live-Kurvenvorschau, Geschmacksprofil (Körper/Tannin/Säure/Süße 1-5) und Food-Pairings.
+- **Vivino-Abgleich mit Häkchen** - beim Vivino-Reload lassen sich die einzelnen Felder per Checkbox an-/abwählen; der Dialog ist breiter und scrollt sauber.
+- **Bearbeiten-Dialog aufgeräumt** - Typ + Rebsorte, Land + Region sowie Flaschenformat + KI-Preis liegen je auf einer Zeile; das Feld „Gekauft bei" entfällt (der Einkaufsort lebt jetzt pro Einkaufsposten).
+- **Export/Import** sichert und restauriert jetzt auch den KI-Preis und alle Einkaufsposten.
+
 ## 1.12.2
 
 - **Winzer als eigenes Feld** - der Produzent ist nun ein eigenes Feld: auf der Weinkarte und in der Detailansicht sichtbar, im Bearbeiten-Dialog mit Autovervollständigung, und Teil von Export/Import (CSV-Alias `winery`/`winzer`).

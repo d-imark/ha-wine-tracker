@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.0
+
+- **Purchase price management** - your own price is now the quantity-weighted average of recorded purchases (date, quantity, unit price, location, note) via the new "Manage purchases" dialog; the AI/market price is shown separately. Existing prices are migrated into a first purchase lot.
+- **Editable maturity / taste / food pairings** - captured directly in the edit dialog: maturity phases as boundary years with a live curve preview, taste profile (body/tannin/acidity/sweetness 1-5) and food pairings.
+- **Vivino reconcile checkboxes** - individual fields can be toggled on/off when reloading from Vivino; the dialog is wider and scrolls cleanly.
+- **Tidier edit dialog** - type + grape, country + region, and bottle format + AI price each share a row; the "purchased at" field is gone (the purchase location now lives per purchase lot).
+- **Export/import** now backs up and restores the AI price and all purchase lots.
+
 ## 1.12.2
 
 - **Winery as its own field** - the producer is now a dedicated field, shown on the wine card and detail view, editable with autocomplete, and included in export/import (CSV alias `winery`/`winzer`).
