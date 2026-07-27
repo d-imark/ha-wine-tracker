@@ -2081,3 +2081,49 @@ class TestAiWebResearch:
                 "openai_model": "gpt-5.6-luna", "openai_web_search": False}
         wine_app._analyze_wine_from_context(opts, None, "image/jpeg", {"name": "X"})
         assert calls == ["plain"]
+
+
+# ── Purchase lots API ────────────────────────────────────────────────────────
+
+class TestPurchasesApi:
+    def _wine_id(self, client):
+        import sqlite3
+        client.post("/add", data={"name": "P Wine", "quantity": "6"},
+                    headers=AJAX, content_type="multipart/form-data")
+        con = sqlite3.connect(wine_app.DB_PATH)
+        wid = con.execute("SELECT id FROM wines ORDER BY id DESC LIMIT 1").fetchone()[0]
+        con.close()
+        return wid
+
+    def _price(self, client, wid):
+        return client.get(f"/api/wine/{wid}").get_json()["wine"]["price"]
+
+    def test_add_and_average(self, client):
+        wid = self._wine_id(client)
+        client.post(f"/api/wine/{wid}/purchases", json={"quantity": 2, "unit_price": 10})
+        d = client.post(f"/api/wine/{wid}/purchases", json={"quantity": 3, "unit_price": 20}).get_json()
+        assert d["ok"] and d["avg"] == 16.0 and d["total_qty"] == 5 and d["total_spent"] == 80
+        assert self._price(client, wid) == 16.0
+
+    def test_delete_recomputes(self, client):
+        wid = self._wine_id(client)
+        add = client.post(f"/api/wine/{wid}/purchases", json={"quantity": 1, "unit_price": 5}).get_json()
+        pid = add["purchases"][-1]["id"]
+        d = client.delete(f"/api/wine/{wid}/purchases/{pid}").get_json()
+        assert d["avg"] is None
+        assert self._price(client, wid) is None
+
+    def test_patch_updates(self, client):
+        wid = self._wine_id(client)
+        pid = client.post(f"/api/wine/{wid}/purchases",
+                          json={"quantity": 1, "unit_price": 10}).get_json()["purchases"][-1]["id"]
+        d = client.patch(f"/api/wine/{wid}/purchases/{pid}", json={"quantity": 4, "unit_price": 10}).get_json()
+        assert d["total_qty"] == 4 and self._price(client, wid) == 10.0
+
+    def test_bad_quantity_400(self, client):
+        wid = self._wine_id(client)
+        r = client.post(f"/api/wine/{wid}/purchases", json={"quantity": 0, "unit_price": 5})
+        assert r.status_code == 400
+
+    def test_unknown_wine_404(self, client):
+        assert client.get("/api/wine/999999/purchases").status_code == 404

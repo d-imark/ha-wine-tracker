@@ -231,12 +231,124 @@
   </div>
 </div>
 
+<!-- ═══════════ PURCHASES (own price lots) ═══════════ -->
+<div class="modal-overlay" id="purchasesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.purchases_title }} ({{ currency }})</span>
+      <button class="modal-close" type="button" onclick="closeModal('purchasesModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="purchasesList" class="purchases-list"></div>
+
+      <div class="purchase-add">
+        <h4 class="purchase-add-title">{{ t.purchase_add }}</h4>
+        <div class="purchase-add-grid">
+          <label class="pf pf-date">{{ t.purchase_date }}
+            <input type="date" id="pAddDate"></label>
+          <label class="pf pf-qty">{{ t.purchase_qty }}
+            <input type="number" id="pAddQty" min="1" value="1"></label>
+          <label class="pf pf-price">{{ t.purchase_unit_price }} ({{ currency }})
+            <input type="number" id="pAddPrice" min="0" step="0.01" placeholder="0.00"></label>
+          <label class="pf pf-loc">{{ t.purchase_location }}
+            <input type="text" id="pAddLoc" list="purchasedAtList" autocomplete="off"></label>
+          <label class="pf pf-note">{{ t.purchase_note }}
+            <input type="text" id="pAddNote"></label>
+        </div>
+        <datalist id="purchasedAtList">
+          {% for p in used_purchased_at %}
+          <option value="{{ p }}">
+          {% endfor %}
+        </datalist>
+        <button type="button" class="btn-submit purchase-add-btn" onclick="addPurchase()">{{ t.purchase_add }}</button>
+      </div>
+
+      <div class="purchases-summary">
+        <span>{{ t.purchase_avg }}<b id="pSumAvg">—</b></span>
+        <span>{{ t.label_quantity }}<b id="pSumQty">0</b></span>
+        <span>{{ t.purchase_total_spent }}<b id="pSumSpent">—</b></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
 // These functions power the add/edit wine modal on all pages.
 
 var _editWineId = null;
+
+// ── Purchases (own price lots) ───────────────────────────────────────────────
+var _purchWineId = null;
+function openPurchases(wineId) {
+  var id = wineId || _editWineId;
+  if (!id) { showReloadToast(T.purchase_save_first || 'Save the wine first', false); return; }
+  _purchWineId = id;
+  loadPurchases();
+  openModal('purchasesModal');
+}
+function loadPurchases() {
+  fetch(INGRESS + '/api/wine/' + _purchWineId + '/purchases')
+    .then(function(r) { return r.json(); }).then(renderPurchases).catch(function() {});
+}
+function _pFmt(v) { return (v == null || v === '') ? '—' : Number(v).toFixed(2); }
+function renderPurchases(d) {
+  if (!d || !d.ok) return;
+  var esc = function(s) { return (s == null ? '' : String(s)).replace(/</g, '&lt;'); };
+  var items = d.purchases || [];
+  var list = document.getElementById('purchasesList');
+  if (!items.length) {
+    list.innerHTML = '<div class="purchases-empty">—</div>';
+  } else {
+    list.innerHTML = items.map(function(p) {
+      var meta = [];
+      if (p.purchase_date) meta.push(esc(p.purchase_date));
+      if (p.location) meta.push(esc(p.location));
+      if (p.note) meta.push(esc(p.note));
+      return '<div class="purchase-item">' +
+        '<div class="purchase-item-main">' +
+          '<span class="purchase-item-qp">' + p.quantity + ' × ' + Number(p.unit_price).toFixed(2) + '</span>' +
+          (meta.length ? '<span class="purchase-item-meta">' + meta.join(' · ') + '</span>' : '') +
+        '</div>' +
+        '<button type="button" class="purchase-del" title="' + (T.btn_delete || '') +
+          '" onclick="deletePurchase(' + p.id + ')"><i class="mdi mdi-delete"></i></button>' +
+      '</div>';
+    }).join('');
+  }
+  document.getElementById('pSumAvg').textContent = _pFmt(d.avg);
+  document.getElementById('pSumQty').textContent = d.total_qty || 0;
+  document.getElementById('pSumSpent').textContent = _pFmt(d.total_spent);
+  var mp = document.getElementById('myPriceDisplay');
+  if (mp) mp.textContent = _pFmt(d.avg);
+  if (typeof window._onPurchasesChanged === 'function') window._onPurchasesChanged(d);
+}
+function addPurchase() {
+  var body = {
+    purchase_date: document.getElementById('pAddDate').value,
+    quantity: document.getElementById('pAddQty').value,
+    unit_price: document.getElementById('pAddPrice').value,
+    location: document.getElementById('pAddLoc').value,
+    note: document.getElementById('pAddNote').value
+  };
+  if (!body.unit_price || !(parseInt(body.quantity, 10) > 0)) return;
+  fetch(INGRESS + '/api/wine/' + _purchWineId + '/purchases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      ['pAddPrice', 'pAddLoc', 'pAddNote', 'pAddDate'].forEach(function(i) { document.getElementById(i).value = ''; });
+      document.getElementById('pAddQty').value = '1';
+      renderPurchases(d);
+    }
+  });
+}
+function deletePurchase(pid) {
+  fetch(INGRESS + '/api/wine/' + _purchWineId + '/purchases/' + pid, {
+    method: 'DELETE', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  }).then(function(r) { return r.json(); }).then(renderPurchases);
+}
 var AI_ENABLED = {{ 'true' if ai_enabled else 'false' }};
 var _aiLastFile = null;
 var _reloadMode = false;
@@ -248,7 +360,7 @@ var _AR_FIELDS = [
   { key: 'wine_type',   el: 'wine_type',        labelKey: 'label_type', type: 'wine_type' },
   { key: 'region',      el: 'wine_region',      labelKey: 'label_region' },
   { key: 'grape',       el: 'wine_grape',       labelKey: 'label_grape' },
-  { key: 'price',       el: 'wine_price',       labelKey: 'label_price' },
+  { key: 'price',       el: 'wine_ai_price',    labelKey: 'label_ai_price' },
   { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
   { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' },
   { key: 'notes',       el: 'wine_notes',       labelKey: 'label_notes' }
@@ -262,8 +374,8 @@ var _arPending = null;
 
 // Store original placeholders so we can hide them in edit mode
 var _placeholders = {};
-['wine_name','wine_year','wine_region','wine_grape','wine_purchased_at',
- 'wine_price','wine_drink_from','wine_drink_until','wine_location','wine_notes'].forEach(function(id) {
+['wine_name','wine_year','wine_region','wine_grape',
+ 'wine_ai_price','wine_drink_from','wine_drink_until','wine_location','wine_notes'].forEach(function(id) {
   var el = document.getElementById(id);
   if (el) _placeholders[id] = el.placeholder || '';
 });
@@ -416,8 +528,9 @@ function openWineModal(id, wine) {
   loadReferenceLists();
   onCountryChange();
   document.getElementById('wine_notes').value = w.notes || '';
-  document.getElementById('wine_purchased_at').value = w.purchased_at || '';
-  document.getElementById('wine_price').value = w.price || '';
+  document.getElementById('wine_ai_price').value = w.ai_price || '';
+  var _mp = document.getElementById('myPriceDisplay');
+  if (_mp) _mp.textContent = (w.price != null && w.price !== '') ? Number(w.price).toFixed(2) : '—';
   document.getElementById('wine_drink_from').value = w.drink_from || '';
   document.getElementById('wine_drink_until').value = w.drink_until || '';
   document.getElementById('wine_location').value = w.location || '';
@@ -798,7 +911,7 @@ function populateFormFromAi(fields, imageFilename) {
   if (fields.region) document.getElementById('wine_region').value = fields.region;
   if (fields.country) document.getElementById('wine_country').value = fields.country;
   if (fields.grape) document.getElementById('wine_grape').value = fields.grape;
-  if (fields.price) document.getElementById('wine_price').value = fields.price;
+  if (fields.price) document.getElementById('wine_ai_price').value = fields.price;
   if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
   if (fields.drink_until) document.getElementById('wine_drink_until').value = fields.drink_until;
   if (fields.notes) document.getElementById('wine_notes').value = fields.notes;
@@ -859,7 +972,7 @@ function populateFormMerge(fields, imageFilename) {
   setIfEmpty('wine_type', fields.wine_type);
   setIfEmpty('wine_region', fields.region);
   setIfEmpty('wine_grape', fields.grape);
-  setIfEmpty('wine_price', fields.price);
+  setIfEmpty('wine_ai_price', fields.price);
   setIfEmpty('wine_drink_from', fields.drink_from);
   setIfEmpty('wine_drink_until', fields.drink_until);
   setIfEmpty('wine_notes', fields.notes);

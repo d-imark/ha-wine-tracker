@@ -1054,10 +1054,20 @@ function openViewModal(id, wine) {
   // Purchased at
   if (w.purchased_at) details += viewRow('mdi-cart', T.label_purchased_at || 'Purchased at', w.purchased_at);
 
-  // Price
-  if (w.price) {
-    var currency = (typeof CURRENCY !== 'undefined' ? CURRENCY : 'CHF');
-    details += viewRow('mdi-cash', T.label_price || 'Price', currency + ' ' + Number(w.price).toFixed(2));
+  // Prices: own (weighted average of purchase lots) + AI/market, plus a manage link
+  var _cur = (typeof CURRENCY !== 'undefined' ? CURRENCY : 'CHF');
+  var _myp = (w.price != null && w.price !== '') ? _cur + ' ' + Number(w.price).toFixed(2) : '—';
+  details += '<div class="view-row"><i class="mdi mdi-cash"></i>'
+           + '<span class="view-label">' + escapeHtml(T.label_my_price || 'My price') + '</span>'
+           + '<span class="view-value" id="viewMyPrice">' + escapeHtml(_myp) + '</span></div>';
+  if (w.ai_price != null && w.ai_price !== '') {
+    details += viewRow('mdi-robot-outline', T.label_ai_price || 'AI price', _cur + ' ' + Number(w.ai_price).toFixed(2));
+  }
+  if (!AUTH_READONLY) {
+    details += '<div class="view-row"><i class="mdi mdi-cart-outline"></i>'
+             + '<span class="view-label">' + escapeHtml(T.purchases_title || 'Purchases') + '</span>'
+             + '<a class="view-value view-purchases-link" onclick="openPurchasesFromView(' + id + ')">'
+             + escapeHtml(T.purchases_manage || 'Manage') + '</a></div>';
   }
 
   // Drink window
@@ -1139,6 +1149,17 @@ function refreshAiFromView() {
   closeModal('viewModal');
   openWineModal(id, w);
   reloadViaAi();
+}
+
+function openPurchasesFromView(id) {
+  window._onPurchasesChanged = function(d) {
+    var e = document.getElementById('viewMyPrice');
+    if (e) {
+      var cur = (typeof CURRENCY !== 'undefined' ? CURRENCY : 'CHF');
+      e.textContent = (d.avg == null || d.avg === '') ? '—' : cur + ' ' + Number(d.avg).toFixed(2);
+    }
+  };
+  openPurchases(id);
 }
 
 function editFromView() {

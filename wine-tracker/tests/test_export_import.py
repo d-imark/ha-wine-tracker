@@ -566,3 +566,38 @@ class TestImportAuth:
             content_type="application/json",
         )
         assert resp.status_code == 403
+
+
+# ── ai_price + purchase lots round-trip ──────────────────────────────────────
+
+class TestPurchaseExportImport:
+    def test_ai_price_and_purchases_roundtrip(self, client, db):
+        client.post("/add", data={"name": "RT Wine", "ai_price": "99"},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                    content_type="multipart/form-data")
+        wid = db.execute("SELECT id FROM wines ORDER BY id DESC LIMIT 1").fetchone()[0]
+        client.post(f"/api/wine/{wid}/purchases", json={"quantity": 2, "unit_price": 10})
+        client.post(f"/api/wine/{wid}/purchases", json={"quantity": 3, "unit_price": 20})
+
+        zip_bytes = client.get("/export").data
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        assert "purchases.json" in zf.namelist()
+        wjson = json.loads(zf.read("wines.json"))
+        assert any(w.get("ai_price") == 99 for w in wjson)
+
+        db.execute("DELETE FROM wine_purchases")
+        db.execute("DELETE FROM wines")
+        db.commit()
+
+        prev = client.post("/import/preview",
+                           data={"file": (io.BytesIO(zip_bytes), "backup.zip")},
+                           content_type="multipart/form-data").get_json()
+        client.post("/import/commit",
+                    data=json.dumps({"token": prev["token"], "strategy": "skip"}),
+                    content_type="application/json")
+
+        row = db.execute("SELECT id, ai_price, price FROM wines WHERE name='RT Wine'").fetchone()
+        assert row["ai_price"] == 99
+        assert row["price"] == 16.0
+        q = db.execute("SELECT SUM(quantity) q FROM wine_purchases WHERE wine_id=?", (row["id"],)).fetchone()["q"]
+        assert q == 5

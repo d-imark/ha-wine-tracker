@@ -2737,3 +2737,65 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .mat-preview:empty { display: none; }
 .mat-preview .maturity-section { padding-top: 0; }
 .mat-preview .maturity-section h4 { display: none; }
+
+/* ── Editable own price + purchases dialog ─────────────────────────────────── */
+.price-own { margin-top: .25rem; }
+.price-own-row { display: flex; align-items: center; gap: .6rem; }
+.price-own-value { font-weight: 700; color: var(--accent); min-width: 3rem; }
+.btn-manage-purchases {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: .35rem .7rem; font-size: .82rem; cursor: pointer;
+}
+.btn-manage-purchases:hover { border-color: var(--accent); color: var(--accent); }
+#purchasesModal { z-index: 270; }
+#purchasesModal .modal { max-width: 560px; }
+#purchasesModal .modal-body { max-height: 72vh; overflow: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+/* Existing lots as a readable list */
+.purchases-list { display: flex; flex-direction: column; gap: .4rem; }
+.purchases-empty { color: var(--muted); font-size: .85rem; padding: .3rem 0; }
+.purchase-item {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem .7rem; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.purchase-item-main { flex: 1; display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.purchase-item-qp { font-weight: 700; }
+.purchase-item-meta { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+.purchase-del {
+  flex: none; background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: 1.1rem; padding: .2rem;
+}
+.purchase-del:hover { color: #c0392b; }
+
+/* Add-lot form: labelled fields in a comfortable grid */
+.purchase-add {
+  border: 1px dashed var(--border); border-radius: 10px; padding: .8rem .9rem;
+  display: flex; flex-direction: column; gap: .7rem;
+}
+.purchase-add-title { margin: 0; font-size: .9rem; color: var(--muted); }
+.purchase-add-grid {
+  display: grid; gap: .6rem .7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.purchase-add-grid .pf {
+  display: flex; flex-direction: column; gap: .25rem;
+  font-size: .78rem; color: var(--muted);
+}
+.purchase-add-grid .pf input {
+  width: 100%; box-sizing: border-box; padding: .5rem .6rem; font-size: .9rem;
+}
+.purchase-add-grid .pf-note { grid-column: 1 / -1; }  /* note spans full width */
+.purchase-add-btn { align-self: flex-end; width: auto; padding: 0 1.4rem; }
+
+.purchases-summary {
+  display: flex; gap: 1.4rem; flex-wrap: wrap; font-size: .85rem; color: var(--muted);
+  border-top: 1px solid var(--border); padding-top: .8rem;
+}
+.purchases-summary span { display: flex; flex-direction: column; }
+.purchases-summary b { color: var(--text); font-size: 1rem; }
+.view-purchases-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+@media (max-width: 520px) {
+  .purchase-add-grid { grid-template-columns: 1fr; }
+}

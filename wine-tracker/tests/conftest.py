@@ -128,7 +128,13 @@ def sample_wine(client):
         },
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
-    return json.loads(resp.data)
+    data = json.loads(resp.data)
+    # Price now comes from purchase lots (weighted average). Record one lot so the
+    # sample wine keeps its 29.90 price for downstream tests.
+    wid = data["wine"]["id"]
+    client.post(f"/api/wine/{wid}/purchases", json={"quantity": 3, "unit_price": 29.90})
+    data["wine"]["price"] = 29.9
+    return data
 
 
 @pytest.fixture
