@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.2
+
+- **Winzer als eigenes Feld** - der Produzent ist nun ein eigenes Feld: auf der Weinkarte und in der Detailansicht sichtbar, im Bearbeiten-Dialog mit Autovervollständigung, und Teil von Export/Import (CSV-Alias `winery`/`winzer`).
+- **Land in Export/Import** - das Feld `country` wird jetzt mit exportiert und importiert (wines.json + CSV, Alias `country`/`land`), sodass es sauber erhalten bleibt.
+- **Vivino Region/Land getrennt** - der Vivino-Abgleich füllt Region und Land in zwei separate Felder statt in ein kombiniertes „Region, Land".
+- **KI-Abgleich mit Vorher/Nachher** - der KI-Aktualisieren-Dialog zeigt Reifefenster, Geschmacksprofil und Food-Pairings kompakt als Vorher → Nachher.
+- **KI-Web-Recherche (OpenAI)** - neue optionale Option `openai_web_search`: Die OpenAI-Analyse recherchiert die offizielle Winzer-Website und Händler über das Web-Search-Tool der Responses-API und legt die Quellen in der KI-Basis ab; bei Fehlern fällt sie automatisch auf die Standardanalyse zurück. Konfigurierbar für Home Assistant, Docker und lokal.
+- **KI-Basis-Dialog** - die KI-Basis („Quellen") öffnet sich als eigener Dialog aus der Detailansicht, mit einer Aktualisieren-Aktion, die die KI-Neuanalyse startet.
+
 ## 1.12.1
 
 - **Getrennte Datenbank garantiert** - der Fork nutzt sein eigenes Verzeichnis `/share/wine-tracker-di` jetzt direkt im App-Default (nicht nur über die Docker-Env), damit er unabhängig vom Original läuft, selbst wenn die Add-on-Laufzeit die Dockerfile-Env nicht übernimmt.
