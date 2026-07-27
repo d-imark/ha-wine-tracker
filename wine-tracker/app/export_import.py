@@ -42,6 +42,7 @@ WINE_COLUMNS = [
     "added",
     "purchased_at",
     "price",
+    "ai_price",
     "drink_from",
     "drink_until",
     "location",
@@ -67,6 +68,7 @@ CSV_COLUMNS = [
     "quantity",
     "rating",
     "price",
+    "ai_price",
     "purchased_at",
     "drink_from",
     "drink_until",
@@ -130,7 +132,8 @@ def _build_readme(manifest: dict) -> str:
 | `country` | string | Country |
 | `quantity` | integer | Bottles currently in cellar |
 | `rating` | integer | 0 - 5 personal rating |
-| `price` | number | Purchase price |
+| `price` | number | Weighted-average purchase price (derived from purchase lots; see purchases.json) |
+| `ai_price` | number | AI/market estimated price (informational) |
 | `purchased_at` | string | Where the wine was purchased |
 | `drink_from` | integer | Earliest recommended drinking year |
 | `drink_until` | integer | Latest recommended drinking year |
@@ -208,12 +211,21 @@ def build_export_zip(db, upload_dir: str, app_version: str = "") -> bytes:
         "timeline_count": len(timeline),
     }
 
+    try:
+        purchase_rows = db.execute(
+            "SELECT id, wine_id, purchase_date, quantity, unit_price, location, note "
+            "FROM wine_purchases ORDER BY id").fetchall()
+        purchase_list = [dict(r) for r in purchase_rows]
+    except Exception:
+        purchase_list = []
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("README.md", _build_readme(manifest))
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         zf.writestr("wines.json", json.dumps(wines, indent=2, ensure_ascii=False, default=str))
         zf.writestr("timeline.json", json.dumps(timeline, indent=2, ensure_ascii=False, default=str))
+        zf.writestr("purchases.json", json.dumps(purchase_list, indent=2, ensure_ascii=False, default=str))
         zf.writestr("wines.csv", _wines_to_csv(wines))
 
         # Deduplicate image filenames so we don't add the same file twice.
@@ -392,6 +404,13 @@ def parse_import_file(data: bytes, filename: str = "") -> dict:
             except json.JSONDecodeError:
                 timeline = []
 
+        purchases_data = []
+        if "purchases.json" in names:
+            try:
+                purchases_data = json.loads(zf.read("purchases.json")) or []
+            except json.JSONDecodeError:
+                purchases_data = []
+
         images: dict[str, bytes] = {}
         for entry in names:
             if entry.startswith("images/") and not entry.endswith("/"):
@@ -404,6 +423,7 @@ def parse_import_file(data: bytes, filename: str = "") -> dict:
             "schema_version": schema_version,
             "wines": wines,
             "timeline": timeline,
+            "purchases": purchases_data,
             "images": images,
             "original_ids": original_ids,
         }
@@ -426,6 +446,7 @@ def parse_import_file(data: bytes, filename: str = "") -> dict:
         "schema_version": 0,
         "wines": wines,
         "timeline": [],
+        "purchases": [],
         "images": {},
         "original_ids": [None] * len(wines),
     }
@@ -554,6 +575,28 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
              _coerce_int(entry.get("quantity")) or 1,
              entry.get("timestamp") or datetime.now().isoformat()),
         )
+
+    # Purchase lots: only seed wines that have no purchases yet (avoids
+    # duplicating lots when re-importing over an existing wine).
+    imported_purchases = parsed.get("purchases") or []
+    if imported_purchases:
+        import purchases as purchase_model
+        pre_existing = {r[0] for r in db.execute(
+            "SELECT DISTINCT wine_id FROM wine_purchases").fetchall()}
+        for pr in imported_purchases:
+            new_id = id_map.get(pr.get("wine_id"))
+            if new_id is None or new_id in pre_existing:
+                continue
+            try:
+                purchase_model.add_purchase(db, new_id, {
+                    "purchase_date": pr.get("purchase_date"),
+                    "quantity": pr.get("quantity"),
+                    "unit_price": pr.get("unit_price"),
+                    "location": pr.get("location"),
+                    "note": pr.get("note"),
+                })
+            except (ValueError, TypeError):
+                pass
 
     db.commit()
     return {"inserted": inserted, "updated": updated, "skipped": skipped}

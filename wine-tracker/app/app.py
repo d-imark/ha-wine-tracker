@@ -12,6 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from translations import TRANSLATIONS
 import reference
 import images
+import purchases
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -547,6 +548,7 @@ def init_db():
             "country":        "TEXT",
             "ai_rationale":   "TEXT",
             "winery":         "TEXT",
+            "ai_price":       "REAL",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -622,6 +624,20 @@ def init_db():
 
         # ── backfill wines.country from free-text region (TP3c) ───────────
         migrate_country_from_region(db)
+
+        # ── purchase lots + one-time price backfill ───────────────────────
+        purchases.create_purchases_table(db)
+        if db.execute("SELECT COUNT(*) FROM wine_purchases").fetchone()[0] == 0:
+            for w in db.execute(
+                "SELECT id, price, quantity, purchased_at FROM wines "
+                "WHERE price IS NOT NULL AND price > 0"
+            ).fetchall():
+                db.execute(
+                    "INSERT INTO wine_purchases "
+                    "(wine_id, purchase_date, quantity, unit_price, location, note, created) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (w["id"], None, max(w["quantity"] or 1, 1), w["price"],
+                     w["purchased_at"], "Migriert", datetime.now().isoformat()))
 
         db.commit()
 
@@ -734,6 +750,8 @@ def wine_json(wine_id):
             except (json.JSONDecodeError, TypeError):
                 d[key] = None
     d["images"] = images.list_images(db, wine_id)
+    d["purchase_count"] = db.execute(
+        "SELECT COUNT(*) FROM wine_purchases WHERE wine_id=?", (wine_id,)).fetchone()[0]
     return d
 
 
@@ -932,7 +950,7 @@ def add():
         ai_img = safe_upload_ref(request.form.get("ai_image", "").strip())
         if ai_img and os.path.isfile(os.path.join(UPLOAD_DIR, ai_img)):
             image = ai_img
-    price_raw = request.form.get("price", "").strip()
+    ai_price_raw = request.form.get("ai_price", "").strip()
     vivino_raw = request.form.get("vivino_id", "").strip()
     bottle_format_raw = request.form.get("bottle_format", "").strip()
     maturity_data_raw = request.form.get("maturity_data", "").strip() or None
@@ -941,7 +959,7 @@ def add():
     cur = db.execute(
         """INSERT INTO wines
            (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
-            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
+            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
             maturity_data, taste_profile, food_pairings, country, ai_rationale)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
@@ -957,7 +975,7 @@ def add():
             image,
             str(date.today()),
             request.form.get("purchased_at", "").strip() or None,
-            float(price_raw) if price_raw else None,
+            float(ai_price_raw) if ai_price_raw else None,
             request.form.get("drink_from") or None,
             request.form.get("drink_until") or None,
             request.form.get("location", "").strip() or None,
@@ -1024,7 +1042,6 @@ def edit(wine_id):
             image = ai_img
 
     old_quantity = wine["quantity"] or 0
-    price_raw = request.form.get("price", "").strip()
     vivino_raw = request.form.get("vivino_id", "").strip()
     bottle_format_raw = request.form.get("bottle_format", "").strip()
     # For enrichment fields: if the form submission doesn't carry the key at
@@ -1058,9 +1075,21 @@ def edit(wine_id):
         winery_val = request.form.get("winery", "").strip() or None
     else:
         winery_val = wine["winery"]
+    # ai_price: KI-/market price (own price comes from purchase lots, not the form)
+    if "ai_price" in request.form:
+        _aip = request.form.get("ai_price", "").strip()
+        ai_price_val = float(_aip) if _aip else None
+    else:
+        ai_price_val = wine["ai_price"]
+    # purchased_at is no longer edited in the form (source now lives per purchase
+    # lot); preserve any legacy value instead of wiping it.
+    if "purchased_at" in request.form:
+        purchased_at_val = request.form.get("purchased_at", "").strip() or None
+    else:
+        purchased_at_val = wine["purchased_at"]
     db.execute(
         """UPDATE wines SET name=?, winery=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
-           notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
+           notes=?, image=?, purchased_at=?, ai_price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
            maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?
            WHERE id=?""",
@@ -1075,8 +1104,8 @@ def edit(wine_id):
             _vivino_rating_for_edit(request.form, wine),
             request.form.get("notes", "").strip(),
             image,
-            request.form.get("purchased_at", "").strip() or None,
-            float(price_raw) if price_raw else None,
+            purchased_at_val,
+            ai_price_val,
             request.form.get("drink_from") or None,
             request.form.get("drink_until") or None,
             request.form.get("location", "").strip() or None,
@@ -1130,7 +1159,7 @@ def duplicate(wine_id):
 
     db.execute(
         """INSERT INTO wines (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
-           purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
+           purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
            maturity_data, taste_profile, food_pairings, country, ai_rationale)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
@@ -1146,7 +1175,7 @@ def duplicate(wine_id):
             new_image,
             str(date.today()),
             wine["purchased_at"],
-            wine["price"],
+            wine["ai_price"],
             wine["drink_from"],
             wine["drink_until"],
             wine["location"],
@@ -2866,7 +2895,7 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
     db.execute(
         """INSERT INTO wines
            (name, year, type, region, quantity, rating, notes, image, added,
-            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format)
+            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             name,
@@ -3025,7 +3054,7 @@ def _process_chat_edit_wine(response_text, db):
             pass
     if "price" in data:
         try:
-            updates["price"] = float(data["price"]) if data["price"] else 0
+            updates["ai_price"] = float(data["price"]) if data["price"] else 0
         except (ValueError, TypeError):
             pass
     for df in ("drink_from", "drink_until"):
@@ -3559,6 +3588,40 @@ def api_wine_image_delete(wine_id, image_id):
     except OSError:
         pass
     return jsonify({"ok": True})
+
+
+@app.route("/api/wine/<int:wine_id>/purchases", methods=["GET", "POST"])
+def api_wine_purchases(wine_id):
+    db = get_db()
+    if not db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    if request.method == "POST":
+        if AUTH_ENABLED and session.get("role") == "readonly":
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        try:
+            purchases.add_purchase(db, wine_id, request.get_json(silent=True) or {})
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "invalid_purchase"}), 400
+    return jsonify({"ok": True, "purchases": purchases.list_purchases(db, wine_id),
+                    **purchases.weighted_average(db, wine_id)})
+
+
+@app.route("/api/wine/<int:wine_id>/purchases/<int:pid>", methods=["PATCH", "DELETE"])
+def api_wine_purchase_detail(wine_id, pid):
+    db = get_db()
+    if AUTH_ENABLED and session.get("role") == "readonly":
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    if request.method == "DELETE":
+        ok = purchases.delete_purchase(db, pid)
+    else:
+        try:
+            ok = purchases.update_purchase(db, pid, request.get_json(silent=True) or {})
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "invalid_purchase"}), 400
+    if not ok:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({"ok": True, "purchases": purchases.list_purchases(db, wine_id),
+                    **purchases.weighted_average(db, wine_id)})
 
 
 @app.route("/api/wine/<int:wine_id>/images/vivino", methods=["POST"])

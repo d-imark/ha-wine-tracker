@@ -101,9 +101,10 @@ class TestIndex:
 
     def test_about_section_with_version(self, client):
         """Settings modal should contain About section with app version."""
+        import app as wine_app
         resp = client.get("/")
         html = resp.data.decode()
-        assert "v1.11.0" in html
+        assert "v" + wine_app.APP_VERSION in html
         assert "settings_about" in html or "Über" in html
 
     def test_view_modal_present(self, client):
@@ -192,14 +193,16 @@ class TestAddWine:
         assert data["wine"]["name"] == "Minimal"
         assert data["wine"]["quantity"] == 1  # default
 
-    def test_add_wine_with_price(self, client):
+    def test_add_wine_with_ai_price(self, client):
+        # The own price comes from purchase lots; the form only sets the AI price.
         resp = client.post(
             "/add",
-            data={"name": "Priced Wine", "price": "49.50"},
+            data={"name": "Priced Wine", "ai_price": "49.50"},
             headers=AJAX,
         )
         data = json.loads(resp.data)
-        assert data["wine"]["price"] == 49.50
+        assert data["wine"]["ai_price"] == 49.50
+        assert data["wine"]["price"] is None
 
     def test_add_wine_with_bottle_format(self, client):
         resp = client.post(
@@ -786,7 +789,7 @@ class TestApiGetWine:
                 "quantity": "5",
                 "region": "Toscana, IT",
                 "grape": "Sangiovese",
-                "price": "25.00",
+                "ai_price": "25.00",
                 "bottle_format": "0.75",
             },
             headers=AJAX,
@@ -802,7 +805,7 @@ class TestApiGetWine:
         assert wine["quantity"] == 5
         assert wine["region"] == "Toscana, IT"
         assert wine["grape"] == "Sangiovese"
-        assert wine["price"] == 25.00
+        assert wine["ai_price"] == 25.00
         assert wine["bottle_format"] == 0.75
 
 
