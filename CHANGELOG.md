@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.2
+
+- **Winery as its own field** - the producer is now a dedicated field, shown on the wine card and detail view, editable with autocomplete, and included in export/import (CSV alias `winery`/`winzer`).
+- **Country in export/import** - the `country` field is now part of the export/import format (wines.json + CSV, alias `country`/`land`) so it round-trips and can be imported.
+- **Vivino region/country split** - Vivino sync fills region and country into separate fields instead of one combined "region, country" value.
+- **AI enrichment diff** - the AI-reload confirm dialog shows maturity, taste profile and food pairings as compact before -> after summaries.
+- **OpenAI web research** - new optional `openai_web_search` option: OpenAI analysis researches the official winery website and retailers via the Responses API web_search tool, writing the sources into the AI basis, with graceful fallback to the standard analysis. Configurable for Home Assistant, Docker and local.
+- **AI basis dialog** - the KI-Basis ("sources") opens as its own dialog from the detail view, with a refresh action that starts the AI re-analysis.
+
 ## 1.11.0
 
 - **Out-of-stock wines stay visible** - wines that drop to zero bottles no longer vanish from the cellar. They now show an "Empty" ribbon, and a new persistent "Show empty bottles" toggle in Settings remembers your choice across sessions (the existing quick-toggle in the filter bar still works as a temporary shortcut). Thanks @rogercrocha for the contribution.
