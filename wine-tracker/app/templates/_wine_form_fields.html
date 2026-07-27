@@ -136,3 +136,29 @@
   <label>{{ t.label_notes }}</label>
   <textarea name="notes" id="wine_notes" placeholder="{{ t.placeholder_notes }}"></textarea>
 </div>
+
+{# Enrichment fields - normally AI-filled, here editable. Values are serialised
+   into the hidden maturity_data / taste_profile / food_pairings inputs. #}
+<div class="enrich-fields">
+  <label class="enrich-head">{{ t.maturity_phases }}</label>
+  <div class="mat-inputs">
+    <div><span>{{ t.maturity_youth }}</span><input type="number" id="mat_b0" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+    <div><span>{{ t.maturity_maturity }}</span><input type="number" id="mat_b1" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+    <div><span>{{ t.maturity_peak }}</span><input type="number" id="mat_b2" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+    <div><span>{{ t.maturity_decline }}</span><input type="number" id="mat_b3" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+    <div><span>{{ t.maturity_end }}</span><input type="number" id="mat_b4" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+  </div>
+  <small class="enrich-hint">{{ t.mat_hint }}</small>
+  <div class="mat-preview" id="matPreview"></div>
+
+  <label class="enrich-head">{{ t.taste_profile }}</label>
+  <div class="taste-inputs">
+    <div><span>{{ t.taste_body }}</span><input type="number" id="taste_body" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+    <div><span>{{ t.taste_tannin }}</span><input type="number" id="taste_tannin" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+    <div><span>{{ t.taste_acidity }}</span><input type="number" id="taste_acidity" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+    <div><span>{{ t.taste_sweetness }}</span><input type="number" id="taste_sweetness" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+  </div>
+
+  <label class="enrich-head">{{ t.food_pairings }}</label>
+  <input type="text" id="food_pairings_input" placeholder="{{ t.food_hint }}" oninput="syncFoodFromInputs()" autocomplete="off">
+</div>

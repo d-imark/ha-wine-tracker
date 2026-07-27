@@ -2615,6 +2615,8 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 
 /* ── Vivino reload confirm dialog ──────────────────────────────────────────── */
 #vivinoReloadModal { z-index: 260; }  /* above the edit modal (200) it opens from */
+#vivinoReloadModal .modal { max-width: 620px; }
+#vivinoReloadModal .modal-body { max-height: 68vh; overflow-y: auto; }
 #vivinoReloadModal .vr-hint { font-size: .85rem; color: var(--muted); margin: 0 0 .25rem; }
 .vr-footer {
   display: flex; justify-content: flex-end; gap: .6rem;
@@ -2720,3 +2722,18 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .vr-image-block { display: flex; align-items: center; gap: .6rem; margin-top: .8rem; }
 .vr-image-preview { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
 .vr-image-label { font-size: .8rem; color: var(--muted); }
+
+/* ── Edit modal: editable enrichment fields (maturity / taste / food) ───────── */
+.enrich-fields { border-top: 1px solid var(--border); margin-top: .5rem; padding-top: .75rem;
+                 display: flex; flex-direction: column; gap: .5rem; }
+.enrich-head { font-size: .8rem; font-weight: 600; color: var(--muted); margin-top: .25rem; }
+.enrich-hint { font-size: .72rem; color: var(--muted); margin-top: -.25rem; }
+.mat-inputs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem; }
+.taste-inputs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.mat-inputs > div, .taste-inputs > div { display: flex; flex-direction: column; gap: .15rem; }
+.mat-inputs span, .taste-inputs span { font-size: .68rem; color: var(--muted); text-align: center;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mat-inputs input, .taste-inputs input { width: 100%; text-align: center; padding: .3rem .2rem; }
+.mat-preview:empty { display: none; }
+.mat-preview .maturity-section { padding-top: 0; }
+.mat-preview .maturity-section h4 { display: none; }

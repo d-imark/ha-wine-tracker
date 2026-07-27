@@ -184,7 +184,7 @@
     <div id="vrStep2" style="display:none;">
       <div class="modal-body">
         <p class="vr-hint">{{ t.vr_changes_hint }}</p>
-        <table class="vr-changes-table"><tbody id="vrChanges"></tbody></table>
+        <table class="vr-changes-table ar-changes-table"><tbody id="vrChanges"></tbody></table>
         <div class="vr-image-block" id="vrImagePreview" style="display:none"></div>
       </div>
       <div class="modal-footer vr-footer">
@@ -330,6 +330,60 @@ function onCountryChange() {
   });
 }
 
+// ── Enrichment field editors (maturity phases / taste / food) ────────────────
+// These write into the hidden maturity_data / taste_profile / food_pairings
+// inputs that persist to the DB, and mirror AI/DB values back into the inputs.
+function _parseJSONsafe(s) { if (!s) return null; try { return JSON.parse(s); } catch (e) { return null; } }
+
+function syncMaturityFromInputs() {
+  var b = [];
+  for (var i = 0; i < 5; i++) { var v = parseInt((document.getElementById('mat_b' + i) || {}).value, 10); b.push(isNaN(v) ? null : v); }
+  var ok = b.every(function (x) { return x !== null; }) && b[0] < b[1] && b[1] < b[2] && b[2] < b[3] && b[3] < b[4];
+  document.getElementById('wine_maturity_data').value = ok
+    ? JSON.stringify({ youth: [b[0], b[1]], maturity: [b[1], b[2]], peak: [b[2], b[3]], decline: [b[3], b[4]] })
+    : '';
+  updateMaturityPreview();
+}
+function loadMaturityInputs(md) {
+  var v = ['', '', '', '', ''];
+  if (md && md.youth && md.maturity && md.peak && md.decline) {
+    v = [md.youth[0], md.maturity[0], md.peak[0], md.decline[0], md.decline[1]];
+  }
+  for (var i = 0; i < 5; i++) { var el = document.getElementById('mat_b' + i); if (el) el.value = (v[i] != null ? v[i] : ''); }
+  updateMaturityPreview();
+}
+function updateMaturityPreview() {
+  var host = document.getElementById('matPreview'); if (!host) return;
+  var md = _parseJSONsafe(document.getElementById('wine_maturity_data').value);
+  host.innerHTML = (md && typeof buildMaturityGraph === 'function') ? buildMaturityGraph({ maturity_data: md }) : '';
+}
+function syncTasteFromInputs() {
+  var tp = {}, any = false;
+  ['body', 'tannin', 'acidity', 'sweetness'].forEach(function (k) {
+    var v = parseInt((document.getElementById('taste_' + k) || {}).value, 10);
+    if (!isNaN(v) && v >= 1 && v <= 5) { tp[k] = v; any = true; }
+  });
+  document.getElementById('wine_taste_profile').value = any ? JSON.stringify(tp) : '';
+}
+function loadTasteInputs(tp) {
+  ['body', 'tannin', 'acidity', 'sweetness'].forEach(function (k) {
+    var el = document.getElementById('taste_' + k); if (el) el.value = (tp && tp[k] != null ? tp[k] : '');
+  });
+}
+function syncFoodFromInputs() {
+  var s = (document.getElementById('food_pairings_input') || {}).value || '';
+  var arr = s.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  document.getElementById('wine_food_pairings').value = arr.length ? JSON.stringify(arr) : '';
+}
+function loadFoodInputs(fp) {
+  var el = document.getElementById('food_pairings_input'); if (el) el.value = (Array.isArray(fp) ? fp.join(', ') : '');
+}
+function refreshEnrichInputsFromHidden() {
+  loadMaturityInputs(_parseJSONsafe(document.getElementById('wine_maturity_data').value));
+  loadTasteInputs(_parseJSONsafe(document.getElementById('wine_taste_profile').value));
+  loadFoodInputs(_parseJSONsafe(document.getElementById('wine_food_pairings').value));
+}
+
 function openWineModal(id, wine) {
   _reloadMode = false;
   var isEdit = !!id;
@@ -373,6 +427,7 @@ function openWineModal(id, wine) {
   document.getElementById('wine_maturity_data').value = w.maturity_data ? JSON.stringify(w.maturity_data) : '';
   document.getElementById('wine_taste_profile').value = w.taste_profile ? JSON.stringify(w.taste_profile) : '';
   document.getElementById('wine_food_pairings').value = w.food_pairings ? JSON.stringify(w.food_pairings) : '';
+  refreshEnrichInputsFromHidden();
   document.getElementById('wine_ai_rationale').value = w.ai_rationale || '';
 
   // Personal rating (slider) + Vivino rating (read-only, hidden)
@@ -759,6 +814,7 @@ function populateFormFromAi(fields, imageFilename) {
   if (fields.food_pairings) {
     document.getElementById('wine_food_pairings').value = JSON.stringify(fields.food_pairings);
   }
+  refreshEnrichInputsFromHidden();
 
   if (imageFilename) {
     document.getElementById('aiImageField').value = imageFilename;
@@ -824,6 +880,7 @@ function populateFormMerge(fields, imageFilename) {
     document.getElementById('wine_food_pairings').value = JSON.stringify(fields.food_pairings);
     filled++;
   }
+  refreshEnrichInputsFromHidden();
 
   // Only fill the personal rating when it's still unset (slider at 0).
   if (fields.rating) {
@@ -969,6 +1026,7 @@ var _VR_FIELDS = [
 ];
 var _vrCandidates = [];
 var _vrSelected = null;
+var _vrChanges = [];
 var _vrAllowSetId = false;
 
 function reloadViaVivino() {
@@ -1094,9 +1152,11 @@ function vrSelectCandidate(idx) {
     showReloadToast(T.vr_no_changes, true);
     return;
   }
+  _vrChanges = changes;
   var esc = function(s) { return (s || '').replace(/</g, '&lt;'); };
-  document.getElementById('vrChanges').innerHTML = changes.map(function(c) {
+  document.getElementById('vrChanges').innerHTML = changes.map(function(c, i) {
     return '<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="vrChk_' + i + '" checked></td>' +
       '<td class="vr-field">' + (T[c.f.labelKey] || c.f.key) + '</td>' +
       '<td class="vr-old">' + esc(_vrDisplay(c.f, c.cur)) + '</td>' +
       '<td class="vr-arrow">→</td>' +
@@ -1145,7 +1205,9 @@ function _vrApplySideEffects(item) {
 
 function vrConfirm() {
   if (!_vrSelected) { closeVivinoReload(); return; }
-  vrComputeChanges(_vrSelected).forEach(function(c) {
+  _vrChanges.forEach(function(c, i) {
+    var chk = document.getElementById('vrChk_' + i);
+    if (!chk || !chk.checked) return;
     var el = document.getElementById(c.f.el);
     if (el) { el.value = c.nv; }
   });
@@ -1395,6 +1457,7 @@ function applyAiReload() {
     var el = document.getElementById(en.e.el);
     if (el) el.value = JSON.stringify(en.val);
   });
+  refreshEnrichInputsFromHidden();
   if (_arPending.rationale) {
     var save = document.getElementById('arRationaleSave');
     if (save && save.checked) {
