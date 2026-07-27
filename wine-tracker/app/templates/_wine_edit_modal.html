@@ -353,6 +353,7 @@ function openWineModal(id, wine) {
   // Fill fields (empty for add, data for edit)
   var w = wine || {};
   document.getElementById('wine_name').value = w.name || '';
+  document.getElementById('wine_winery').value = w.winery || '';
   document.getElementById('wine_year').value = w.year || '';
   document.getElementById('wine_qty').value = w.quantity !== undefined ? w.quantity : 1;
   document.getElementById('wine_type').value = w.type || '';

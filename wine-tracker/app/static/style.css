@@ -410,6 +410,9 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 .qty-badge.has { color: var(--gold); }
 
 .card-body { padding: .75rem 1rem; }
+.card-winery { font-size: .72rem; color: var(--muted); text-transform: uppercase;
+               letter-spacing: .03em; margin-bottom: .05rem;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-name { font-weight: 700; font-size: 1rem; margin-bottom: .2rem;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-meta { font-size: .8rem; color: var(--muted); display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -1213,6 +1216,10 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   border-radius: var(--radius);
 }
 
+.view-winery {
+  font-size: .8rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .1rem;
+}
 .view-name {
   font-size: 1.25rem; font-weight: 700; color: var(--text);
   margin-bottom: .25rem;

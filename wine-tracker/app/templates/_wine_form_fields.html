@@ -8,6 +8,16 @@
   <input type="text" name="name" id="wine_name" required placeholder="{{ t.placeholder_name }}">
 </div>
 
+<div>
+  <label>{{ t.label_winery }}</label>
+  <input type="text" name="winery" id="wine_winery" placeholder="{{ t.label_winery }}" list="wineryList" autocomplete="off">
+  <datalist id="wineryList">
+    {% for wn in used_wineries %}
+    <option value="{{ wn }}">
+    {% endfor %}
+  </datalist>
+</div>
+
 <div class="row2">
   <div>
     <label>{{ t.label_vintage }}</label>

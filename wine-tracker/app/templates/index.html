@@ -102,7 +102,7 @@
 
   {% for w in wines %}
   <div class="card {% if w['quantity'] == 0 %}empty{% endif %}" data-id="{{ w['id'] }}"
-       data-name="{{ w['name'] }}" data-year="{{ w['year'] or '' }}"
+       data-name="{{ w['name'] }}" data-winery="{{ w['winery'] or '' }}" data-year="{{ w['year'] or '' }}"
        data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}" data-country="{{ w['country'] or '' }}"
        data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}" data-vivino_rating="{{ w['vivino_rating'] or '' }}"
        data-notes="{{ w['notes'] or '' }}" data-image="{{ w['image'] or '' }}"
@@ -133,6 +133,7 @@
     </div>
 
     <div class="card-body" onclick="viewFromCard(this)">
+      {% if w['winery'] %}<div class="card-winery" title="{{ w['winery'] }}">{{ w['winery'] }}</div>{% endif %}
       <div class="card-name" title="{{ w['name'] }}">{{ w['name'] }}</div>
       <div class="card-meta">
         <span>{{ w['year'] or '' }}</span>
@@ -1014,7 +1015,8 @@ function openViewModal(id, wine) {
   // Fields panel (on left on desktop)
   html += '<div class="view-fields-panel">';
 
-  // Name
+  // Winery + name
+  if (w.winery) html += '<div class="view-winery">' + escapeHtml(w.winery) + '</div>';
   html += '<div class="view-name">' + escapeHtml(w.name) + '</div>';
 
   // Meta: year + region
@@ -1269,6 +1271,7 @@ function renderCard(w) {
     '<div class="card-img' + (w.image ? ' shimmer' : '') + '" onclick="cardImgClick(this)">' + imgHtml + '</div>' +
     '<div class="qty-badge ' + (w.quantity > 0 ? 'has' : '') + '">' + w.quantity + ' ' + (w.quantity === 1 ? T.bottle_abbr : T.bottles_abbr) + '</div>' +
     '<div class="card-body" onclick="viewFromCard(this)">' +
+      (w.winery ? '<div class="card-winery" title="' + escapeHtml(w.winery) + '">' + escapeHtml(w.winery) + '</div>' : '') +
       '<div class="card-name" title="' + escapeHtml(w.name) + '">' + escapeHtml(w.name) + '</div>' +
       '<div class="card-meta">' + metaParts + '</div>' +
       stars +
@@ -1288,6 +1291,7 @@ function renderCard(w) {
 
 function updateCardData(card, w) {
   card.dataset.name = w.name || '';
+  card.dataset.winery = w.winery || '';
   card.dataset.year = w.year || '';
   card.dataset.type = w.type || '';
   card.dataset.region = w.region || '';

@@ -460,6 +460,11 @@ def inject_globals():
                 "SELECT DISTINCT location FROM wines WHERE location IS NOT NULL AND location != '' ORDER BY location"
             ).fetchall()
         ]
+        ctx["used_wineries"] = [
+            row[0] for row in db.execute(
+                "SELECT DISTINCT winery FROM wines WHERE winery IS NOT NULL AND winery != '' ORDER BY winery"
+            ).fetchall()
+        ]
         # Wine types from the reference data (built-in + custom) - TP3d
         type_rows = db.execute(
             "SELECT key, color, is_custom FROM ref_wine_types ORDER BY sort_order, key"
@@ -472,6 +477,7 @@ def inject_globals():
         ctx.setdefault("used_grapes", [])
         ctx.setdefault("used_purchased_at", [])
         ctx.setdefault("used_locations", [])
+        ctx.setdefault("used_wineries", [])
         ctx.setdefault("wine_types_ref", [{"key": k, "color": None, "is_custom": 0} for k in WINE_TYPES])
         ctx.setdefault("wine_type_colors", {})
         ctx.setdefault("wine_type_custom_keys", [])
@@ -540,6 +546,7 @@ def init_db():
             "vivino_rating":  "REAL",
             "country":        "TEXT",
             "ai_rationale":   "TEXT",
+            "winery":         "TEXT",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -933,12 +940,13 @@ def add():
     food_pairings_raw = request.form.get("food_pairings", "").strip() or None
     cur = db.execute(
         """INSERT INTO wines
-           (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
+           (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
             purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
             maturity_data, taste_profile, food_pairings, country, ai_rationale)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
+            request.form.get("winery", "").strip() or None,
             request.form.get("year") or None,
             request.form.get("type"),
             request.form.get("region", "").strip(),
@@ -1045,14 +1053,20 @@ def edit(wine_id):
         ai_rationale_val = request.form.get("ai_rationale", "").strip() or None
     else:
         ai_rationale_val = wine["ai_rationale"]
+    # Preserve stored winery if the form omits it (e.g. quantity +/- FormData)
+    if "winery" in request.form:
+        winery_val = request.form.get("winery", "").strip() or None
+    else:
+        winery_val = wine["winery"]
     db.execute(
-        """UPDATE wines SET name=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
+        """UPDATE wines SET name=?, winery=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
            notes=?, image=?, purchased_at=?, price=?, drink_from=?, drink_until=?, location=?,
            grape=?, vivino_id=?, bottle_format=?,
            maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
+            winery_val,
             request.form.get("year") or None,
             request.form.get("type"),
             request.form.get("region", "").strip(),
@@ -1115,12 +1129,13 @@ def duplicate(wine_id):
             shutil.copy2(src, os.path.join(UPLOAD_DIR, new_image))
 
     db.execute(
-        """INSERT INTO wines (name, year, type, region, quantity, rating, vivino_rating, notes, image, added,
+        """INSERT INTO wines (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
            purchased_at, price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
            maturity_data, taste_profile, food_pairings, country, ai_rationale)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
+            wine["winery"],
             new_year,
             wine["type"],
             wine["region"],
@@ -2353,6 +2368,7 @@ def vivino_search():
             results.append({
                 "vivino_id": hit.get("id"),
                 "name": full_name,
+                "winery": winery,
                 # A catalog wine spans all its vintages; the user enters the
                 # specific vintage they own, so we don't guess a year here.
                 "year": None,
