@@ -73,7 +73,7 @@ class TestExportRoute:
         zf = zipfile.ZipFile(io.BytesIO(resp.data))
         csv_text = zf.read("wines.csv").decode()
         lines = csv_text.strip().splitlines()
-        assert lines[0].startswith("name,year,type,region,grape")
+        assert lines[0].startswith("name,winery,year,type,region,grape")
         assert any("Château Test" in line for line in lines[1:])
 
 
@@ -238,6 +238,12 @@ class TestImportParsing:
         assert parsed["wines"][0]["name"] == "Riesling Spät"
         assert parsed["wines"][0]["year"] == 2020
         assert parsed["wines"][0]["grape"] == "Riesling"
+
+    def test_parse_csv_winery(self):
+        from export_import import parse_import_file
+        csv_bytes = "name,winery,winzer\nBarolo,,Conterno\n".encode()
+        parsed = parse_import_file(csv_bytes, filename="w.csv")
+        assert parsed["wines"][0]["winery"] == "Conterno"
 
     def test_parse_csv_country(self):
         from export_import import parse_import_file

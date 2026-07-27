@@ -31,6 +31,7 @@ SCHEMA_VERSION = 1
 WINE_COLUMNS = [
     "id",
     "name",
+    "winery",
     "year",
     "type",
     "region",
@@ -57,6 +58,7 @@ WINE_COLUMNS = [
 # remains the full / authoritative copy.
 CSV_COLUMNS = [
     "name",
+    "winery",
     "year",
     "type",
     "region",
@@ -120,6 +122,7 @@ def _build_readme(manifest: dict) -> str:
 |-------|------|-------|
 | `id` | integer | Original DB id - used to link timeline entries; ignored on import |
 | `name` | string | Wine name |
+| `winery` | string | Winery / producer |
 | `year` | integer | Vintage year |
 | `type` | string | One of `Rotwein`, `Weisswein`, `Rosé`, `Schaumwein`, `Dessertwein`, `Likörwein`, `Anderes` |
 | `region` | string | Region / appellation |
@@ -245,6 +248,8 @@ class ImportError(Exception):
 CSV_ALIASES = {
     "name": "name",
     "wine": "name",
+    "winery": "winery",
+    "winzer": "winery",
     "year": "year",
     "vintage": "year",
     "jahrgang": "year",
