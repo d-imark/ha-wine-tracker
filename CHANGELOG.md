@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.1
+
+- **Tabbed edit dialog** - fields are grouped into "Basics", "Price & storage" and "Maturity & taste"; rarely-changed fields (maturity phases, taste, food) are out of the default view - much nicer on mobile.
+- **Drink window follows the maturity phases** - setting the maturity phases prefills the drink window (from "maturity start" to "end"), still manually overridable; wines without maturity phases stay fully manual.
+- **Detail-view actions** - step the bottle count up/down (logged as consumed/restocked in the timeline), delete the wine, and "Manage purchases" now as buttons directly in the detail dialog (the grid view stays intentionally compact).
+
 ## 1.13.0
 
 - **Purchase price management** - your own price is now the quantity-weighted average of recorded purchases (date, quantity, unit price, location, note) via the new "Manage purchases" dialog; the AI/market price is shown separately. Existing prices are migrated into a first purchase lot.

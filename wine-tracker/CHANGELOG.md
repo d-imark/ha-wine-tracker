@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.1
+
+- **Übersichtlicher Bearbeiten-Dialog mit Tabs** - die Felder sind in „Basis", „Preis & Lager" und „Reife & Geschmack" gruppiert; selten Angepasstes (Reifephasen, Geschmack, Food) ist weg vom Standard-Blick - besonders auf dem Handy angenehmer.
+- **Trinkfenster folgt den Reifephasen** - beim Setzen der Reifephasen wird das Trinkfenster automatisch vorbefüllt (von „Reife ab" bis „Ende"), bleibt aber manuell überschreibbar; Weine ohne Reifephasen bleiben rein manuell.
+- **Aktionen in der Detailansicht** - Flaschen direkt hoch-/runterzählen (wird als Verbrauch bzw. Auffüllung in der Timeline erfasst), Wein löschen und „Einkäufe verwalten" jetzt als Buttons direkt im Detail-Dialog (die Raster-Ansicht bleibt bewusst kompakt).
+
 ## 1.13.0
 
 - **Einkaufs-Preisverwaltung** - der eigene Preis ist jetzt der mengengewichtete Durchschnitt deiner erfassten Einkäufe (Datum, Menge, Stückpreis, Ort, Notiz) über den neuen Dialog „Einkäufe verwalten"; der KI-/Marktpreis wird davon getrennt ausgewiesen. Bestehende Preise werden automatisch als erster Einkaufsposten migriert.
