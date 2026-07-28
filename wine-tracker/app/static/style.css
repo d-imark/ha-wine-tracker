@@ -1279,9 +1279,26 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 
 .view-actions {
-  display: flex; gap: .75rem; padding-top: .5rem; align-items: center;
+  display: flex; gap: .6rem; padding-top: .5rem; align-items: center; flex-wrap: wrap;
 }
-.view-actions .btn-submit { width: auto; flex: 1; margin-top: 0; }
+.view-actions .btn-submit { width: auto; flex: 1; margin-top: 0; height: 2.4rem; }
+.view-qty {
+  display: inline-flex; align-items: center; border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; flex: none;
+}
+.view-qty button {
+  background: var(--surface); border: none; color: var(--text);
+  width: 2.2rem; height: 2.4rem; font-size: 1.1rem; cursor: pointer; line-height: 1;
+}
+.view-qty button:hover { background: var(--accent); color: #fff; }
+.view-qty span { min-width: 2rem; text-align: center; font-weight: 700; }
+.view-act-btn {
+  display: inline-flex; align-items: center; gap: .35rem; height: 2.4rem;
+  padding: 0 .9rem; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: .9rem;
+}
+.view-act-btn:hover { border-color: var(--accent); color: var(--accent); }
+.view-act-btn.danger:hover { border-color: #c0392b; color: #c0392b; }
 .view-ai-refresh {
   display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
   flex: none; height: 38px; padding: 0 1.2rem; border-radius: 8px;
@@ -2799,3 +2816,18 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 @media (max-width: 520px) {
   .purchase-add-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Edit dialog: field tabs (Basis / Preis & Lager / Reife & Geschmack) ────── */
+.wine-tabs {
+  display: flex; gap: .25rem; border-bottom: 1px solid var(--border);
+  margin-bottom: .9rem; overflow-x: auto;
+}
+.wine-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); padding: .55rem .8rem; font-size: .9rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.wine-tab:hover { color: var(--text); }
+.wine-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.wine-tab-panel { display: flex; flex-direction: column; gap: .9rem; }
+.wine-tab-panel[hidden] { display: none; }

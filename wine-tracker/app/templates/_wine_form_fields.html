@@ -2,161 +2,175 @@
    Expects: t, wine_types, used_regions_list, used_grapes, used_purchased_at,
             used_locations, currency
    The surrounding <div class="form-fields-panel"> and the form-footer
-   are provided by the including template. #}
-<div>
-  <label>{{ t.label_name }}</label>
-  <input type="text" name="name" id="wine_name" required placeholder="{{ t.placeholder_name }}">
+   are provided by the including template.
+   Fields are grouped into tabs; all inputs stay in the DOM so submit and
+   AI/Vivino population work regardless of the active tab. #}
+<div class="wine-tabs">
+  <button type="button" class="wine-tab active" data-tab="basics" onclick="switchWineTab('basics')">{{ t.tab_basics }}</button>
+  <button type="button" class="wine-tab" data-tab="price" onclick="switchWineTab('price')">{{ t.tab_price_storage }}</button>
+  <button type="button" class="wine-tab" data-tab="maturity" onclick="switchWineTab('maturity')">{{ t.tab_maturity_taste }}</button>
 </div>
 
-<div>
-  <label>{{ t.label_winery }}</label>
-  <input type="text" name="winery" id="wine_winery" placeholder="{{ t.label_winery }}" list="wineryList" autocomplete="off">
-  <datalist id="wineryList">
-    {% for wn in used_wineries %}
-    <option value="{{ wn }}">
-    {% endfor %}
-  </datalist>
-</div>
+<div class="wine-tab-panel" data-panel="basics">
+  <div>
+    <label>{{ t.label_name }}</label>
+    <input type="text" name="name" id="wine_name" required placeholder="{{ t.placeholder_name }}">
+  </div>
 
-<div class="row2">
   <div>
-    <label>{{ t.label_vintage }}</label>
-    <input type="number" name="year" id="wine_year" min="1900" max="2099" placeholder="2020">
-  </div>
-  <div>
-    <label>{{ t.label_quantity }}</label>
-    <input type="number" name="quantity" id="wine_qty" min="0" value="1">
-  </div>
-</div>
-
-<div class="row2">
-  <div>
-    <label>{{ t.label_type }}</label>
-    <select name="type" id="wine_type">
-      <option value="">{{ t.type_select_default }}</option>
-      {% for wt in wine_types_ref %}
-      <option value="{{ wt.key }}">{{ wt.key | wine_type }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div>
-    <label>{{ t.label_grape }}</label>
-    <input type="text" name="grape" id="wine_grape" placeholder="{{ t.placeholder_grape }}" list="grapeList" autocomplete="off">
-    <datalist id="grapeList">
-      {% for g in used_grapes %}
-      <option value="{{ g }}">
+    <label>{{ t.label_winery }}</label>
+    <input type="text" name="winery" id="wine_winery" placeholder="{{ t.label_winery }}" list="wineryList" autocomplete="off">
+    <datalist id="wineryList">
+      {% for wn in used_wineries %}
+      <option value="{{ wn }}">
       {% endfor %}
     </datalist>
   </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_vintage }}</label>
+      <input type="number" name="year" id="wine_year" min="1900" max="2099" placeholder="2020">
+    </div>
+    <div>
+      <label>{{ t.label_quantity }}</label>
+      <input type="number" name="quantity" id="wine_qty" min="0" value="1">
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_type }}</label>
+      <select name="type" id="wine_type">
+        <option value="">{{ t.type_select_default }}</option>
+        {% for wt in wine_types_ref %}
+        <option value="{{ wt.key }}">{{ wt.key | wine_type }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>{{ t.label_grape }}</label>
+      <input type="text" name="grape" id="wine_grape" placeholder="{{ t.placeholder_grape }}" list="grapeList" autocomplete="off">
+      <datalist id="grapeList">
+        {% for g in used_grapes %}
+        <option value="{{ g }}">
+        {% endfor %}
+      </datalist>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_country }}</label>
+      <input type="text" name="country" id="wine_country" placeholder="{{ t.label_country }}" list="countryList" autocomplete="off" oninput="onCountryChange()">
+      <datalist id="countryList"></datalist>
+    </div>
+    <div>
+      <label>{{ t.label_region }}</label>
+      <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
+      <datalist id="regionList">
+        {% for r in used_regions_list %}
+        <option value="{{ r }}">
+        {% endfor %}
+      </datalist>
+    </div>
+  </div>
+
+  <div>
+    <label>{{ t.label_rating }}</label>
+    <div class="rating-input">
+      <span class="star-rating" id="ratingStars"><span class="sr-fill" id="ratingStarsFill" style="width:0%"></span></span>
+      <span class="rating-slider-val" id="ratingVal">0.0</span>
+      <input type="range" class="rating-slider" id="wine_rating" name="rating"
+             min="0" max="5" step="0.1" value="0" aria-label="{{ t.label_rating }}"
+             title="{{ t.label_rating }}" oninput="updateRatingPreview()">
+      <span class="vivino-ref" id="ratingVivinoRef"></span>
+    </div>
+  </div>
+
+  <div>
+    <label>{{ t.label_notes }}</label>
+    <textarea name="notes" id="wine_notes" placeholder="{{ t.placeholder_notes }}"></textarea>
+  </div>
 </div>
 
-<div class="row2">
-  <div>
-    <label>{{ t.label_country }}</label>
-    <input type="text" name="country" id="wine_country" placeholder="{{ t.label_country }}" list="countryList" autocomplete="off" oninput="onCountryChange()">
-    <datalist id="countryList"></datalist>
+<div class="wine-tab-panel" data-panel="price" hidden>
+  <div class="row2">
+    <div>
+      <label>{{ t.label_bottle_format }}</label>
+      <select name="bottle_format" id="wine_bottle_format">
+        <option value="0.1875">Piccolo (0.1875 l)</option>
+        <option value="0.375">Demi (0.375 l)</option>
+        <option value="0.75" selected>Standard (0.75 l)</option>
+        <option value="1.5">Magnum (1.5 l)</option>
+        <option value="3">Double Magnum (3 l)</option>
+        <option value="4.5">Jeroboam (4.5 l)</option>
+        <option value="6">Imperial (6 l)</option>
+        <option value="9">Salmanazar (9 l)</option>
+        <option value="12">Balthazar (12 l)</option>
+        <option value="15">Nebuchadnezzar (15 l)</option>
+      </select>
+    </div>
+    <div>
+      <label>{{ t.label_ai_price }} ({{ currency }})</label>
+      <input type="number" name="ai_price" id="wine_ai_price" min="0" step="0.01" placeholder="54.90">
+    </div>
   </div>
+
+  <div class="price-own">
+    <label>{{ t.label_my_price }} ({{ currency }})</label>
+    <div class="price-own-row">
+      <span id="myPriceDisplay" class="price-own-value">—</span>
+      <button type="button" class="btn-manage-purchases" onclick="openPurchases()">{{ t.purchases_manage }}</button>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_drink_from }}</label>
+      <input type="number" name="drink_from" id="wine_drink_from" min="2000" max="2099" placeholder="2025">
+    </div>
+    <div>
+      <label>{{ t.label_drink_until }}</label>
+      <input type="number" name="drink_until" id="wine_drink_until" min="2000" max="2099" placeholder="2030">
+    </div>
+  </div>
+
   <div>
-    <label>{{ t.label_region }}</label>
-    <input type="text" name="region" id="wine_region" placeholder="{{ t.placeholder_region }}" list="regionList" autocomplete="off">
-    <datalist id="regionList">
-      {% for r in used_regions_list %}
-      <option value="{{ r }}">
+    <label>{{ t.label_location }}</label>
+    <input type="text" name="location" id="wine_location" placeholder="{{ t.placeholder_location }}" list="locationList" autocomplete="off">
+    <datalist id="locationList">
+      {% for loc in used_locations %}
+      <option value="{{ loc }}">
       {% endfor %}
     </datalist>
   </div>
-</div>
-
-<div>
-  <label>{{ t.label_rating }}</label>
-  <div class="rating-input">
-    <span class="star-rating" id="ratingStars"><span class="sr-fill" id="ratingStarsFill" style="width:0%"></span></span>
-    <span class="rating-slider-val" id="ratingVal">0.0</span>
-    <input type="range" class="rating-slider" id="wine_rating" name="rating"
-           min="0" max="5" step="0.1" value="0" aria-label="{{ t.label_rating }}"
-           title="{{ t.label_rating }}" oninput="updateRatingPreview()">
-    <span class="vivino-ref" id="ratingVivinoRef"></span>
-  </div>
-</div>
-
-<div class="row2">
-  <div>
-    <label>{{ t.label_bottle_format }}</label>
-    <select name="bottle_format" id="wine_bottle_format">
-      <option value="0.1875">Piccolo (0.1875 l)</option>
-      <option value="0.375">Demi (0.375 l)</option>
-      <option value="0.75" selected>Standard (0.75 l)</option>
-      <option value="1.5">Magnum (1.5 l)</option>
-      <option value="3">Double Magnum (3 l)</option>
-      <option value="4.5">Jeroboam (4.5 l)</option>
-      <option value="6">Imperial (6 l)</option>
-      <option value="9">Salmanazar (9 l)</option>
-      <option value="12">Balthazar (12 l)</option>
-      <option value="15">Nebuchadnezzar (15 l)</option>
-    </select>
-  </div>
-  <div>
-    <label>{{ t.label_ai_price }} ({{ currency }})</label>
-    <input type="number" name="ai_price" id="wine_ai_price" min="0" step="0.01" placeholder="54.90">
-  </div>
-</div>
-
-<div class="price-own">
-  <label>{{ t.label_my_price }} ({{ currency }})</label>
-  <div class="price-own-row">
-    <span id="myPriceDisplay" class="price-own-value">—</span>
-    <button type="button" class="btn-manage-purchases" onclick="openPurchases()">{{ t.purchases_manage }}</button>
-  </div>
-</div>
-
-<div class="row2">
-  <div>
-    <label>{{ t.label_drink_from }}</label>
-    <input type="number" name="drink_from" id="wine_drink_from" min="2000" max="2099" placeholder="2025">
-  </div>
-  <div>
-    <label>{{ t.label_drink_until }}</label>
-    <input type="number" name="drink_until" id="wine_drink_until" min="2000" max="2099" placeholder="2030">
-  </div>
-</div>
-
-<div>
-  <label>{{ t.label_location }}</label>
-  <input type="text" name="location" id="wine_location" placeholder="{{ t.placeholder_location }}" list="locationList" autocomplete="off">
-  <datalist id="locationList">
-    {% for loc in used_locations %}
-    <option value="{{ loc }}">
-    {% endfor %}
-  </datalist>
-</div>
-
-<div>
-  <label>{{ t.label_notes }}</label>
-  <textarea name="notes" id="wine_notes" placeholder="{{ t.placeholder_notes }}"></textarea>
 </div>
 
 {# Enrichment fields - normally AI-filled, here editable. Values are serialised
    into the hidden maturity_data / taste_profile / food_pairings inputs. #}
-<div class="enrich-fields">
-  <label class="enrich-head">{{ t.maturity_phases }}</label>
-  <div class="mat-inputs">
-    <div><span>{{ t.maturity_youth }}</span><input type="number" id="mat_b0" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
-    <div><span>{{ t.maturity_maturity }}</span><input type="number" id="mat_b1" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
-    <div><span>{{ t.maturity_peak }}</span><input type="number" id="mat_b2" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
-    <div><span>{{ t.maturity_decline }}</span><input type="number" id="mat_b3" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
-    <div><span>{{ t.maturity_end }}</span><input type="number" id="mat_b4" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
-  </div>
-  <small class="enrich-hint">{{ t.mat_hint }}</small>
-  <div class="mat-preview" id="matPreview"></div>
+<div class="wine-tab-panel" data-panel="maturity" hidden>
+  <div class="enrich-fields">
+    <label class="enrich-head">{{ t.maturity_phases }}</label>
+    <div class="mat-inputs">
+      <div><span>{{ t.maturity_youth }}</span><input type="number" id="mat_b0" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+      <div><span>{{ t.maturity_maturity }}</span><input type="number" id="mat_b1" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+      <div><span>{{ t.maturity_peak }}</span><input type="number" id="mat_b2" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+      <div><span>{{ t.maturity_decline }}</span><input type="number" id="mat_b3" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+      <div><span>{{ t.maturity_end }}</span><input type="number" id="mat_b4" min="1900" max="2100" placeholder="—" oninput="syncMaturityFromInputs()"></div>
+    </div>
+    <small class="enrich-hint">{{ t.mat_hint }}</small>
+    <div class="mat-preview" id="matPreview"></div>
 
-  <label class="enrich-head">{{ t.taste_profile }}</label>
-  <div class="taste-inputs">
-    <div><span>{{ t.taste_body }}</span><input type="number" id="taste_body" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
-    <div><span>{{ t.taste_tannin }}</span><input type="number" id="taste_tannin" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
-    <div><span>{{ t.taste_acidity }}</span><input type="number" id="taste_acidity" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
-    <div><span>{{ t.taste_sweetness }}</span><input type="number" id="taste_sweetness" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
-  </div>
+    <label class="enrich-head">{{ t.taste_profile }}</label>
+    <div class="taste-inputs">
+      <div><span>{{ t.taste_body }}</span><input type="number" id="taste_body" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+      <div><span>{{ t.taste_tannin }}</span><input type="number" id="taste_tannin" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+      <div><span>{{ t.taste_acidity }}</span><input type="number" id="taste_acidity" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+      <div><span>{{ t.taste_sweetness }}</span><input type="number" id="taste_sweetness" min="1" max="5" placeholder="1–5" oninput="syncTasteFromInputs()"></div>
+    </div>
 
-  <label class="enrich-head">{{ t.food_pairings }}</label>
-  <input type="text" id="food_pairings_input" placeholder="{{ t.food_hint }}" oninput="syncFoodFromInputs()" autocomplete="off">
+    <label class="enrich-head">{{ t.food_pairings }}</label>
+    <input type="text" id="food_pairings_input" placeholder="{{ t.food_hint }}" oninput="syncFoodFromInputs()" autocomplete="off">
+  </div>
 </div>

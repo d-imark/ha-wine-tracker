@@ -1039,8 +1039,10 @@ function openViewModal(id, wine) {
   // Details section
   var details = '';
 
-  // Quantity (always shown)
-  details += viewRow('mdi-bottle-wine', T.label_quantity || 'Quantity', w.quantity);
+  // Quantity (always shown; value has an id so the stepper can live-update it)
+  details += '<div class="view-row"><i class="mdi mdi-bottle-wine"></i>'
+           + '<span class="view-label">' + escapeHtml(T.label_quantity || 'Quantity') + '</span>'
+           + '<span class="view-value" id="viewQtyCount">' + (w.quantity != null ? w.quantity : 0) + '</span></div>';
 
   // Bottle format (only if not standard)
   if (w.bottle_format && parseFloat(w.bottle_format) !== 0.75) {
@@ -1063,13 +1065,6 @@ function openViewModal(id, wine) {
   if (w.ai_price != null && w.ai_price !== '') {
     details += viewRow('mdi-robot-outline', T.label_ai_price || 'AI price', _cur + ' ' + Number(w.ai_price).toFixed(2));
   }
-  if (!AUTH_READONLY) {
-    details += '<div class="view-row"><i class="mdi mdi-cart-outline"></i>'
-             + '<span class="view-label">' + escapeHtml(T.purchases_title || 'Purchases') + '</span>'
-             + '<a class="view-value view-purchases-link" onclick="openPurchasesFromView(' + id + ')">'
-             + escapeHtml(T.purchases_manage || 'Manage') + '</a></div>';
-  }
-
   // Drink window
   if (w.drink_from || w.drink_until) {
     var window_str = (w.drink_from || '?') + ' - ' + (w.drink_until || '?');
@@ -1103,7 +1098,15 @@ function openViewModal(id, wine) {
   // Action buttons
   html += '<div class="view-actions">';
   if (!AUTH_READONLY) {
-    html += '<button class="btn-submit" onclick="editFromView()">' + (T.btn_edit || 'Edit') + '</button>';
+    html += '<div class="view-qty">'
+          + '<button type="button" title="' + (T.btn_less || '') + '" onclick="viewChangeQty(-1)">−</button>'
+          + '<span id="viewQtyStep">' + (w.quantity != null ? w.quantity : 0) + '</span>'
+          + '<button type="button" title="' + (T.btn_more || '') + '" onclick="viewChangeQty(1)">+</button>'
+          + '</div>'
+          + '<button type="button" class="view-act-btn" onclick="openPurchasesFromView(' + id + ')">'
+          + '<i class="mdi mdi-cart-outline"></i> ' + escapeHtml(T.purchases_manage || 'Purchases') + '</button>'
+          + '<button type="button" class="btn-submit" onclick="editFromView()">' + escapeHtml(T.btn_edit || 'Edit') + '</button>'
+          + '<button type="button" class="view-act-btn danger" title="' + escapeHtml(T.btn_delete || 'Delete') + '" onclick="viewDelete()"><i class="mdi mdi-delete"></i></button>';
   }
   html += '</div>';
 
@@ -1160,6 +1163,44 @@ function openPurchasesFromView(id) {
     }
   };
   openPurchases(id);
+}
+
+function viewChangeQty(delta) {
+  var id = window._viewWineId, w = window._viewWineData;
+  if (!id || !w) return;
+  var newQty = Math.max(0, (parseInt(w.quantity, 10) || 0) + delta);
+  w.quantity = newQty;
+  ['viewQtyCount', 'viewQtyStep'].forEach(function(eid) {
+    var e = document.getElementById(eid); if (e) e.textContent = newQty;
+  });
+  // Keep the card on the page in sync (optimistic)
+  var card = document.querySelector('.card[data-id="' + id + '"]');
+  if (card) {
+    card.dataset.quantity = newQty;
+    var badge = card.querySelector('.qty-badge');
+    if (badge) { badge.textContent = newQty + ' ' + (newQty === 1 ? T.bottle_abbr : T.bottles_abbr); badge.classList.toggle('has', newQty > 0); }
+    var qd = card.querySelector('.qty-display'); if (qd) qd.textContent = newQty;
+    card.classList.toggle('empty', newQty == 0);
+  }
+  // Persist via /edit (logs consumed/restocked); send the fields /edit would
+  // otherwise clear, but omit enrichment/price so they stay preserved.
+  var fd = new FormData();
+  [['name', w.name], ['year', w.year], ['type', w.type], ['region', w.region],
+   ['quantity', newQty], ['rating', w.rating], ['notes', w.notes], ['grape', w.grape],
+   ['bottle_format', w.bottle_format || '0.75'], ['vivino_id', w.vivino_id || ''],
+   ['drink_from', w.drink_from || ''], ['drink_until', w.drink_until || ''],
+   ['location', w.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
+  fetch(INGRESS + '/edit/' + id, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+  if (typeof applyFilters === 'function') applyFilters();
+}
+
+function viewDelete() {
+  var id = window._viewWineId, w = window._viewWineData || {};
+  if (!id) return;
+  closeModal('viewModal');
+  document.getElementById('deleteWineName').textContent = w.name || '';
+  document.getElementById('deleteForm').dataset.wineId = id;
+  openModal('deleteModal');
 }
 
 function editFromView() {

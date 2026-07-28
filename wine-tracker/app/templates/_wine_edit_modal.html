@@ -454,6 +454,14 @@ function syncMaturityFromInputs() {
   document.getElementById('wine_maturity_data').value = ok
     ? JSON.stringify({ youth: [b[0], b[1]], maturity: [b[1], b[2]], peak: [b[2], b[3]], decline: [b[3], b[4]] })
     : '';
+  // Prefill the drink window from the phases (reife -> ende); stays manually
+  // overridable and is only touched while the phases form a valid range.
+  if (ok) {
+    var df = document.getElementById('wine_drink_from');
+    var du = document.getElementById('wine_drink_until');
+    if (df) df.value = b[1];
+    if (du) du.value = b[4];
+  }
   updateMaturityPreview();
 }
 function loadMaturityInputs(md) {
@@ -694,6 +702,19 @@ function showFormStep() {
   if (formStep) formStep.style.display = '';
   var submitBtn = document.getElementById('wineSubmitBtn');
   if (submitBtn) submitBtn.style.display = '';
+  switchWineTab('basics');
+}
+
+// Switch the visible form tab (Basis / Preis & Lager / Reife & Geschmack).
+function switchWineTab(name) {
+  var root = document.getElementById('formStep') || document;
+  root.querySelectorAll('.wine-tab').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  root.querySelectorAll('.wine-tab-panel').forEach(function(p) {
+    if (p.dataset.panel === name) p.removeAttribute('hidden');
+    else p.setAttribute('hidden', '');
+  });
 }
 
 function skipToManual() {
