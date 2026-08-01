@@ -450,3 +450,57 @@ def test_grape_names_from_ids():
     gmap = {1: "Merlot", 2: "Cabernet Sauvignon"}
     assert wine_app._grape_names_from_ids(gmap, [1, 2, 99]) == ["Merlot", "Cabernet Sauvignon"]
     assert wine_app._grape_names_from_ids(gmap, []) == []
+
+
+# ── AI JSON parsing (robust against fences / prose / truncation) ──────────────
+
+class TestParseAiJson:
+    def _f(self):
+        import app as wine_app
+        return wine_app._parse_ai_json
+
+    def test_plain_json(self):
+        assert self._f()('{"name": "Barolo"}') == {"name": "Barolo"}
+
+    def test_code_fenced_json(self):
+        assert self._f()('```json\n{"name": "Barolo"}\n```') == {"name": "Barolo"}
+
+    def test_json_with_surrounding_prose(self):
+        raw = 'Hier das Ergebnis:\n{"name": "Barolo"}\nQuelle: example.com'
+        assert self._f()(raw) == {"name": "Barolo"}
+
+    def test_empty_output_raises(self):
+        import pytest as pt
+        for bad in ("", "   ", None, "```json"):
+            with pt.raises(ValueError, match="ai_bad_response"):
+                self._f()(bad)
+
+    def test_truncated_json_raises(self):
+        import pytest as pt
+        with pt.raises(ValueError, match="ai_bad_response"):
+            self._f()('{"name": "Barolo", "region": "Piem')
+
+
+# ── canonicalizing AI output against the reference lists ──────────────────────
+
+class TestCanonicalizeAiFields:
+    def _run(self, db, fields):
+        import app as wine_app
+        return wine_app._canonicalize_ai_fields(db, fields)
+
+    def test_grape_alias_maps_to_canonical(self, db):
+        out = self._run(db, {"grape": "Shiraz", "grapes": [{"name": "Shiraz", "pct": 100}]})
+        assert out["grape"] == "Syrah"
+        assert out["grapes"][0]["name"] == "Syrah"
+
+    def test_country_alias_maps_to_canonical(self, db):
+        out = self._run(db, {"country": "CH"})
+        assert out["country"] not in ("", "CH")     # resolved to the ref name
+
+    def test_unknown_values_are_left_alone(self, db):
+        out = self._run(db, {"grape": "Hauswein XY", "region": "Irgendwo"})
+        assert out["grape"] == "Hauswein XY"
+        assert out["region"] == "Irgendwo"
+
+    def test_empty_fields_survive(self, db):
+        assert self._run(db, {})== {}

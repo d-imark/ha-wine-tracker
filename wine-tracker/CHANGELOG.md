@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.14.1
+
+- **KI-Analyse bricht nicht mehr ab** - bei aufwändiger Web-Recherche ging das Antwort-Budget zur Neige, das JSON kam abgeschnitten an und die Analyse endete mit „Analyse fehlgeschlagen". Das Budget ist jetzt deutlich größer, abgeschnittene Antworten lösen zuverlässig die Ersatz-Analyse ohne Websuche aus, und die Antwort wird auch mit Zusatztext oder Code-Blöcken drumherum korrekt gelesen.
+- **Der Winzer wird nicht mehr ausgetauscht** - bisher wurde der Winzer gar nicht an die KI übergeben, weshalb sie bei ähnlich benannten Weinen einen fremden Produzenten recherchierte. Winzer und Land gehen jetzt mit in die Anfrage, ein bereits erfasster Winzer bleibt unverändert erhalten, und die Recherche findet dadurch häufiger die Seite des richtigen Winzers.
+- **Preise in deiner Währung** - die KI liefert den Preis jetzt in der eingestellten Währung und rechnet Fremdwährungen um; die Grundlage (Originalpreis und Kurs) steht in der KI-Basis.
+- **Einheitliche Schreibweisen** - Land, Region, Rebsorte und Weintyp aus KI-Recherche werden über die Alias-Suche auf den Namen der Referenzliste gebracht (z.B. „Sylvaner" → „Silvaner"); Zusätze wie „Johannisberg / Sylvaner" werden auf die bekannte Sorte reduziert.
+
+## 1.14.0
+
+- **Rebsorten mit Anteilen (Verschnitte)** - ein Wein kann jetzt mehrere Rebsorten mit optionaler Prozentangabe tragen. Im Bearbeiten-Dialog stehen sie als Chips in einem antippbaren Feld; ein Tipp öffnet den Rebsorten-Dialog mit einer Zeile je Sorte (Autovervollständigung + %-Feld, beliebig viele Zeilen, nicht-blockierender Summen-Hinweis). Karte und Tabelle zeigen kompakt die führende Rebsorte + „+N", die Detailansicht die volle Liste als Chips. Bestehende Rebsorten werden beim Update automatisch übernommen.
+- **Alias-Dubletten werden zusammengelegt** - „Shiraz" und „Syrah" sind dieselbe Rebsorte und erscheinen nicht mehr doppelt; beim Zusammenlegen gilt der Name aus der Referenzliste. Eine einzeln erfasste Schreibweise bleibt unverändert. Bestehende Weine werden beim Update automatisch bereinigt.
+- **Referenzliste erweitert und aufgeräumt** - neu u.a. Petite Arvine, Humagne Blanche/Rouge, Amigne, Heida, Johannisberg, Diolinoir, Gamaret, Garanoir, Räuschling, Completer sowie Rondinella, Molinara, Corvinone, Nero di Troia, Negroamaro, Callet, Manto Negro und Savagnin. Doppelte Einträge (Sylvaner/Silvaner, Assyrtico/Assyrtiko) wurden zusammengeführt - beide Schreibweisen bleiben als Alias auffindbar.
+- **KI & Vivino liefern Rebsortenlisten** - die KI-Analyse/Web-Recherche und der Vivino-Abgleich füllen die Rebsorten-Zeilen (inkl. Anteile, wo bekannt); jede Sorte wird einzeln gegen die Referenzliste abgeglichen bzw. als eigener Eintrag anlegbar.
+- **Export/Import** sichert und restauriert die strukturierten Rebsorten (Namen + Anteile); ältere Dateien mit reinem Rebsorten-Text funktionieren weiterhin.
+- **Scan startet die Web-Recherche und Vivino nacheinander** - nach dem Etiketten-Scan läuft automatisch die KI-Web-Recherche (mit Abgleich-Dialog) und danach der Vivino-Abgleich; die Kandidatenauswahl wird immer gezeigt, und „Kein Treffer – ohne Vivino übernehmen" bricht sauber ab, ohne die gescannten Daten zu verlieren. Der Winzer wird beim Scan und im Vivino-Abgleich als eigenes Feld erkannt.
+
 ## 1.13.1
 
 - **Übersichtlicher Bearbeiten-Dialog mit Tabs** - die Felder sind in „Basis", „Preis & Lager" und „Reife & Geschmack" gruppiert; selten Angepasstes (Reifephasen, Geschmack, Food) ist weg vom Standard-Blick - besonders auf dem Handy angenehmer.

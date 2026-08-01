@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.1
+
+- **KI-Analyse bricht nicht mehr ab** - bei aufwändiger Web-Recherche ging das Antwort-Budget zur Neige, das JSON kam abgeschnitten an und die Analyse endete mit „Analyse fehlgeschlagen". Das Budget ist jetzt deutlich größer, abgeschnittene Antworten lösen zuverlässig die Ersatz-Analyse ohne Websuche aus, und die Antwort wird auch mit Zusatztext oder Code-Blöcken drumherum korrekt gelesen.
+- **Der Winzer wird nicht mehr ausgetauscht** - bisher wurde der Winzer gar nicht an die KI übergeben, weshalb sie bei ähnlich benannten Weinen einen fremden Produzenten recherchierte. Winzer und Land gehen jetzt mit in die Anfrage, ein bereits erfasster Winzer bleibt unverändert erhalten, und die Recherche findet dadurch häufiger die Seite des richtigen Winzers.
+- **Preise in deiner Währung** - die KI liefert den Preis jetzt in der eingestellten Währung und rechnet Fremdwährungen um; die Grundlage (Originalpreis und Kurs) steht in der KI-Basis.
+- **Einheitliche Schreibweisen** - Land, Region, Rebsorte und Weintyp aus KI-Recherche werden über die Alias-Suche auf den Namen der Referenzliste gebracht (z.B. „Sylvaner" → „Silvaner"); Zusätze wie „Johannisberg / Sylvaner" werden auf die bekannte Sorte reduziert.
+
 ## 1.14.0
 
 - **Rebsorten mit Anteilen (Verschnitte)** - ein Wein kann jetzt mehrere Rebsorten mit optionaler Prozentangabe tragen. Im Bearbeiten-Dialog stehen sie als Chips in einem antippbaren Feld; ein Tipp öffnet den Rebsorten-Dialog mit einer Zeile je Sorte (Autovervollständigung + %-Feld, beliebig viele Zeilen, nicht-blockierender Summen-Hinweis). Karte und Tabelle zeigen kompakt die führende Rebsorte + „+N", die Detailansicht die volle Liste als Chips. Bestehende Rebsorten werden beim Update automatisch übernommen.

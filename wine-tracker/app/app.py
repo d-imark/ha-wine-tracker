@@ -166,7 +166,7 @@ def _ssl_verify():
         return True
 
 
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.14.1"
 
 HA_OPTIONS = load_options()
 
@@ -1822,18 +1822,116 @@ def _call_openai_websearch(image_b64, media_type, prompt, opts):
         model=model,
         tools=[{"type": "web_search"}],
         input=[{"role": "user", "content": content}],
-        max_output_tokens=1500,
+        # web_search spends this same budget on reasoning and tool calls, so it
+        # needs far more headroom than the ~500 tokens of JSON we want back.
+        max_output_tokens=6000,
     )
-    return response.output_text
+    text = (response.output_text or "").strip()
+    if getattr(response, "status", None) == "incomplete" or not text:
+        reason = getattr(getattr(response, "incomplete_details", None), "reason", "empty_output")
+        # Truncated JSON is unusable - fail so the caller falls back to the
+        # plain (non-web-search) call instead of trying to parse a fragment.
+        raise RuntimeError(f"web_search response unusable ({reason})")
+    return text
 
 
 def _call_openai_smart(image_b64, media_type, prompt, opts):
-    """OpenAI with web search; fall back to plain chat.completions on any error."""
+    """OpenAI with web search; fall back to plain chat.completions on any error.
+
+    A truncated or empty web_search answer counts as a failure too - it is not
+    an exception, but the JSON it yields is unusable.
+    """
     try:
         return _call_openai_websearch(image_b64, media_type, prompt, opts)
     except Exception as e:
         app.logger.warning("OpenAI web_search failed, falling back to chat.completions: %s", e)
         return _call_openai(image_b64, media_type, prompt, opts)
+
+
+def _canonicalize_ai_fields(db, fields):
+    """Map AI/Vivino values onto the reference vocabulary via alias lookup.
+
+    "Sylvaner" becomes "Silvaner", "Shiraz" becomes "Syrah", "Toskana" becomes
+    whatever the reference calls it - so the reconcile dialog stops asking about
+    spellings we already know. Unknown values are left untouched.
+    """
+    def canon(entity, value, scope=None, key="name"):
+        value = (str(value or "")).strip()
+        if not value:
+            return value
+        try:
+            row = reference.match_reference(db, entity, value, scope)
+        except Exception:
+            return value
+        return row[key] if row else value
+
+    country_code = None
+    if fields.get("country"):
+        try:
+            row = reference.match_reference(db, "country", fields["country"])
+        except Exception:
+            row = None
+        if row:
+            fields["country"] = row["name"]
+            country_code = row["code"]
+
+    if fields.get("region"):
+        fields["region"] = canon("region", fields["region"], country_code)
+
+    if fields.get("wine_type"):
+        fields["wine_type"] = canon("wine_type", fields["wine_type"], key="key")
+
+    def canon_grape(name):
+        """Models like to annotate synonyms ("Johannisberg / Sylvaner",
+        "Johannisberg (Sylvaner)"). Take the first part we actually know."""
+        name = (str(name or "")).strip()
+        if not name:
+            return name
+        direct = canon("grape", name)
+        if direct != name or reference.match_reference(db, "grape", name):
+            return direct
+        for part in re.split(r"[/()\[\],;]| oder | or ", name):
+            part = part.strip()
+            if part and reference.match_reference(db, "grape", part):
+                return canon("grape", part)
+        return name
+
+    if isinstance(fields.get("grapes"), list):
+        for g in fields["grapes"]:
+            if isinstance(g, dict) and g.get("name"):
+                g["name"] = canon_grape(g["name"])
+    if fields.get("grape"):
+        fields["grape"] = ", ".join(
+            canon_grape(n) for n in grapes.split_legacy(fields["grape"])) or fields["grape"]
+
+    return fields
+
+
+def _parse_ai_json(raw):
+    """Parse a model's JSON reply, tolerating code fences and stray prose.
+
+    Models sometimes wrap the object in ```json fences or add a sentence before
+    or after it. Raises ValueError("ai_bad_response") if nothing parses.
+    """
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1] if "\n" in text else ""
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    if text:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # Salvage the outermost {...} block when the reply carries extra prose.
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+    raise ValueError("ai_bad_response")
 
 
 def _call_openrouter(image_b64, media_type, prompt, opts):
@@ -2135,6 +2233,7 @@ def analyze_wine():
     lang_names = {"de": "German", "en": "English", "fr": "French", "it": "Italian",
                   "es": "Spanish", "pt": "Portuguese", "nl": "Dutch"}
     lang_name = lang_names.get(LANG, "English")
+    currency = (opts.get("currency") or "CHF").strip() or "CHF"
     prompt = f"""Analyze this wine bottle label image. Extract the following fields and return ONLY valid JSON:
 {{
   "name": "wine name (without the producer)",
@@ -2166,10 +2265,11 @@ def analyze_wine():
 Rules:
 - wine_type MUST be exactly one of the listed values
 - winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".
+- If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - drink_from/drink_until: drinking window years. If mentioned on label, use those. Otherwise ESTIMATE a reasonable drinking window based on the wine type, grape variety, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
-- price as number without currency symbol, or null if not visible
+- price: the retail bottle price as a plain number in {currency}, without any currency symbol. If the label or your sources quote another currency, CONVERT the amount to {currency} at current exchange rates. Return null if no price is visible.
 - bottle_format: volume in liters as number (e.g. 0.75, 1.5, 0.375). Only set if clearly visible on the label. Valid values: 0.1875, 0.375, 0.75, 1.5, 3, 4.5, 6, 9, 12, 15. Return null if not clearly identifiable (do NOT guess).
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
@@ -2192,15 +2292,9 @@ Rules:
         if not call_fn:
             return jsonify({"ok": False, "error": "invalid_provider", "image_filename": image_filename}), 400
 
-        raw = call_fn(image_data, media_type, prompt, opts).strip()
-
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1]
-            if raw.endswith("```"):
-                raw = raw[:-3].strip()
-
-        fields = json.loads(raw)
+        raw = call_fn(image_data, media_type, prompt, opts)
+        fields = _parse_ai_json(raw)
+        fields = _canonicalize_ai_fields(get_db(), fields)
 
         # Validate wine_type
         if fields.get("wine_type") and fields["wine_type"] not in WINE_TYPES:
@@ -2208,9 +2302,14 @@ Rules:
 
         return jsonify({"ok": True, "fields": fields, "image_filename": image_filename})
 
+    except ValueError as e:
+        if str(e) != "ai_bad_response":
+            raise
+        app.logger.warning("AI analyze-wine returned unparseable output")
+        return jsonify({"ok": False, "error": "parse_error", "image_filename": image_filename}), 502
     except json.JSONDecodeError:
         app.logger.exception("AI analyze-wine JSON parse error")
-        return jsonify({"ok": False, "error": "parse_error", "image_filename": image_filename}), 500
+        return jsonify({"ok": False, "error": "parse_error", "image_filename": image_filename}), 502
     except Exception as e:
         app.logger.exception("AI analyze-wine error: %s", e)
         error_msg = str(e)
@@ -2570,17 +2669,19 @@ def _wine_json_schema():
 }"""
 
 
-def _wine_json_rules(lang="en"):
+def _wine_json_rules(lang="en", currency=None):
     lang_names = {"de": "German", "en": "English", "fr": "French", "it": "Italian",
                   "es": "Spanish", "pt": "Portuguese", "nl": "Dutch"}
     lang_name = lang_names.get(lang, "English")
+    currency = (currency or HA_OPTIONS.get("currency") or "CHF").strip() or "CHF"
     return f"""Rules:
 - wine_type MUST be exactly one of the listed values
 - winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".
+- If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - drink_from/drink_until: estimate a reasonable drinking window based on wine type, grape, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
-- price as number without currency symbol, or null
+- price: the retail bottle price as a plain number in {currency}, without any currency symbol. If your sources quote another currency, CONVERT the amount to {currency} at current exchange rates and name the original currency and amount in ai_rationale. Return null if you have no price.
 - bottle_format: volume in liters as number (e.g. 0.75, 1.5, 0.375). Only set if clearly visible on the label. Valid values: 0.1875, 0.375, 0.75, 1.5, 3, 4.5, 6, 9, 12, 15. Return null if not clearly identifiable (do NOT guess).
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
@@ -2618,17 +2719,19 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
     HTTP endpoint and the chat ADD_WINE enrichment pass.
     """
     context_parts = []
-    if wine_context.get("name"):   context_parts.append(f"Name: {wine_context['name']}")
-    if wine_context.get("year"):   context_parts.append(f"Vintage: {wine_context['year']}")
-    if wine_context.get("type"):   context_parts.append(f"Type: {wine_context['type']}")
-    if wine_context.get("region"): context_parts.append(f"Region: {wine_context['region']}")
-    if wine_context.get("grape"):  context_parts.append(f"Grape: {wine_context['grape']}")
+    if wine_context.get("name"):    context_parts.append(f"Name: {wine_context['name']}")
+    if wine_context.get("winery"):  context_parts.append(f"Winery: {wine_context['winery']}")
+    if wine_context.get("year"):    context_parts.append(f"Vintage: {wine_context['year']}")
+    if wine_context.get("type"):    context_parts.append(f"Type: {wine_context['type']}")
+    if wine_context.get("region"):  context_parts.append(f"Region: {wine_context['region']}")
+    if wine_context.get("country"): context_parts.append(f"Country: {wine_context['country']}")
+    if wine_context.get("grape"):   context_parts.append(f"Grape: {wine_context['grape']}")
 
     if not image_b64 and not context_parts:
         raise ValueError("no_data")
 
     schema = _wine_json_schema()
-    rules = _wine_json_rules(LANG)
+    rules = _wine_json_rules(LANG, opts.get("currency"))
 
     if image_b64 and context_parts:
         ctx = "\n".join(context_parts)
@@ -2654,14 +2757,14 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
     if provider == "openai" and opts.get("openai_web_search", True):
         call_fn = _call_openai_smart
 
-    raw = call_fn(image_b64, media_type, prompt, opts).strip()
+    raw = call_fn(image_b64, media_type, prompt, opts)
+    fields = _parse_ai_json(raw)
 
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1]
-        if raw.endswith("```"):
-            raw = raw[:-3].strip()
-
-    fields = json.loads(raw)
+    # The producer the user recorded wins - the model must not swap in another
+    # winery that happens to make a similarly named wine.
+    known_winery = (str(wine_context.get("winery") or "")).strip()
+    if known_winery:
+        fields["winery"] = known_winery
 
     if fields.get("wine_type") and fields["wine_type"] not in WINE_TYPES:
         fields["wine_type"] = ""
@@ -2686,16 +2789,20 @@ def reanalyze_wine():
 
     try:
         fields = _analyze_wine_from_context(opts, image_b64, media_type, wine_context)
+        fields = _canonicalize_ai_fields(get_db(), fields)
         return jsonify({"ok": True, "fields": fields})
 
     except ValueError as e:
         code = str(e)
         if code in ("no_data", "invalid_provider"):
             return jsonify({"ok": False, "error": code}), 400
+        if code == "ai_bad_response":
+            app.logger.warning("AI reanalyze-wine returned unparseable output")
+            return jsonify({"ok": False, "error": "parse_error"}), 502
         raise
     except json.JSONDecodeError:
         app.logger.exception("AI reanalyze-wine JSON parse error")
-        return jsonify({"ok": False, "error": "parse_error"}), 500
+        return jsonify({"ok": False, "error": "parse_error"}), 502
     except Exception as e:
         app.logger.exception("AI reanalyze-wine error: %s", e)
         error_msg = str(e)

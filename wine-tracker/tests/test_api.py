@@ -214,7 +214,8 @@ class TestAnalyzeWine:
             content_type="multipart/form-data",
         )
         data = json.loads(resp.data)
-        assert resp.status_code == 500
+        # 502: the upstream model returned garbage, our server is fine
+        assert resp.status_code == 502
         assert data["ok"] is False
         assert data["error"] == "parse_error"
 

@@ -1,6 +1,6 @@
 name: "Wine Tracker DI"
 description: "Track and manage your wine cellar"
-version: "1.14.0"
+version: "1.14.1"
 slug: "wine_tracker_di"
 url: "https://github.com/d-imark/ha-wine-tracker"
 init: false

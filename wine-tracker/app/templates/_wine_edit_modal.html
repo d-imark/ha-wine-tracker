@@ -1277,9 +1277,13 @@ function reloadViaAi() {
   var context = {};
   var v;
   v = document.getElementById('wine_name').value.trim();    if (v) context.name = v;
+  // The winery matters most: without it the model may research a similarly
+  // named wine from a different producer.
+  v = document.getElementById('wine_winery').value.trim();  if (v) context.winery = v;
   v = document.getElementById('wine_year').value.trim();    if (v) context.year = v;
   v = document.getElementById('wine_type').value;           if (v) context.type = v;
   v = document.getElementById('wine_region').value.trim();  if (v) context.region = v;
+  v = document.getElementById('wine_country').value.trim(); if (v) context.country = v;
   v = grapeCollect().map(function(g){ return g.name; }).join(', '); if (v) context.grape = v;
 
   if (!imageFilename && Object.keys(context).length === 0) {
