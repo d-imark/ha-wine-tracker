@@ -38,7 +38,9 @@
     </div>
   </div>
 
-  <div class="row2">
+  {# stacks to one column on phones (see .row2-grape) so the grape summary +
+     button get the full width instead of half a column #}
+  <div class="row2 row2-grape">
     <div>
       <label>{{ t.label_type }}</label>
       <select name="type" id="wine_type">
@@ -50,12 +52,14 @@
     </div>
     <div>
       <label>{{ t.label_grape }}</label>
-      <input type="text" name="grape" id="wine_grape" placeholder="{{ t.placeholder_grape }}" list="grapeList" autocomplete="off">
-      <datalist id="grapeList">
-        {% for g in used_grapes %}
-        <option value="{{ g }}">
-        {% endfor %}
-      </datalist>
+      {# Looks like a form control, behaves like a button: opens #grapesModal #}
+      <button type="button" class="grape-field" onclick="openGrapesDialog()"
+              title="{{ t.grapes_manage }}" aria-label="{{ t.grapes_manage }}">
+        <span class="grape-field-chips" id="grapeSummary"></span>
+        <i class="mdi mdi-chevron-right grape-field-arrow"></i>
+      </button>
+      <input type="hidden" name="grapes" id="wine_grapes_json">
+      <input type="hidden" name="grape" id="wine_grape">
     </div>
   </div>
 

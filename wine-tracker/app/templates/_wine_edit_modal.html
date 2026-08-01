@@ -176,7 +176,7 @@
         <div id="vrCandidates" class="vivino-results"></div>
       </div>
       <div class="modal-footer vr-footer">
-        <button type="button" class="btn-cancel" onclick="vrCancel()">{{ t.btn_cancel }}</button>
+        <button type="button" class="btn-cancel" onclick="vrCancel()">{{ t.vr_none_match }}</button>
       </div>
     </div>
 
@@ -272,6 +272,32 @@
   </div>
 </div>
 
+<!-- Grape varieties editor (own dialog; the wine form only shows a summary) -->
+<div class="modal-overlay" id="grapesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.grapes_title }}</span>
+      <button class="modal-close" type="button" onclick="closeGrapesDialog()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="grape-hint">{{ t.grapes_hint }}</p>
+      <div id="grapeRows" class="grape-rows"></div>
+      <div class="grape-rows-foot">
+        <button type="button" class="btn-cancel grape-add" onclick="grapeAddRow()">{{ t.grapes_add }}</button>
+        <span id="grapeSum" class="grape-sum"></span>
+      </div>
+      <datalist id="grapeList">
+        {% for g in ref_grape_names %}
+        <option value="{{ g }}">
+        {% endfor %}
+      </datalist>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-submit" onclick="closeGrapesDialog()">{{ t.grapes_done }}</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
@@ -356,10 +382,10 @@ var _reloadMode = false;
 // ── AI reload confirm (per-field) ────────────────────────────────────────────
 var _AR_FIELDS = [
   { key: 'name',        el: 'wine_name',        labelKey: 'label_name' },
+  { key: 'winery',      el: 'wine_winery',      labelKey: 'label_winery' },
   { key: 'vintage',     el: 'wine_year',        labelKey: 'label_vintage' },
   { key: 'wine_type',   el: 'wine_type',        labelKey: 'label_type', type: 'wine_type' },
   { key: 'region',      el: 'wine_region',      labelKey: 'label_region' },
-  { key: 'grape',       el: 'wine_grape',       labelKey: 'label_grape' },
   { key: 'price',       el: 'wine_ai_price',    labelKey: 'label_ai_price' },
   { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
   { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' },
@@ -504,6 +530,117 @@ function refreshEnrichInputsFromHidden() {
   loadFoodInputs(_parseJSONsafe(document.getElementById('wine_food_pairings').value));
 }
 
+// ── Grape rows widget (lives in its own #grapesModal dialog) ─────────────────
+function grapeRowHtml(name, pct) {
+  var esc = function(s){ return (s||'').replace(/"/g, '&quot;'); };
+  return '<div class="grape-row">' +
+    '<input type="text" class="grape-name" list="grapeList" value="' + esc(name) +
+      '" oninput="grapeUpdateSum()" autocomplete="off">' +
+    '<input type="number" class="grape-pct" min="0" max="100" step="1" value="' +
+      (pct === null || pct === undefined ? '' : pct) + '" oninput="grapeUpdateSum()">' +
+    '<span class="grape-pct-sign">' + (T.grapes_pct || '%') + '</span>' +
+    '<button type="button" class="grape-del" title="' + (T.grapes_remove || '') +
+      '" onclick="grapeDelRow(this)">&times;</button>' +
+  '</div>';
+}
+
+function grapeAddRow(name, pct) {
+  document.getElementById('grapeRows').insertAdjacentHTML('beforeend',
+    grapeRowHtml(name || '', pct));
+  grapeUpdateSum();
+}
+
+function grapeDelRow(btn) {
+  var row = btn.closest('.grape-row');
+  if (row) row.remove();
+  grapeUpdateSum();
+}
+
+function grapeClearRows() {
+  document.getElementById('grapeRows').innerHTML = '';
+}
+
+function grapeSetRows(list) {
+  grapeClearRows();
+  (list || []).forEach(function(g) {
+    grapeAddRow(g.name, (g.pct === null || g.pct === undefined) ? undefined : g.pct);
+  });
+  grapeUpdateSum();
+}
+
+function grapesFromLegacy(text) {
+  return (text || '').split(/[,&/+]/).map(function(s){ return s.trim(); })
+    .filter(Boolean).map(function(n){ return { name: n, pct: null }; });
+}
+
+function grapeCollect() {
+  var out = [];
+  document.querySelectorAll('#grapeRows .grape-row').forEach(function(row) {
+    var name = row.querySelector('.grape-name').value.trim();
+    if (!name) return;
+    var pv = row.querySelector('.grape-pct').value;
+    out.push({ name: name, pct: pv === '' ? null : Number(pv) });
+  });
+  return out;
+}
+
+function grapeSerialize() {
+  var list = grapeCollect();
+  document.getElementById('wine_grapes_json').value = JSON.stringify(list);
+  var legacy = document.getElementById('wine_grape');
+  if (legacy) legacy.value = list.map(function(g){ return g.name; }).join(', ');
+}
+
+function grapeUpdateSum() {
+  var list = grapeCollect();
+  var sum = list.reduce(function(a, g){ return a + (g.pct || 0); }, 0);
+  var el = document.getElementById('grapeSum');
+  if (el) el.textContent = list.length ? ((T.grapes_sum || 'Sum') + ': ' + sum + ' %') : '';
+  grapeUpdateSummary();
+}
+
+// The wine form shows the result as chips; editing happens in #grapesModal.
+function grapeUpdateSummary() {
+  var el = document.getElementById('grapeSummary');
+  if (!el) return;
+  var esc = function(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  };
+  var list = grapeCollect();
+  el.innerHTML = list.length
+    ? list.map(function(g) {
+        return '<span class="grape-chip">' + esc(g.name) +
+          (g.pct == null ? '' : ' ' + g.pct + ' %') + '</span>';
+      }).join('')
+    : '<span class="grape-field-empty">' + esc(T.grapes_empty || '') + '</span>';
+}
+
+function openGrapesDialog() {
+  if (!grapeCollect().length) grapeAddRow();  // start with one empty row
+  openModal('grapesModal');
+  var first = document.querySelector('#grapeRows .grape-name');
+  if (first) first.focus();
+}
+
+function closeGrapesDialog() {
+  // Drop rows the user left blank, then sync summary + hidden fields.
+  grapeSetRows(grapeCollect());
+  grapeSerialize();
+  closeModal('grapesModal');
+}
+
+function _grapeKey(list) {
+  return (list || []).map(function(g){
+    return (g.name || '').toLowerCase() + ':' + (g.pct == null || g.pct === '' ? '' : g.pct);
+  }).join('|');
+}
+
+// True when the AI/Vivino grape list differs from the current rows.
+function grapesDifferFromForm(list) {
+  if (!list || !list.length) return false;
+  return _grapeKey(grapeCollect()) !== _grapeKey(list);
+}
+
 function openWineModal(id, wine) {
   _reloadMode = false;
   var isEdit = !!id;
@@ -542,7 +679,7 @@ function openWineModal(id, wine) {
   document.getElementById('wine_drink_from').value = w.drink_from || '';
   document.getElementById('wine_drink_until').value = w.drink_until || '';
   document.getElementById('wine_location').value = w.location || '';
-  document.getElementById('wine_grape').value = w.grape || '';
+  grapeSetRows(w.grapes || (w.grape ? grapesFromLegacy(w.grape) : []));
   document.getElementById('wine_bottle_format').value = w.bottle_format || '0.75';
   document.getElementById('wine_vivino_id').value = w.vivino_id || '';
   document.getElementById('wine_maturity_data').value = w.maturity_data ? JSON.stringify(w.maturity_data) : '';
@@ -818,12 +955,15 @@ function selectVivinoResult(index) {
   if (!item) return;
 
   var fields = {};
-  if (item.name) fields.name = item.name;
+  var vName = item.wine_name || item.name;
+  if (vName) fields.name = vName;
+  if (item.winery) fields.winery = item.winery;
   if (item.year) fields.vintage = item.year;
   if (item.wine_type) fields.wine_type = item.wine_type;
   if (item.region) fields.region = item.region;
   if (item.country) fields.country = item.country;
-  if (item.grape) fields.grape = item.grape;
+  if (item.grapes && item.grapes.length) fields.grapes = _vrGrapesAsList(item);
+  else if (item.grape) fields.grape = item.grape;
   if (item.price) fields.price = item.price;
 
   document.getElementById('wine_vivino_id').value = item.vivino_id || '';
@@ -927,11 +1067,16 @@ function startAiAnalysis(file) {
 function populateFormFromAi(fields, imageFilename) {
   if (_reloadMode) { populateFormMerge(fields, imageFilename); return; }
   if (fields.name) document.getElementById('wine_name').value = fields.name;
+  if (fields.winery) document.getElementById('wine_winery').value = fields.winery;
   if (fields.vintage) document.getElementById('wine_year').value = fields.vintage;
   if (fields.wine_type) document.getElementById('wine_type').value = fields.wine_type;
   if (fields.region) document.getElementById('wine_region').value = fields.region;
   if (fields.country) document.getElementById('wine_country').value = fields.country;
-  if (fields.grape) document.getElementById('wine_grape').value = fields.grape;
+  if (fields.grapes && fields.grapes.length) {
+    grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; }));
+  } else if (fields.grape) {
+    grapeSetRows(grapesFromLegacy(fields.grape));
+  }
   if (fields.price) document.getElementById('wine_ai_price').value = fields.price;
   if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
   if (fields.drink_until) document.getElementById('wine_drink_until').value = fields.drink_until;
@@ -961,6 +1106,21 @@ function populateFormFromAi(fields, imageFilename) {
   }
 
   showFormStep();
+
+  // Chain the label scan: first the deeper AI/web-research analysis (confirm
+  // dialog), then automatically the Vivino catalog match (see _afterAiStep).
+  if (imageFilename) {
+    _scanStage = 'ai';
+    reloadViaAi();
+  }
+}
+
+// Scan chaining stage: null | 'ai' | 'vivino'. Set by the scan flow only.
+var _scanStage = null;
+function _afterAiStep() {
+  if (_scanStage !== 'ai') return;
+  _scanStage = 'vivino';
+  reloadViaVivino();   // no vivino_id yet -> name search -> candidate picker
 }
 
 function aiRetry() {
@@ -989,10 +1149,17 @@ function populateFormMerge(fields, imageFilename) {
     if (el && !el.value.trim()) { el.value = val; filled++; }
   }
   setIfEmpty('wine_name', fields.name);
+  setIfEmpty('wine_winery', fields.winery);
   setIfEmpty('wine_year', fields.vintage);
   setIfEmpty('wine_type', fields.wine_type);
   setIfEmpty('wine_region', fields.region);
-  setIfEmpty('wine_grape', fields.grape);
+  if (!grapeCollect().length) {
+    if (fields.grapes && fields.grapes.length) {
+      grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; })); filled++;
+    } else if (fields.grape) {
+      grapeSetRows(grapesFromLegacy(fields.grape)); filled++;
+    }
+  }
   setIfEmpty('wine_ai_price', fields.price);
   setIfEmpty('wine_drink_from', fields.drink_from);
   setIfEmpty('wine_drink_until', fields.drink_until);
@@ -1113,7 +1280,7 @@ function reloadViaAi() {
   v = document.getElementById('wine_year').value.trim();    if (v) context.year = v;
   v = document.getElementById('wine_type').value;           if (v) context.type = v;
   v = document.getElementById('wine_region').value.trim();  if (v) context.region = v;
-  v = document.getElementById('wine_grape').value.trim();   if (v) context.grape = v;
+  v = grapeCollect().map(function(g){ return g.name; }).join(', '); if (v) context.grape = v;
 
   if (!imageFilename && Object.keys(context).length === 0) {
     showReloadToast(T.ai_no_data || 'Kein Bild und kein Weinname vorhanden', false);
@@ -1152,11 +1319,12 @@ function reloadViaAi() {
 // Fields the reload may overwrite once confirmed. rating (personal), year and
 // price (catalog wines carry neither) are intentionally excluded.
 var _VR_FIELDS = [
-  { key: 'name',      el: 'wine_name',    labelKey: 'vr_field_name' },
+  { key: 'wine_name', el: 'wine_name',    labelKey: 'vr_field_name' },
+  { key: 'winery',    el: 'wine_winery',  labelKey: 'label_winery' },
   { key: 'wine_type', el: 'wine_type',    labelKey: 'vr_field_type', type: 'wine_type' },
   { key: 'region',    el: 'wine_region',  labelKey: 'vr_field_region' },
-  { key: 'country',   el: 'wine_country', labelKey: 'label_country' },
-  { key: 'grape',     el: 'wine_grape',   labelKey: 'vr_field_grape' }
+  { key: 'country',   el: 'wine_country', labelKey: 'label_country' }
+  // grapes handled separately (list, not a single field) - see vrConfirm.
 ];
 var _vrCandidates = [];
 var _vrSelected = null;
@@ -1197,6 +1365,7 @@ function _vrOnResults(data, allowSetId) {
     openVivinoReload(data.results, allowSetId);
   } else {
     showReloadToast(T.vivino_no_results, false);
+    _scanStage = null;   // scan flow: Vivino found nothing, chain ends
   }
 }
 
@@ -1213,6 +1382,7 @@ function closeVivinoReload() {
   document.getElementById('vivinoReloadModal').classList.remove('open');
   _vrCandidates = [];
   _vrSelected = null;
+  _scanStage = null;   // scan flow ends when the Vivino dialog closes
 }
 
 function vrShowStep(n) {
@@ -1275,11 +1445,16 @@ function vrComputeChanges(item) {
   return changes;
 }
 
+function _vrGrapesAsList(item) {
+  return (item.grapes || []).map(function(n){ return { name: n, pct: null }; });
+}
+
 function vrSelectCandidate(idx) {
   _vrSelected = _vrCandidates[idx];
   if (!_vrSelected) return;
   var changes = vrComputeChanges(_vrSelected);
-  if (changes.length === 0) {
+  var grapesChanged = grapesDifferFromForm(_vrGrapesAsList(_vrSelected));
+  if (changes.length === 0 && !grapesChanged) {
     // Nothing to overwrite - apply silent side-effects (image, id) and close.
     _vrApplySideEffects(_vrSelected);
     closeVivinoReload();
@@ -1288,7 +1463,7 @@ function vrSelectCandidate(idx) {
   }
   _vrChanges = changes;
   var esc = function(s) { return (s || '').replace(/</g, '&lt;'); };
-  document.getElementById('vrChanges').innerHTML = changes.map(function(c, i) {
+  var rows = changes.map(function(c, i) {
     return '<tr>' +
       '<td class="ar-check"><input type="checkbox" id="vrChk_' + i + '" checked></td>' +
       '<td class="vr-field">' + (T[c.f.labelKey] || c.f.key) + '</td>' +
@@ -1296,7 +1471,19 @@ function vrSelectCandidate(idx) {
       '<td class="vr-arrow">→</td>' +
       '<td class="vr-new">' + esc(_vrDisplay(c.f, c.nv)) + '</td>' +
     '</tr>';
-  }).join('');
+  });
+  if (grapesChanged) {
+    var curG = grapeCollect().map(function(g){ return g.name; }).join(', ') || '—';
+    var newG = (_vrSelected.grapes || []).join(', ') || '—';
+    rows.push('<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="vrGrapesChk" checked></td>' +
+      '<td class="vr-field">' + (T.label_grape || 'Grape') + '</td>' +
+      '<td class="vr-old">' + esc(curG) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(newG) + '</td>' +
+    '</tr>');
+  }
+  document.getElementById('vrChanges').innerHTML = rows.join('');
   var ip = document.getElementById('vrImagePreview');
   if (ip) {
     if (_vrSelected.image_url) {
@@ -1345,6 +1532,10 @@ function vrConfirm() {
     var el = document.getElementById(c.f.el);
     if (el) { el.value = c.nv; }
   });
+  var vg = document.getElementById('vrGrapesChk');
+  if (vg && vg.checked && _vrSelected.grapes && _vrSelected.grapes.length) {
+    grapeSetRows(_vrGrapesAsList(_vrSelected));
+  }
   _vrApplySideEffects(_vrSelected);
   closeVivinoReload();
   showReloadToast(T.vr_applied, true);
@@ -1556,8 +1747,14 @@ function openAiReload(fields) {
   var changes = arComputeChanges(fields);
   var enrich = arComputeEnrich(fields);
   var rationale = (fields.ai_rationale || '').trim();
+  // Grapes are a list, not a per-field checkbox: apply the web-research result
+  // to the rows directly whenever it differs from what's currently entered.
+  if (grapesDifferFromForm(fields.grapes)) {
+    grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; }));
+  }
   if (changes.length === 0 && enrich.length === 0 && !rationale) {
     showReloadToast(T.ar_no_changes || T.reload_nothing, false);
+    _afterAiStep();
     return;
   }
   _arPending = { fields: fields, changes: changes, enrich: enrich, rationale: rationale };
@@ -1569,7 +1766,7 @@ function closeAiReload() {
   document.getElementById('aiReloadModal').classList.remove('open');
   _arPending = null;
 }
-function arCancel() { closeAiReload(); }
+function arCancel() { closeAiReload(); _afterAiStep(); }
 
 function applyAiReload() {
   if (!_arPending) { closeAiReload(); return; }
@@ -1601,6 +1798,7 @@ function applyAiReload() {
   }
   closeAiReload();
   showReloadToast(T.vr_applied || T.reload_filled, true);
+  _afterAiStep();
 }
 
 // ── AJAX form submit (wineModal) ──────────────────────────────────────────────
@@ -1634,12 +1832,14 @@ function _doWineSubmit(form) {
 var _rcPending = null;
 
 function reconcileThenSubmit(form) {
+  grapeSerialize();  // flush the grape rows into the hidden grapes/grape fields
+  var grapeNames = grapeCollect().map(function(g){ return g.name; });
   var payload = {
-    grape: (document.getElementById('wine_grape').value || '').trim(),
+    grapes: grapeNames,
     region: (document.getElementById('wine_region').value || '').trim(),
     country: (document.getElementById('wine_country').value || '').trim()
   };
-  if (!payload.grape && !payload.region) { _doWineSubmit(form); return; }
+  if (!grapeNames.length && !payload.region) { _doWineSubmit(form); return; }
   fetch(INGRESS + '/api/reference/reconcile', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify(payload)
@@ -1682,12 +1882,15 @@ function applyReconcile() {
   items.forEach(function(it, i) {
     var sel = document.querySelector('input[name="rc_' + i + '"]:checked');
     var val = sel ? sel.value : 'keep';
-    var fieldId = it.entity === 'grape' ? 'wine_grape' : 'wine_region';
     if (val.indexOf('known:') === 0) {
       var id = val.split(':')[1];
       var sug = it.suggestions.filter(function(s) { return String(s.id) === id; })[0];
       if (sug) {
-        document.getElementById(fieldId).value = sug.name;  // canonical name
+        if (it.entity === 'grape') {
+          _grapeRenameRow(it.value, sug.name);  // canonical name into the matching row
+        } else {
+          document.getElementById('wine_region').value = sug.name;  // canonical name
+        }
         tasks.push(fetch(INGRESS + '/api/reference/' + it.entity + '/' + id + '/alias', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
           body: JSON.stringify({ alias: it.value })
@@ -1706,8 +1909,18 @@ function applyReconcile() {
   Promise.all(tasks.map(function(p) { return p.catch(function() {}); })).then(function() {
     _rcPending = null;
     closeModal('reconcileModal');
+    grapeSerialize();  // re-flush after any canonical grape rename
     _doWineSubmit(form);
   });
+}
+
+// Rename a grape row (by its current name) to the canonical reference name.
+function _grapeRenameRow(oldName, newName) {
+  var target = (oldName || '').toLowerCase();
+  document.querySelectorAll('#grapeRows .grape-name').forEach(function(inp) {
+    if (inp.value.trim().toLowerCase() === target) inp.value = newName;
+  });
+  grapeUpdateSum();
 }
 
 // ── Modal overlay / ESC handling for wineModal ──────────────────────────────

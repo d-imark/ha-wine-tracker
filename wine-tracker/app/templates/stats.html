@@ -521,6 +521,23 @@ function viewRow(icon, label, value) {
        + '<span class="view-value">' + escapeHtml(String(value)) + '</span></div>';
 }
 
+function grapeLabel(g) {
+  return g.name + ((g.pct === null || g.pct === undefined) ? '' : ' ' + g.pct + ' %');
+}
+
+// Single variety = normal row; a blend shows chips wrapping right-aligned.
+function viewGrapeRow(list) {
+  var label = T.label_grape || 'Grape';
+  if (list.length === 1) return viewRow('mdi-fruit-grapes', label, grapeLabel(list[0]));
+  return '<div class="view-row"><i class="mdi mdi-fruit-grapes"></i>'
+       + '<span class="view-label">' + escapeHtml(label) + '</span>'
+       + '<span class="view-value view-value-chips">'
+       + list.map(function(g) {
+           return '<span class="grape-chip">' + escapeHtml(grapeLabel(g)) + '</span>';
+         }).join('')
+       + '</span></div>';
+}
+
 function openViewModal(id, wine) {
   var w = wine || {};
   window._viewWineId = id;
@@ -568,7 +585,8 @@ function openViewModal(id, wine) {
     var fmt = BOTTLE_FORMATS[parseFloat(w.bottle_format)] || w.bottle_format + ' l';
     details += viewRow('mdi-ruler', T.label_bottle_format || 'Format', fmt);
   }
-  if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
+  if (w.grapes && w.grapes.length) details += viewGrapeRow(w.grapes);
+  else if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
   if (w.purchased_at) details += viewRow('mdi-cart', T.label_purchased_at || 'Purchased at', w.purchased_at);
   if (w.price) {
     details += viewRow('mdi-cash', T.label_price || 'Price', CURRENCY + ' ' + Number(w.price).toFixed(2));

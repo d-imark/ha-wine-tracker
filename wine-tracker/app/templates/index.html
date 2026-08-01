@@ -148,7 +148,7 @@
       <div class="card-extra">
         {% if w['price'] %}<span class="price">{{ currency }} {{ "%.2f"|format(w['price']) }}</span>{% endif %}
         {% if w['drink_from'] or w['drink_until'] %}<span class="drink-window"><i class="mdi mdi-calendar-range"></i> {{ w['drink_from'] or '?' }}-{{ w['drink_until'] or '?' }}</span>{% endif %}
-        {% if w['grape'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grape'] }}</span>{% endif %}
+        {% if w['grapes'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grapes'][0].name }}{% if w['grapes']|length > 1 %} +{{ w['grapes']|length - 1 }}{% endif %}</span>{% elif w['grape'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grape'] }}</span>{% endif %}
         {% if w['location'] %}<span><i class="mdi mdi-map-marker"></i> {{ w['location'] }}</span>{% endif %}
         {% if w['vivino_id'] %}<a class="card-vivino-link" href="https://www.vivino.com/w/{{ w['vivino_id'] }}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Vivino"><i class="mdi mdi-open-in-new"></i> Vivino</a>{% endif %}
       </div>
@@ -351,7 +351,7 @@ function renderTableView() {
       + '<td class="wine-table-name col-name">' + escapeHtml(d.name) + '</td>'
       + '<td class="col-year">' + escapeHtml(d.year || '') + drinkIcon + '</td>'
       + '<td class="col-region">' + escapeHtml(d.region || '') + '</td>'
-      + '<td class="col-grape">' + escapeHtml(d.grape || '') + '</td>'
+      + '<td class="col-grape">' + escapeHtml(grapeLead(d.grapes) || d.grape || '') + '</td>'
       + '<td class="wine-table-right col-price">' + escapeHtml(priceStr) + '</td>'
       + '<td class="wine-table-right col-qty">' + (d.quantity || '0') + '</td>'
       + '</tr>';
@@ -781,6 +781,7 @@ function getCardData(el) {
     drink_until: d.drink_until ? parseInt(d.drink_until) : null,
     location: d.location || null,
     grape: d.grape || null,
+    grapes: d.grapes || [],
     bottle_format: d.bottle_format ? parseFloat(d.bottle_format) : 0.75,
     vivino_id: d.vivino_id ? parseInt(d.vivino_id) : null
   }};
@@ -929,8 +930,12 @@ function closeLightbox() {
 })();
 
 function editFromCard(el) {
-  const { id, wine } = getCardData(el);
-  openWineModal(id, wine);
+  var d = getCardData(el);
+  // Fetch full wine data (grapes, maturity/taste/food) so the editor populates fully.
+  fetch(INGRESS + '/api/wine/' + d.id)
+    .then(function(r) { return r.json(); })
+    .then(function(data) { openWineModal(d.id, data.ok ? data.wine : d.wine); })
+    .catch(function() { openWineModal(d.id, d.wine); });
 }
 
 // ── View Modal ──────────────────────────────────────────────────────────────
@@ -957,6 +962,24 @@ function viewRow(icon, label, value) {
   return '<div class="view-row"><i class="mdi ' + icon + '"></i>'
        + '<span class="view-label">' + escapeHtml(label) + '</span>'
        + '<span class="view-value">' + escapeHtml(String(value)) + '</span></div>';
+}
+
+function grapeLabel(g) {
+  return g.name + ((g.pct === null || g.pct === undefined) ? '' : ' ' + g.pct + ' %');
+}
+
+// Grapes row: a single variety reads as a normal row; a blend shows chips that
+// wrap right-aligned inside the value column.
+function viewGrapeRow(list) {
+  var label = T.label_grape || 'Grape';
+  if (list.length === 1) return viewRow('mdi-fruit-grapes', label, grapeLabel(list[0]));
+  return '<div class="view-row"><i class="mdi mdi-fruit-grapes"></i>'
+       + '<span class="view-label">' + escapeHtml(label) + '</span>'
+       + '<span class="view-value view-value-chips">'
+       + list.map(function(g) {
+           return '<span class="grape-chip">' + escapeHtml(grapeLabel(g)) + '</span>';
+         }).join('')
+       + '</span></div>';
 }
 
 function viewGalleryHtml(w, ribbonHtml) {
@@ -1051,7 +1074,8 @@ function openViewModal(id, wine) {
   }
 
   // Grape
-  if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
+  if (w.grapes && w.grapes.length) details += viewGrapeRow(w.grapes);
+  else if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
 
   // Purchased at
   if (w.purchased_at) details += viewRow('mdi-cart', T.label_purchased_at || 'Purchased at', w.purchased_at);
@@ -1185,8 +1209,10 @@ function viewChangeQty(delta) {
   // Persist via /edit (logs consumed/restocked); send the fields /edit would
   // otherwise clear, but omit enrichment/price so they stay preserved.
   var fd = new FormData();
+  // NOTE: grape/grapes intentionally omitted so the edit route preserves the
+  // structured blend (incl. percentages) on a pure quantity change.
   [['name', w.name], ['year', w.year], ['type', w.type], ['region', w.region],
-   ['quantity', newQty], ['rating', w.rating], ['notes', w.notes], ['grape', w.grape],
+   ['quantity', newQty], ['rating', w.rating], ['notes', w.notes],
    ['bottle_format', w.bottle_format || '0.75'], ['vivino_id', w.vivino_id || ''],
    ['drink_from', w.drink_from || ''], ['drink_until', w.drink_until || ''],
    ['location', w.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
@@ -1296,6 +1322,15 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// Compact grape label for cards/table: leading variety (by pct, then order) + "+N".
+function grapeLead(list) {
+  if (!list || !list.length) return '';
+  var sorted = list.slice().sort(function(a, b) { return (b.pct || 0) - (a.pct || 0); });
+  var lead = sorted[0].name;
+  return list.length > 1 ? (lead + ' +' + (list.length - 1)) : lead;
+}
+
+
 function renderCard(w) {
   var stars = '';
   if (w.rating || w.vivino_rating) {
@@ -1307,7 +1342,9 @@ function renderCard(w) {
   var extra = '';
   if (w.price) extra += '<span class="price">' + escapeHtml(CURRENCY) + ' ' + Number(w.price).toFixed(2) + '</span>';
   if (w.drink_from || w.drink_until) extra += '<span class="drink-window"><i class="mdi mdi-calendar-range"></i> ' + (w.drink_from || '?') + '-' + (w.drink_until || '?') + '</span>';
-  if (w.grape) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(w.grape) + '</span>';
+  var lead = grapeLead(w.grapes);
+  if (lead) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(lead) + '</span>';
+  else if (w.grape) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(w.grape) + '</span>';
   if (w.location) extra += '<span><i class="mdi mdi-map-marker"></i> ' + escapeHtml(w.location) + '</span>';
   if (w.vivino_id) extra += '<a class="card-vivino-link" href="https://www.vivino.com/w/' + encodeURIComponent(w.vivino_id) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Vivino"><i class="mdi mdi-open-in-new"></i> Vivino</a>';
 

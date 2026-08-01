@@ -601,3 +601,50 @@ class TestPurchaseExportImport:
         assert row["price"] == 16.0
         q = db.execute("SELECT SUM(quantity) q FROM wine_purchases WHERE wine_id=?", (row["id"],)).fetchone()["q"]
         assert q == 5
+
+
+# ── Grape varieties (1-n + pct) in export/import ──────────────────────────────
+
+class TestGrapesExportImport:
+    def test_export_contains_grapes(self, client, db):
+        import json as J
+        client.post("/add", data={
+            "name": "RT Blend", "type": "red", "region": "Bordeaux", "quantity": "1",
+            "grapes": J.dumps([{"name": "Merlot", "pct": 60},
+                               {"name": "Cabernet Sauvignon", "pct": 40}]),
+        }, follow_redirects=True)
+        resp = client.get("/export")
+        zf = zipfile.ZipFile(io.BytesIO(resp.data))
+        wines = json.loads(zf.read("wines.json"))
+        w = next(x for x in wines if x["name"] == "RT Blend")
+        assert [(g["name"], g["pct"]) for g in w["grapes"]] == \
+            [("Merlot", 60), ("Cabernet Sauvignon", 40)]
+
+    def test_import_applies_structured_grapes(self, client, db, upload_dir):
+        from export_import import match_wines, apply_import
+        import grapes as grape_model
+        parsed = {
+            "wines": [{"name": "Imp Blend", "type": "red", "region": "Bordeaux",
+                       "quantity": 1, "grape": None,
+                       "grapes": [{"name": "Merlot", "pct": 70}, {"name": "Syrah", "pct": 30}]}],
+            "timeline": [], "purchases": [], "images": {}, "original_ids": [None],
+        }
+        matches = match_wines(parsed["wines"], db)
+        apply_import(parsed, matches, db, upload_dir, strategy="skip")
+        wid = db.execute("SELECT id FROM wines WHERE name='Imp Blend'").fetchone()[0]
+        assert [(g["name"], g["pct"]) for g in grape_model.list_wine_grapes(db, wid)] == \
+            [("Merlot", 70), ("Syrah", 30)]
+
+    def test_import_legacy_grape_string_fallback(self, client, db, upload_dir):
+        from export_import import match_wines, apply_import
+        import grapes as grape_model
+        parsed = {
+            "wines": [{"name": "Legacy Imp", "type": "red", "region": "Rioja",
+                       "quantity": 1, "grape": "Tempranillo, Garnacha"}],
+            "timeline": [], "purchases": [], "images": {}, "original_ids": [None],
+        }
+        matches = match_wines(parsed["wines"], db)
+        apply_import(parsed, matches, db, upload_dir, strategy="skip")
+        wid = db.execute("SELECT id FROM wines WHERE name='Legacy Imp'").fetchone()[0]
+        assert [g["name"] for g in grape_model.list_wine_grapes(db, wid)] == \
+            ["Tempranillo", "Garnacha"]

@@ -2127,3 +2127,26 @@ class TestPurchasesApi:
 
     def test_unknown_wine_404(self, client):
         assert client.get("/api/wine/999999/purchases").status_code == 404
+
+
+def test_wine_json_includes_grapes(client, db):
+    import json as _json
+    client.post("/add", data={
+        "name": "Api Blend", "type": "red", "region": "Bordeaux", "quantity": "1",
+        "grapes": _json.dumps([{"name": "Merlot", "pct": 60},
+                               {"name": "Cabernet Sauvignon", "pct": 40}]),
+    }, follow_redirects=True)
+    wid = db.execute("SELECT id FROM wines WHERE name='Api Blend'").fetchone()[0]
+    resp = client.get(f"/api/wine/{wid}")
+    grapes_out = resp.get_json()["wine"]["grapes"]
+    assert [(g["name"], g["pct"]) for g in grapes_out] == [("Merlot", 60), ("Cabernet Sauvignon", 40)]
+    assert grapes_out[0]["color"] == "red"
+
+
+def test_reconcile_accepts_grape_list(client, db):
+    resp = client.post("/api/reference/reconcile", json={
+        "grapes": ["Merlot", "Zzz Unknown Grape"]})
+    data = resp.get_json()
+    values = [it["value"] for it in data["items"] if it["entity"] == "grape"]
+    assert "Zzz Unknown Grape" in values
+    assert "Merlot" not in values

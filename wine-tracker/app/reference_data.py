@@ -405,10 +405,9 @@ GRAPES = [
     {'name': 'Marsanne', 'color': 'white', 'aliases': []},
     {'name': 'Roussanne', 'color': 'white', 'aliases': []},
     {'name': 'Furmint', 'color': 'white', 'aliases': []},
-    {'name': 'Assyrtiko', 'color': 'white', 'aliases': []},
+    {'name': 'Assyrtiko', 'color': 'white', 'aliases': ['Assyrtico']},
     {'name': 'Glera', 'color': 'white', 'aliases': ['Prosecco']},
     {'name': 'Chasselas', 'color': 'white', 'aliases': ['Fendant', 'Gutedel']},
-    {'name': 'Sylvaner', 'color': 'white', 'aliases': []},
     {'name': 'Palomino', 'color': 'white', 'aliases': []},
     {'name': 'Cortese', 'color': 'white', 'aliases': ['Gavi']},
     {'name': 'Petite Sirah', 'color': 'red', 'aliases': ['Durif']},
@@ -457,8 +456,30 @@ GRAPES = [
     {'name': 'Catarratto', 'color': 'white', 'aliases': []},
     {'name': 'Rkatsiteli', 'color': 'white', 'aliases': []},
     {'name': 'Moschofilero', 'color': 'white', 'aliases': []},
-    {'name': 'Assyrtico', 'color': 'white', 'aliases': ['Assyrtiko']},
     {'name': 'Welschriesling', 'color': 'white', 'aliases': ['Riesling Italico', 'Graševina']},
+
+    # ── Swiss varieties (Valais / Grisons / Zurich) ──────────────────────────
+    {'name': 'Petite Arvine', 'color': 'white', 'aliases': ['Arvine']},
+    {'name': 'Humagne Blanche', 'color': 'white', 'aliases': []},
+    {'name': 'Humagne Rouge', 'color': 'red', 'aliases': []},
+    {'name': 'Amigne', 'color': 'white', 'aliases': []},
+    {'name': 'Heida', 'color': 'white', 'aliases': ['Païen', 'Savagnin Blanc']},
+    {'name': 'Johannisberg', 'color': 'white', 'aliases': []},
+    {'name': 'Diolinoir', 'color': 'red', 'aliases': []},
+    {'name': 'Gamaret', 'color': 'red', 'aliases': []},
+    {'name': 'Garanoir', 'color': 'red', 'aliases': []},
+    {'name': 'Räuschling', 'color': 'white', 'aliases': []},
+    {'name': 'Completer', 'color': 'white', 'aliases': []},
+
+    # ── Others missing from the cellar's wines ───────────────────────────────
+    {'name': 'Rondinella', 'color': 'red', 'aliases': []},
+    {'name': 'Molinara', 'color': 'red', 'aliases': []},
+    {'name': 'Corvinone', 'color': 'red', 'aliases': []},
+    {'name': 'Nero di Troia', 'color': 'red', 'aliases': ['Uva di Troia']},
+    {'name': 'Negroamaro', 'color': 'red', 'aliases': ['Negro Amaro']},
+    {'name': 'Callet', 'color': 'red', 'aliases': []},
+    {'name': 'Manto Negro', 'color': 'red', 'aliases': ['Mantonegro']},
+    {'name': 'Savagnin', 'color': 'white', 'aliases': []},
 ]
 
 WINE_TYPES = [

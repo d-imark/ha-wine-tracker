@@ -128,7 +128,8 @@ def _build_readme(manifest: dict) -> str:
 | `year` | integer | Vintage year |
 | `type` | string | One of `Rotwein`, `Weisswein`, `Rosé`, `Schaumwein`, `Dessertwein`, `Likörwein`, `Anderes` |
 | `region` | string | Region / appellation |
-| `grape` | string | Grape variety / blend |
+| `grape` | string | Grape variety / blend (auto-derived cache of `grapes`) |
+| `grapes` | array | Structured blend: list of `{{name, pct}}`; `pct` is the percentage or null |
 | `country` | string | Country |
 | `quantity` | integer | Bottles currently in cellar |
 | `rating` | integer | 0 - 5 personal rating |
@@ -193,6 +194,12 @@ def build_export_zip(db, upload_dir: str, app_version: str = "") -> bytes:
         "SELECT " + ", ".join(WINE_COLUMNS) + " FROM wines ORDER BY id"
     ).fetchall()
     wines = [_row_to_dict(r) for r in wine_rows]
+
+    # Attach the structured grape blend (names + optional pct) per wine.
+    import grapes as grape_model
+    for w in wines:
+        w["grapes"] = [{"name": g["name"], "pct": g["pct"]}
+                       for g in grape_model.list_wine_grapes(db, w["id"])]
 
     try:
         timeline_rows = db.execute(
@@ -336,6 +343,9 @@ def _normalize_wine(w: dict) -> dict:
         out["image"] = None
     # Required column
     out["name"] = (out.get("name") or "").strip()
+    # Preserve the structured grape blend (not a wines column) for apply_import.
+    if isinstance(w.get("grapes"), list):
+        out["grapes"] = w["grapes"]
     return out
 
 
@@ -521,6 +531,8 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
     placeholders = ",".join(["?"] * len(insert_cols))
     update_sets = ",".join(f"{c}=?" for c in insert_cols)
 
+    import grapes as grape_model
+
     inserted = updated = skipped = 0
     id_map: dict[int, int] = {}  # original_id → new_id (for timeline)
 
@@ -529,6 +541,7 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
 
     for wine, match, orig_id in zip(wines, matches, original_ids):
         values = [wine.get(c) for c in insert_cols]
+        target_id = None
         if match["matched"]:
             if strategy == "skip":
                 skipped += 1
@@ -541,6 +554,7 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
             )
             if orig_id is not None:
                 id_map[orig_id] = match["existing_id"]
+            target_id = match["existing_id"]
             updated += 1
         else:
             # Ensure `added` has a value for freshly inserted wines.
@@ -553,7 +567,18 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
             )
             if orig_id is not None:
                 id_map[orig_id] = cur.lastrowid
+            target_id = cur.lastrowid
             inserted += 1
+
+        # Structured grape blend: prefer the explicit list, else split the
+        # legacy free-text grape string. (Rebuilds the wines.grape cache too.)
+        gl = wine.get("grapes")
+        if isinstance(gl, list) and gl:
+            grape_model.set_wine_grapes(db, target_id, gl)
+        elif wine.get("grape"):
+            grape_model.set_wine_grapes(
+                db, target_id,
+                [{"name": n, "pct": None} for n in grape_model.split_legacy(wine["grape"])])
 
     # Timeline is best-effort: only replay entries for wines that were freshly
     # inserted. Existing wines keep their current timeline untouched.

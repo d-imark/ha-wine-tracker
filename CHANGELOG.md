@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.14.0
+
+- **Rebsorten mit Anteilen (Verschnitte)** - ein Wein kann jetzt mehrere Rebsorten mit optionaler Prozentangabe tragen. Im Bearbeiten-Dialog stehen sie als Chips in einem antippbaren Feld; ein Tipp öffnet den Rebsorten-Dialog mit einer Zeile je Sorte (Autovervollständigung + %-Feld, beliebig viele Zeilen, nicht-blockierender Summen-Hinweis). Karte und Tabelle zeigen kompakt die führende Rebsorte + „+N", die Detailansicht die volle Liste als Chips. Bestehende Rebsorten werden beim Update automatisch übernommen.
+- **Alias-Dubletten werden zusammengelegt** - „Shiraz" und „Syrah" sind dieselbe Rebsorte und erscheinen nicht mehr doppelt; beim Zusammenlegen gilt der Name aus der Referenzliste. Eine einzeln erfasste Schreibweise bleibt unverändert. Bestehende Weine werden beim Update automatisch bereinigt.
+- **Referenzliste erweitert und aufgeräumt** - neu u.a. Petite Arvine, Humagne Blanche/Rouge, Amigne, Heida, Johannisberg, Diolinoir, Gamaret, Garanoir, Räuschling, Completer sowie Rondinella, Molinara, Corvinone, Nero di Troia, Negroamaro, Callet, Manto Negro und Savagnin. Doppelte Einträge (Sylvaner/Silvaner, Assyrtico/Assyrtiko) wurden zusammengeführt - beide Schreibweisen bleiben als Alias auffindbar.
+- **KI & Vivino liefern Rebsortenlisten** - die KI-Analyse/Web-Recherche und der Vivino-Abgleich füllen die Rebsorten-Zeilen (inkl. Anteile, wo bekannt); jede Sorte wird einzeln gegen die Referenzliste abgeglichen bzw. als eigener Eintrag anlegbar.
+- **Export/Import** sichert und restauriert die strukturierten Rebsorten (Namen + Anteile); ältere Dateien mit reinem Rebsorten-Text funktionieren weiterhin.
+- **Scan startet die Web-Recherche und Vivino nacheinander** - nach dem Etiketten-Scan läuft automatisch die KI-Web-Recherche (mit Abgleich-Dialog) und danach der Vivino-Abgleich; die Kandidatenauswahl wird immer gezeigt, und „Kein Treffer – ohne Vivino übernehmen" bricht sauber ab, ohne die gescannten Daten zu verlieren. Der Winzer wird beim Scan und im Vivino-Abgleich als eigenes Feld erkannt.
+
 ## 1.13.1
 
 - **Tabbed edit dialog** - fields are grouped into "Basics", "Price & storage" and "Maturity & taste"; rarely-changed fields (maturity phases, taste, food) are out of the default view - much nicer on mobile.

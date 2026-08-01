@@ -1451,3 +1451,31 @@ class TestImageSync:
         db.commit()
         rows = db.execute("SELECT category, is_default FROM wine_images WHERE wine_id=?", (wid,)).fetchall()
         assert len(rows) == 1 and rows[0]["category"] == "scan" and rows[0]["is_default"] == 1
+
+
+# ── grape varieties (1-n + pct) ───────────────────────────────────────────────
+
+def test_add_wine_with_grapes_json(client, db):
+    resp = client.post("/add", data={
+        "name": "Blend Test", "type": "red", "region": "Bordeaux", "quantity": "1",
+        "grapes": json.dumps([{"name": "Merlot", "pct": 70},
+                              {"name": "Cabernet Franc", "pct": 30}]),
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    wid = db.execute("SELECT id FROM wines WHERE name='Blend Test'").fetchone()[0]
+    import grapes
+    rows = grapes.list_wine_grapes(db, wid)
+    assert [(r["name"], r["pct"]) for r in rows] == [("Merlot", 70), ("Cabernet Franc", 30)]
+    assert db.execute("SELECT grape FROM wines WHERE id=?", (wid,)).fetchone()[0] \
+        == "Merlot, Cabernet Franc"
+
+
+def test_add_wine_legacy_grape_fallback(client, db):
+    resp = client.post("/add", data={
+        "name": "Legacy Grape", "type": "red", "region": "Rioja", "quantity": "1",
+        "grape": "Tempranillo, Garnacha",
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    wid = db.execute("SELECT id FROM wines WHERE name='Legacy Grape'").fetchone()[0]
+    import grapes
+    assert [r["name"] for r in grapes.list_wine_grapes(db, wid)] == ["Tempranillo", "Garnacha"]

@@ -2831,3 +2831,63 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .wine-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .wine-tab-panel { display: flex; flex-direction: column; gap: .9rem; }
 .wine-tab-panel[hidden] { display: none; }
+
+/* ── Grape varieties (1-n + pct) ─────────────────────────────────────────────── */
+/* Reads as a form control, acts as a button: tapping opens #grapesModal.
+   Mirrors the input/select rule above (same bg, border, radius, padding). */
+.grape-field {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: .35rem .5rem .35rem .75rem; color: var(--text);
+  font-size: .9rem; font-family: inherit; text-align: left; cursor: pointer;
+  transition: border-color .2s; box-sizing: border-box; min-height: 38px;
+  display: flex; align-items: center; gap: .5rem;
+}
+.grape-field:hover, .grape-field:focus-visible { border-color: var(--accent); outline: none; }
+.grape-field-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: .3rem; }
+/* The field itself is var(--bg), so its chips need their own contrast. */
+.grape-field .grape-chip { background: var(--surface); border: 1px solid var(--border); }
+.grape-field-empty { color: var(--muted); }
+.grape-field-arrow { flex: 0 0 auto; color: var(--muted); font-size: 1.1rem; }
+
+.grape-hint { font-size: .85rem; opacity: .7; margin: 0 0 10px; }
+.grape-rows { display: flex; flex-direction: column; gap: 8px; }
+.grape-row { display: flex; align-items: center; gap: 6px; }
+/* min-width:0 lets the name field shrink instead of pushing the row wider than the dialog */
+.grape-row .grape-name { flex: 1 1 auto; min-width: 0; }
+/* Spinner arrows would eat the digits in such a narrow field - drop them. */
+.grape-row .grape-pct { flex: 0 0 auto; width: 60px; text-align: right;
+  -moz-appearance: textfield; appearance: textfield; }
+.grape-row .grape-pct::-webkit-outer-spin-button,
+.grape-row .grape-pct::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.grape-pct-sign { flex: 0 0 auto; opacity: .6; }
+.grape-del { flex: 0 0 auto; background: none; border: none; cursor: pointer;
+  font-size: 1.25rem; opacity: .6; line-height: 1; padding: 4px 6px; }
+.grape-del:hover { opacity: 1; }
+/* Sum sits on its own line above the add button so neither gets squeezed. */
+.grape-rows-foot { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px 12px; margin-top: 12px; flex-wrap: wrap; }
+.grape-sum { font-size: .85rem; opacity: .7; margin-left: auto; white-space: nowrap; }
+/* Blend in the detail view: chips wrap right-aligned inside the value column. */
+.view-value.view-value-chips { display: flex; flex-wrap: wrap; gap: .3rem;
+  justify-content: flex-end; }
+.grape-chip { background: var(--bg); color: var(--text); font-weight: 400;
+  padding: .15rem .5rem; border-radius: 4px; font-size: .85rem;
+  overflow-wrap: anywhere; max-width: 100%; }
+
+@media (max-width: 600px) {
+  /* Type + grape share a row on desktop; on phones the grape cell needs the
+     full width for its summary + button, so this one row stacks. */
+  .row2.row2-grape { grid-template-columns: 1fr; }
+  /* Summary above a full-width button - a long blend would otherwise crush it. */
+  .grape-summary-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .btn-manage-grapes { width: 100%; padding: 10px; font-size: .95rem; }
+  /* column-reverse => sum directly under the rows, add button full width below */
+  .grape-rows-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .grape-add { width: 100%; padding: 10px; }
+  .grape-sum { margin-left: 0; text-align: right; }
+}
+
+@media (max-width: 400px) {
+  .grape-row { gap: 4px; }
+  .grape-row .grape-pct { width: 52px; }
+}

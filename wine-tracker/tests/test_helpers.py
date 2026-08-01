@@ -443,3 +443,10 @@ class TestServerDependency:
     def test_waitress_is_available(self):
         """app.py serves via waitress in production - the import must work."""
         import waitress  # noqa: F401
+
+
+def test_grape_names_from_ids():
+    import app as wine_app
+    gmap = {1: "Merlot", 2: "Cabernet Sauvignon"}
+    assert wine_app._grape_names_from_ids(gmap, [1, 2, 99]) == ["Merlot", "Cabernet Sauvignon"]
+    assert wine_app._grape_names_from_ids(gmap, []) == []

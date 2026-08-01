@@ -13,6 +13,7 @@ from translations import TRANSLATIONS
 import reference
 import images
 import purchases
+import grapes
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -165,7 +166,7 @@ def _ssl_verify():
         return True
 
 
-APP_VERSION = "1.13.1"
+APP_VERSION = "1.14.0"
 
 HA_OPTIONS = load_options()
 
@@ -451,6 +452,13 @@ def inject_globals():
                 "SELECT DISTINCT grape FROM wines WHERE grape IS NOT NULL AND grape != '' ORDER BY grape"
             ).fetchall()
         ]
+        # Grape autocomplete uses the reference vocabulary (single names), not
+        # the cache column (which now holds comma-joined blends).
+        ctx["ref_grape_names"] = [
+            row[0] for row in db.execute(
+                "SELECT name FROM ref_grapes ORDER BY name"
+            ).fetchall()
+        ]
         ctx["used_purchased_at"] = [
             row[0] for row in db.execute(
                 "SELECT DISTINCT purchased_at FROM wines WHERE purchased_at IS NOT NULL AND purchased_at != '' ORDER BY purchased_at"
@@ -476,6 +484,7 @@ def inject_globals():
     except Exception:
         ctx.setdefault("used_regions_list", [])
         ctx.setdefault("used_grapes", [])
+        ctx.setdefault("ref_grape_names", [])
         ctx.setdefault("used_purchased_at", [])
         ctx.setdefault("used_locations", [])
         ctx.setdefault("used_wineries", [])
@@ -505,6 +514,40 @@ def close_db(e=None):
     db = g.pop("db", None)
     if db:
         db.close()
+
+
+def backfill_wine_grapes(db):
+    """One-time: populate wine_grapes from the legacy free-text grape column.
+
+    Only touches wines that have no wine_grapes rows yet, so it is safe to run
+    on every startup. Percentages are unknown for legacy data (left NULL).
+    """
+    wines = db.execute(
+        "SELECT id, grape FROM wines WHERE grape IS NOT NULL AND grape != ''"
+    ).fetchall()
+    for w in wines:
+        has = db.execute(
+            "SELECT 1 FROM wine_grapes WHERE wine_id=? LIMIT 1", (w["id"],)).fetchone()
+        if has:
+            continue
+        entries = [{"name": n, "pct": None} for n in grapes.split_legacy(w["grape"])]
+        if entries:
+            grapes.set_wine_grapes(db, w["id"], entries)
+
+
+def _grapes_from_form(form):
+    """Return [{"name","pct"}] from the posted 'grapes' JSON, or fall back to
+    splitting the legacy 'grape' text field. Bad JSON -> legacy fallback."""
+    raw = (form.get("grapes") or "").strip()
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return [{"name": (e.get("name") or "").strip(), "pct": e.get("pct")}
+                        for e in data if isinstance(e, dict)]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return [{"name": n, "pct": None} for n in grapes.split_legacy(form.get("grape", ""))]
 
 
 def init_db():
@@ -639,6 +682,16 @@ def init_db():
                     (w["id"], None, max(w["quantity"] or 1, 1), w["price"],
                      w["purchased_at"], "Migriert", datetime.now().isoformat()))
 
+        # ── grape varieties (1-n + pct) + one-time backfill ────────────────
+        grapes.create_wine_grapes_table(db)
+        backfill_wine_grapes(db)
+        # Tidy the reference list (e.g. "Sylvaner" folded into "Silvaner"),
+        # link rows to grapes added in later releases, then collapse alias
+        # duplicates on the wines themselves ("Shiraz" + "Syrah" -> "Syrah").
+        grapes.merge_duplicate_reference_grapes(db)
+        grapes.relink_unmatched(db)
+        grapes.dedupe_wine_grapes(db)
+
         db.commit()
 
 
@@ -750,6 +803,7 @@ def wine_json(wine_id):
             except (json.JSONDecodeError, TypeError):
                 d[key] = None
     d["images"] = images.list_images(db, wine_id)
+    d["grapes"] = grapes.list_wine_grapes(db, wine_id)
     d["purchase_count"] = db.execute(
         "SELECT COUNT(*) FROM wine_purchases WHERE wine_id=?", (wine_id,)).fetchone()[0]
     return d
@@ -893,6 +947,8 @@ def index():
 
     sql += " ORDER BY type, name, year"
     wines = [dict(row) for row in db.execute(sql, params).fetchall()]
+    for w in wines:
+        w["grapes"] = grapes.list_wine_grapes(db, w["id"])
 
     stats = db.execute(
         "SELECT SUM(quantity) as total, COUNT(DISTINCT name) as types FROM wines WHERE quantity > 0"
@@ -991,6 +1047,7 @@ def add():
     )
     db.commit()
     new_id = cur.lastrowid
+    grapes.set_wine_grapes(db, new_id, _grapes_from_form(request.form))
     images.sync_primary(db, new_id, "", image)
     db.commit()
     # Log the addition
@@ -1131,6 +1188,10 @@ def edit(wine_id):
             "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
             (wine_id, "restocked", new_quantity - old_quantity, datetime.now().isoformat()),
         )
+    # Only touch grapes when the request actually carries grape data. A pure
+    # quantity change (viewChangeQty) omits both keys, so structured pct survives.
+    if "grapes" in request.form or "grape" in request.form:
+        grapes.set_wine_grapes(db, wine_id, _grapes_from_form(request.form))
     images.sync_primary(db, wine_id, wine["image"], image)
     db.commit()
     if is_ajax():
@@ -2076,11 +2137,13 @@ def analyze_wine():
     lang_name = lang_names.get(LANG, "English")
     prompt = f"""Analyze this wine bottle label image. Extract the following fields and return ONLY valid JSON:
 {{
-  "name": "wine name",
+  "name": "wine name (without the producer)",
+  "winery": "producer / winery name, or empty string",
   "wine_type": "one of: Rotwein, Weisswein, Rosé, Schaumwein, Dessertwein, Likörwein, Anderes",
   "vintage": year as integer or null,
   "region": "wine region",
   "grape": "grape variety/varieties",
+  "grapes": [{{"name": "grape variety", "pct": percentage as number 0-100 or null}}],
   "price": number or null,
   "drink_from": year as integer or null,
   "drink_until": year as integer or null,
@@ -2102,6 +2165,8 @@ def analyze_wine():
 }}
 Rules:
 - wine_type MUST be exactly one of the listed values
+- winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".
+- grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - drink_from/drink_until: drinking window years. If mentioned on label, use those. Otherwise ESTIMATE a reasonable drinking window based on the wine type, grape variety, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price as number without currency symbol, or null if not visible
@@ -2208,6 +2273,16 @@ def _get_algolia_credentials(session):
 
     _ALGOLIA_CREDS = (cred.group(1), cred.group(2), idx.group(1))
     return _ALGOLIA_CREDS
+
+
+def _grape_names_from_ids(grape_map, ids):
+    """Map Vivino grape ids to names, dropping unknown ids, preserving order."""
+    out = []
+    for gid in ids or []:
+        name = grape_map.get(gid)
+        if name:
+            out.append(name)
+    return out
 
 
 def _get_grape_map(session):
@@ -2386,8 +2461,8 @@ def vivino_search():
             country_code = region_obj.get("country") or ""
             country_name = (_COUNTRY_NAMES.get(country_code, country_code.upper())
                             if country_code else "")
-            grapes = [grape_map.get(g) for g in (hit.get("grapes") or [])]
-            grape = ", ".join(g for g in grapes if g)
+            grape_names = _grape_names_from_ids(grape_map, hit.get("grapes") or [])
+            grape = ", ".join(grape_names)
 
             stats = hit.get("statistics") or {}
             rating = round(stats.get("ratings_average", 0), 1) or None
@@ -2397,6 +2472,7 @@ def vivino_search():
             results.append({
                 "vivino_id": hit.get("id"),
                 "name": full_name,
+                "wine_name": wine_name,
                 "winery": winery,
                 # A catalog wine spans all its vintages; the user enters the
                 # specific vintage they own, so we don't guess a year here.
@@ -2405,6 +2481,7 @@ def vivino_search():
                 "region": region_name,
                 "country": country_name,
                 "grape": grape,
+                "grapes": grape_names,
                 "rating": rating,
                 # The catalog index carries no price (that's marketplace data).
                 "price": None,
@@ -2474,11 +2551,13 @@ def vivino_image():
 
 def _wine_json_schema():
     return """{
-  "name": "wine name",
+  "name": "wine name (without the producer)",
+  "winery": "producer / winery name, or empty string",
   "wine_type": "one of: Rotwein, Weisswein, Rosé, Schaumwein, Dessertwein, Likörwein, Anderes",
   "vintage": year as integer or null,
   "region": "wine region",
   "grape": "grape variety/varieties",
+  "grapes": [{"name": "grape variety", "pct": percentage as number 0-100 or null}],
   "price": number or null,
   "drink_from": year as integer or null,
   "drink_until": year as integer or null,
@@ -2497,6 +2576,8 @@ def _wine_json_rules(lang="en"):
     lang_name = lang_names.get(lang, "English")
     return f"""Rules:
 - wine_type MUST be exactly one of the listed values
+- winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".
+- grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - drink_from/drink_until: estimate a reasonable drinking window based on wine type, grape, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price as number without currency symbol, or null
@@ -3494,13 +3575,10 @@ def api_reference_reconcile():
     opts = load_options()
     ai_on = _is_ai_configured(opts)
     items = []
-    for entity in ("grape", "region"):
-        value = (body.get(entity) or "").strip()
-        if not value:
-            continue
-        scope = country_code if entity == "region" else None
-        if reference.match_reference(db, entity, value, scope):
-            continue  # already known (exact/alias) - nothing to reconcile
+
+    def _reconcile(entity, value, scope):
+        if not value or reference.match_reference(db, entity, value, scope):
+            return  # empty or already known (exact/alias) - nothing to reconcile
         suggestions = [
             {"id": r["id"], "name": r["name"], "is_custom": r["is_custom"]}
             for r in reference.suggest_matches(db, entity, value, scope, limit=5)
@@ -3508,6 +3586,21 @@ def api_reference_reconcile():
         ai_pick = _ai_reconcile_pick(opts, entity, value, [s["name"] for s in suggestions]) if ai_on else None
         items.append({"entity": entity, "value": value, "country_code": country_code,
                       "suggestions": suggestions, "ai_pick": ai_pick})
+
+    # Grapes: accept both a singular "grape" and a "grapes" list (blends).
+    grape_values = []
+    single = (body.get("grape") or "").strip()
+    if single:
+        grape_values.append(single)
+    for gv in (body.get("grapes") or []):
+        gv = (str(gv) or "").strip()
+        if gv and gv not in grape_values:
+            grape_values.append(gv)
+    for value in grape_values:
+        _reconcile("grape", value, None)
+
+    _reconcile("region", (body.get("region") or "").strip(), country_code)
+
     return jsonify({"ok": True, "items": items})
 
 
