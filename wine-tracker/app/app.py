@@ -166,7 +166,7 @@ def _ssl_verify():
         return True
 
 
-APP_VERSION = "1.14.1"
+APP_VERSION = "1.14.2"
 
 HA_OPTIONS = load_options()
 
@@ -689,6 +689,7 @@ def init_db():
         # link rows to grapes added in later releases, then collapse alias
         # duplicates on the wines themselves ("Shiraz" + "Syrah" -> "Syrah").
         grapes.merge_duplicate_reference_grapes(db)
+        grapes.repair_country_names(db)
         grapes.relink_unmatched(db)
         grapes.dedupe_wine_grapes(db)
 
@@ -2247,7 +2248,6 @@ def analyze_wine():
   "drink_from": year as integer or null,
   "drink_until": year as integer or null,
   "notes": "brief tasting notes if visible on label",
-  "bottle_format": number or null,
   "maturity_data": {{
     "youth": [start_year, end_year],
     "maturity": [start_year, end_year],
@@ -2268,9 +2268,9 @@ Rules:
 - If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
+- If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never "correct" it from a shop listing or catalog entry of another vintage.
 - drink_from/drink_until: drinking window years. If mentioned on label, use those. Otherwise ESTIMATE a reasonable drinking window based on the wine type, grape variety, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price: the retail bottle price as a plain number in {currency}, without any currency symbol. If the label or your sources quote another currency, CONVERT the amount to {currency} at current exchange rates. Return null if no price is visible.
-- bottle_format: volume in liters as number (e.g. 0.75, 1.5, 0.375). Only set if clearly visible on the label. Valid values: 0.1875, 0.375, 0.75, 1.5, 3, 4.5, 6, 9, 12, 15. Return null if not clearly identifiable (do NOT guess).
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
 - food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown.
@@ -2590,6 +2590,13 @@ def vivino_search():
         app.logger.exception("Vivino parse error: %s", e)
         return jsonify({"ok": False, "error": "parse_error"}), 502
 
+    # Vivino names regions in the local language ("Valais", "Salgesch") - map
+    # them onto our reference vocabulary so the reconcile dialog stops flagging
+    # a difference where the value is actually the same.
+    db = get_db()
+    for item in results:
+        _canonicalize_ai_fields(db, item)
+
     return jsonify({"ok": True, "results": results})
 
 
@@ -2661,7 +2668,6 @@ def _wine_json_schema():
   "drink_from": year as integer or null,
   "drink_until": year as integer or null,
   "notes": "brief tasting notes",
-  "bottle_format": number or null,
   "maturity_data": {"youth": [start_year, end_year], "maturity": [start_year, end_year], "peak": [start_year, end_year], "decline": [start_year, end_year]},
   "taste_profile": {"body": 1-5, "tannin": 1-5, "acidity": 1-5, "sweetness": 1-5},
   "food_pairings": ["dish1", "dish2", "dish3"],
@@ -2680,9 +2686,9 @@ def _wine_json_rules(lang="en", currency=None):
 - If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
+- If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never "correct" it from a shop listing or catalog entry of another vintage.
 - drink_from/drink_until: estimate a reasonable drinking window based on wine type, grape, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price: the retail bottle price as a plain number in {currency}, without any currency symbol. If your sources quote another currency, CONVERT the amount to {currency} at current exchange rates and name the original currency and amount in ai_rationale. Return null if you have no price.
-- bottle_format: volume in liters as number (e.g. 0.75, 1.5, 0.375). Only set if clearly visible on the label. Valid values: 0.1875, 0.375, 0.75, 1.5, 3, 4.5, 6, 9, 12, 15. Return null if not clearly identifiable (do NOT guess).
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
 - food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.2
+
+- **Jahrgang wird nicht mehr überschrieben** - beim KI-Abgleich eines erfassten Weins wurde das gespeicherte Bild mitanalysiert; bei importierten Weinen ist das das Vivino-Katalogfoto, dessen Etikett oft einen anderen Jahrgang zeigt. Der manuelle Abgleich nutzt jetzt ausschliesslich die erfassten Daten, nur der Etiketten-Scan wertet ein Foto aus.
+- **Keine Schein-Abweichungen beim Vivino-Abgleich** - Vivino liefert Regionen in der Landessprache („Valais" statt „Wallis") oder als Dorf („Salgesch"). Diese Werte werden jetzt über die Alias-Suche auf die Referenzliste gemappt, und der Vergleich ignoriert unterschiedliche Gross-/Kleinschreibung. Wo alles gleich ist, erscheint auch keine Änderung mehr.
+- **Nichts wird mehr still übernommen** - die Vivino-Bewertung und die Rebsorten aus der KI-Recherche wurden bisher ohne Rückfrage gesetzt. Beide erscheinen jetzt als eigene Zeile im Abgleich-Dialog und lassen sich wie jedes andere Feld abwählen.
+- **Flaschenformat bleibt deine Sache** - KI und Vivino setzen es nicht mehr (Standard 0.75 l); es wird gar nicht mehr abgefragt.
+- **Länder-Referenz korrigiert** - „Spain" löste fälschlich auf „Canarias" auf, weil beide unter demselben Ländercode standen. Spanien ist jetzt der richtige Eintrag, „Canarias" bleibt als Alias auffindbar; bestehende Datenbanken werden beim Start repariert.
+
 ## 1.14.1
 
 - **KI-Analyse bricht nicht mehr ab** - bei aufwändiger Web-Recherche ging das Antwort-Budget zur Neige, das JSON kam abgeschnitten an und die Analyse endete mit „Analyse fehlgeschlagen". Das Budget ist jetzt deutlich größer, abgeschnittene Antworten lösen zuverlässig die Ersatz-Analyse ohne Websuche aus, und die Antwort wird auch mit Zusatztext oder Code-Blöcken drumherum korrekt gelesen.

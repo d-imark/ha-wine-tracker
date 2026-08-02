@@ -390,6 +390,8 @@ var _AR_FIELDS = [
   { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
   { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' },
   { key: 'notes',       el: 'wine_notes',       labelKey: 'label_notes' }
+  // bottle_format is deliberately absent: the user owns the physical bottle,
+  // AI/Vivino must never set or change it (default stays 0.75).
 ];
 var _AR_ENRICH = [
   { key: 'maturity_data', el: 'wine_maturity_data', labelKey: 'ar_maturity' },
@@ -1081,7 +1083,7 @@ function populateFormFromAi(fields, imageFilename) {
   if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
   if (fields.drink_until) document.getElementById('wine_drink_until').value = fields.drink_until;
   if (fields.notes) document.getElementById('wine_notes').value = fields.notes;
-  if (fields.bottle_format) document.getElementById('wine_bottle_format').value = fields.bottle_format;
+  // bottle_format intentionally not filled from AI - the user sets it themselves.
 
   // Enrichment fields - hidden inputs that persist to DB on submit
   if (fields.maturity_data) {
@@ -1164,10 +1166,7 @@ function populateFormMerge(fields, imageFilename) {
   setIfEmpty('wine_drink_from', fields.drink_from);
   setIfEmpty('wine_drink_until', fields.drink_until);
   setIfEmpty('wine_notes', fields.notes);
-  if (fields.bottle_format && fields.bottle_format != 0.75) {
-    document.getElementById('wine_bottle_format').value = fields.bottle_format;
-    filled++;
-  }
+  // bottle_format intentionally untouched - see _AR_FIELDS.
 
   if (fields.maturity_data) {
     document.getElementById('wine_maturity_data').value = JSON.stringify(fields.maturity_data);
@@ -1264,15 +1263,11 @@ function setReloadLoading(on) {
 }
 
 function reloadViaAi() {
-  var imageFilename = document.getElementById('aiImageField').value;
-  if (!imageFilename) {
-    var preview = document.getElementById('winePreview');
-    var img = preview ? preview.querySelector('img') : null;
-    if (img && img.src) {
-      var parts = img.src.split('/uploads/');
-      if (parts.length > 1) imageFilename = parts[1];
-    }
-  }
+  // Only the label scan analyses a photo. A manual reload must ignore the
+  // stored image: for imported wines that is the Vivino catalog shot, whose
+  // label often carries a different vintage and would overwrite the year.
+  var imageFilename = (_scanStage === 'ai')
+    ? document.getElementById('aiImageField').value : '';
 
   var context = {};
   var v;
@@ -1443,7 +1438,7 @@ function vrComputeChanges(item) {
     var nv = _vrNewValue(item, f);
     if (!nv) return;
     var cur = _vrCurrentValue(f);
-    if (nv === cur) return;
+    if (_sameValue(nv, cur)) return;
     changes.push({ f: f, cur: cur, nv: nv });
   });
   return changes;
@@ -1453,12 +1448,22 @@ function _vrGrapesAsList(item) {
   return (item.grapes || []).map(function(n){ return { name: n, pct: null }; });
 }
 
+// Vivino's community rating: read-only Vivino data, but the user should still
+// see it change instead of it being swapped in silently.
+function _vrRatingChanged(item) {
+  if (!item.rating) return false;
+  var el = document.getElementById('wine_vivino_rating');
+  var cur = el ? parseFloat(el.value) : NaN;
+  return isNaN(cur) || Math.abs(cur - Number(item.rating)) >= 0.05;
+}
+
 function vrSelectCandidate(idx) {
   _vrSelected = _vrCandidates[idx];
   if (!_vrSelected) return;
   var changes = vrComputeChanges(_vrSelected);
   var grapesChanged = grapesDifferFromForm(_vrGrapesAsList(_vrSelected));
-  if (changes.length === 0 && !grapesChanged) {
+  var ratingChanged = _vrRatingChanged(_vrSelected);
+  if (changes.length === 0 && !grapesChanged && !ratingChanged) {
     // Nothing to overwrite - apply silent side-effects (image, id) and close.
     _vrApplySideEffects(_vrSelected);
     closeVivinoReload();
@@ -1485,6 +1490,17 @@ function vrSelectCandidate(idx) {
       '<td class="vr-old">' + esc(curG) + '</td>' +
       '<td class="vr-arrow">→</td>' +
       '<td class="vr-new">' + esc(newG) + '</td>' +
+    '</tr>');
+  }
+  if (ratingChanged) {
+    var rEl = document.getElementById('wine_vivino_rating');
+    var curR = rEl && rEl.value ? Number(rEl.value).toFixed(1) : '—';
+    rows.push('<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="vrRatingChk" checked></td>' +
+      '<td class="vr-field">' + (T.vivino_rating_label || 'Vivino') + '</td>' +
+      '<td class="vr-old">' + esc(curR) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(Number(_vrSelected.rating).toFixed(1)) + '</td>' +
     '</tr>');
   }
   document.getElementById('vrChanges').innerHTML = rows.join('');
@@ -1522,10 +1538,14 @@ function _vrApplySideEffects(item) {
     var vf = document.getElementById('wine_vivino_id');
     if (vf && !vf.value.trim()) { vf.value = item.vivino_id; }
   }
-  // The Vivino community note is always refreshed to the current value (it's
-  // read-only Vivino data, not the user's personal rating).
+  // The Vivino community note (not the user's personal rating). When the
+  // reconcile dialog listed it, honour that checkbox; otherwise just refresh.
+  var rChk = document.getElementById('vrRatingChk');
   var vr = document.getElementById('wine_vivino_rating');
-  if (vr && item.rating) { vr.value = item.rating; updateVivinoRef(); }
+  if (vr && item.rating && (!rChk || rChk.checked)) {
+    vr.value = item.rating;
+    updateVivinoRef();
+  }
 }
 
 function vrConfirm() {
@@ -1552,6 +1572,12 @@ function _arDisplay(f, val) {
   return String(val);
 }
 
+// Same value, written differently (case, extra spaces) is NOT a change.
+function _sameValue(a, b) {
+  var n = function(s) { return (s || '').trim().toLowerCase().replace(/\s+/g, ' '); };
+  return n(a) === n(b);
+}
+
 function arComputeChanges(fields) {
   var changes = [];
   _AR_FIELDS.forEach(function(f) {
@@ -1561,7 +1587,7 @@ function arComputeChanges(fields) {
     if (!nv) return;
     var el = document.getElementById(f.el);
     var cur = el ? (el.value || '').trim() : '';
-    if (nv === cur) return;                       // unchanged -> skip
+    if (_sameValue(nv, cur)) return;              // unchanged -> skip
     changes.push({ f: f, cur: cur, nv: nv });
   });
   // Personal rating: only when the AI supplies one and the slider is still unset.
@@ -1624,7 +1650,7 @@ function arComputeEnrich(fields) {
   return out;
 }
 
-function renderAiReload(fields, changes, enrich) {
+function renderAiReload(fields, changes, enrich, grapesChanged) {
   var esc = function(s) { return (s == null ? '' : String(s)).replace(/</g, '&lt;'); };
   var idParts = [];
   ['name','vintage','wine_type','region','grape'].forEach(function(k) {
@@ -1656,6 +1682,20 @@ function renderAiReload(fields, changes, enrich) {
       '<td class="vr-new">' + esc(en.newSummary) + '</td>' +
     '</tr>';
   });
+  if (grapesChanged) {
+    var fmt = function(list) {
+      return (list || []).map(function(g) {
+        return g.name + (g.pct == null ? '' : ' ' + g.pct + ' %');
+      }).join(', ') || '—';
+    };
+    rows += '<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="arGrapesChk" checked></td>' +
+      '<td class="vr-field">' + (T.label_grape || 'Grape') + '</td>' +
+      '<td class="vr-old">' + esc(fmt(grapeCollect())) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(fmt(fields.grapes)) + '</td>' +
+    '</tr>';
+  }
   document.getElementById('aiChanges').innerHTML = rows;
 
   var rationale = (fields.ai_rationale || '').trim();
@@ -1751,18 +1791,16 @@ function openAiReload(fields) {
   var changes = arComputeChanges(fields);
   var enrich = arComputeEnrich(fields);
   var rationale = (fields.ai_rationale || '').trim();
-  // Grapes are a list, not a per-field checkbox: apply the web-research result
-  // to the rows directly whenever it differs from what's currently entered.
-  if (grapesDifferFromForm(fields.grapes)) {
-    grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; }));
-  }
-  if (changes.length === 0 && enrich.length === 0 && !rationale) {
+  // Grapes are a list, not a single field - they get their own confirm row.
+  var grapesChanged = grapesDifferFromForm(fields.grapes);
+  if (changes.length === 0 && enrich.length === 0 && !grapesChanged && !rationale) {
     showReloadToast(T.ar_no_changes || T.reload_nothing, false);
     _afterAiStep();
     return;
   }
-  _arPending = { fields: fields, changes: changes, enrich: enrich, rationale: rationale };
-  renderAiReload(fields, changes, enrich);
+  _arPending = { fields: fields, changes: changes, enrich: enrich, rationale: rationale,
+                 grapesChanged: grapesChanged };
+  renderAiReload(fields, changes, enrich, grapesChanged);
   document.getElementById('aiReloadModal').classList.add('open');
 }
 
@@ -1793,6 +1831,12 @@ function applyAiReload() {
     if (el) el.value = JSON.stringify(en.val);
   });
   refreshEnrichInputsFromHidden();
+  var gChk = document.getElementById('arGrapesChk');
+  if (_arPending.grapesChanged && (!gChk || gChk.checked)) {
+    grapeSetRows((_arPending.fields.grapes || []).map(function(g) {
+      return { name: g.name, pct: g.pct };
+    }));
+  }
   if (_arPending.rationale) {
     var save = document.getElementById('arRationaleSave');
     if (save && save.checked) {

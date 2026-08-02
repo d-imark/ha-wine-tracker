@@ -152,6 +152,24 @@ def merge_duplicate_reference_grapes(db):
     return merged
 
 
+def repair_country_names(db):
+    """Restore country names that a territory sharing the same ISO code took
+    over (the seed listed Canarias and Spain both under ES, and seeding keeps
+    whichever row comes first). The displaced name is kept as an alias."""
+    fixed = 0
+    for code, want in (("ES", "Spain"),):
+        row = db.execute("SELECT id, name, aliases FROM ref_countries WHERE code=?",
+                         (code,)).fetchone()
+        if not row or row["name"] == want:
+            continue
+        aliases = set(_aliases_of(row)) | {row["name"]}
+        aliases.discard(want)
+        db.execute("UPDATE ref_countries SET name=?, norm=?, aliases=? WHERE id=?",
+                   (want, reference.normalize_name(want), json.dumps(sorted(aliases)), row["id"]))
+        fixed += 1
+    return fixed
+
+
 def relink_unmatched(db):
     """Attach rows that had no reference match to reference grapes that exist
     now (e.g. varieties added to the seed list in a later release)."""

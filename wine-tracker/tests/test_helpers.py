@@ -193,13 +193,17 @@ class TestTranslateWineType:
 class TestWineJsonSchema:
     def test_schema_contains_all_fields(self):
         schema = wine_app._wine_json_schema()
-        for field in ["name", "year", "type", "region", "grape", "price", "notes", "bottle_format"]:
+        for field in ["name", "winery", "region", "grape", "grapes", "price", "notes"]:
             assert field in schema
 
-    def test_rules_contain_bottle_format(self):
-        rules = wine_app._wine_json_rules("de")
-        assert "bottle_format" in rules
-        assert "0.75" in rules
+    def test_schema_omits_bottle_format(self):
+        """The user owns the physical bottle - AI must not set its format."""
+        assert "bottle_format" not in wine_app._wine_json_schema()
+        assert "bottle_format" not in wine_app._wine_json_rules("de")
+
+    def test_rules_request_the_configured_currency(self):
+        rules = wine_app._wine_json_rules("de", "EUR")
+        assert "EUR" in rules
 
 
 # ── ENV variable config override ─────────────────────────────────────────────
