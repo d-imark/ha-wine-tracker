@@ -19,7 +19,7 @@
 ![last commit][commit-badge]
 ![commit activity][activity-badge]
 
-A wine cellar tracker for Home Assistant or Docker - manage your entire collection from label photo to tasting notes.
+A cellar and bar tracker for Home Assistant or Docker - manage wine and spirits from label photo to tasting notes.
 
 **📖 [Documentation & Demo →](https://d-imark.github.io/ha-wine-tracker/)**
 
@@ -40,7 +40,8 @@ A wine cellar tracker for Home Assistant or Docker - manage your entire collecti
 
 ### Wine Management
 
-- **Wine cards** with photo, vintage, type, region, grape variety, rating & notes
+- **Wine cards** with photo, vintage, type, region, grape variety, rating & description
+- **Description and notes are separate** - the AI writes the description (style, aroma, taste); the notes field is yours alone and is never touched by it
 - **Photo upload** - snap a label photo from your phone
 - **Star rating** (1-5 stars)
 - **Quick quantity buttons** (+/-)  directly on the card
@@ -53,12 +54,23 @@ A wine cellar tracker for Home Assistant or Docker - manage your entire collecti
 - **Region & purchase source** autocomplete from existing entries
 - **Grape variety** (e.g. Merlot, Pinot Noir, Chardonnay) with autocomplete
 
+### Spirits & Whisky (Bar)
+
+- **Separate bar area** - switch between the wine cellar and the bar in the header; both are their own collection
+- **Detailed whisky capture** - abv, age statement, distilled & bottled year, bottler, batch number, cask number, peat ppm, plus cask strength / single cask / chill filtered
+- **Cask chain** - the maturation as an ordered chain (initial cask plus any finishes), each with cask type and years
+- **Opened bottles with a fill level** - open a bottle, set its fill level, and see refills and finishing it in the timeline
+- **Own taste axes** - smoke, sweetness, fruit and spice instead of body/tannin/acidity
+- **Own region list** - Islay is not a wine region and Rioja is not a whisky region, so spirits have their own reference list
+
 ### AI & Integrations
 
 - **AI label recognition** - snap a label photo and let AI fill in all fields, including maturity phases, taste profile and food pairings (6 providers: Anthropic, OpenAI, OpenRouter, Ollama, MiniMax, Mistral)
 - **Vivino wine search** - search by name, see ratings, region & price, and import directly - with a regional fallback chain so country-specific wines (e.g. Australian labels) actually show up
 - **Vivino ID management** - view, edit & test Vivino wine links directly in the edit modal
 - **Reload missing data** - re-analyze wines with incomplete fields via AI or Vivino
+- **Scoped AI refresh** - refresh everything, look up the current price only, or re-assess the maturity/taste profile only; each scope asks the AI for its fields alone, so a price lookup cannot rewrite a vintage
+- **Prices from your own market** - the AI searches retailers in your own country first, derived from the configured currency and language
 - **AI sommelier chat with full CRUD** - ask questions about your cellar, upload wine label photos, and add / edit / delete wines directly from the conversation - with persistent chat history
 - **Maturity graph** - AI-generated bell curve showing drinking phases (Youth, Maturity, Peak, Decline)
 - **Taste profile & food pairings** - AI-generated body/tannin/acidity/sweetness bars and matching dish suggestions
@@ -71,7 +83,7 @@ A wine cellar tracker for Home Assistant or Docker - manage your entire collecti
 - **Activity timeline** - chronological log of wines added, consumed, restocked, or removed
 - **Interactive globe** - see your wine regions on a 3D globe (COBE)
 - **Stock history chart** - area chart showing bottle count development over the last 6 months
-- **Statistics** - donut charts, total bottles, total liters, value overview & average age
+- **Statistics** - donut charts, total bottles, total liters, value overview & average age, scoped to the selected area (cellar or bar)
 
 ### UI & Platform
 
@@ -244,7 +256,7 @@ All options are configured via the Home Assistant add-on configuration page.
 
 ### AI Wine Label Recognition
 
-The AI feature lets you snap a photo of a wine label and automatically fills in the wine details (name, vintage, type, region, grape, price, notes).
+The AI feature lets you snap a photo of a wine label and automatically fills in the details (name, vintage, type, region, grape, price, description). It never writes into the notes field - that one is yours.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
