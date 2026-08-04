@@ -47,7 +47,7 @@
 <header>
   <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>
   <nav class="nav-links">
-    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_cellar }}</a>
+    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a class="nav-link" href="#" id="chatFab" onclick="event.preventDefault();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a class="nav-link active" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
     <a class="nav-link" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
@@ -55,7 +55,7 @@
   </nav>
   <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
   <div class="nav-menu" id="navMenu">
-    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_cellar }}</a>
+    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a href="#" class="nav-menu-item" onclick="event.preventDefault();toggleNavMenu();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a href="{{ ingress }}/timeline" class="nav-menu-item active">{{ t.timeline }}</a>
     <a href="{{ ingress }}/stats" class="nav-menu-item">{{ t.stats_title }}</a>
@@ -119,7 +119,9 @@ var ACTION_ICONS = {
   consumed: '<i class="mdi mdi-glass-wine"></i>',
   restocked: '<i class="mdi mdi-package-variant"></i>',
   removed: '<i class="mdi mdi-delete-outline"></i>',
-  chat: '<i class="mdi mdi-chat-outline"></i>'
+  chat: '<i class="mdi mdi-chat-outline"></i>',
+  opened: '<i class="mdi mdi-bottle-tonic"></i>',
+  refilled: '<i class="mdi mdi-cup"></i>'
 };
 
 function openModal(id) {
@@ -434,7 +436,7 @@ loadTimeline();
 
 <nav class="bottom-tab-bar">
   <a class="tab-item" href="{{ ingress }}/">
-    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_cellar }}</span>
+    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_collection }}</span>
   </a>
   {% if ai_enabled %}
   <a class="tab-item" href="{{ ingress }}/chat">

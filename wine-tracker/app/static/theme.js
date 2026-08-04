@@ -266,3 +266,32 @@ document.addEventListener('DOMContentLoaded', function() {
   updateThemeSegmented();
   updateThemeDropdown();
 });
+
+// ── Area (cellar / bar) ──────────────────────────────────────────────────────
+// The area is a property of the whole app, not of a single page: the cellar and
+// the bar are separate collections, so the list AND the statistics follow it.
+// Remembered so navigating between pages does not silently drop you back into
+// the cellar. Pages that are area-aware set window._areaPath.
+function wtCurrentArea() {
+  var m = /[?&]area=([^&]+)/.exec(window.location.search);
+  if (m) return decodeURIComponent(m[1]) === 'bar' ? 'bar' : 'cellar';
+  try { return localStorage.getItem('wt_area') === 'bar' ? 'bar' : 'cellar'; } catch (e) {}
+  return 'cellar';
+}
+
+function setArea(area) {
+  area = (area === 'bar') ? 'bar' : 'cellar';
+  try { localStorage.setItem('wt_area', area); } catch (e) {}
+  var path = window._areaPath || '/';
+  window.location.href = (window.INGRESS || '') + path + '?area=' + encodeURIComponent(area);
+}
+
+// A plain visit without ?area= restores the remembered area, so the switch does
+// not appear to reset itself when moving from the list to the statistics.
+(function() {
+  if (window.location.search.indexOf('area=') !== -1) return;
+  if (!window._areaPath) return;
+  var saved = null;
+  try { saved = localStorage.getItem('wt_area'); } catch (e) {}
+  if (saved === 'bar') setArea('bar');
+})();

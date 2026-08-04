@@ -648,3 +648,86 @@ class TestGrapesExportImport:
         wid = db.execute("SELECT id FROM wines WHERE name='Legacy Imp'").fetchone()[0]
         assert [g["name"] for g in grape_model.list_wine_grapes(db, wid)] == \
             ["Tempranillo", "Garnacha"]
+
+
+class TestSpiritsExportImport:
+    def test_export_contains_spirit_data(self, client, db):
+        import json as J
+        client.post("/add", data={
+            "name": "Exp Whisky", "category": "whisky", "type": "Single Malt",
+            "quantity": "1", "abv": "46",
+            "casks": J.dumps([{"name": "Ex-Bourbon", "years": 10}]),
+        }, follow_redirects=True)
+        zf = zipfile.ZipFile(io.BytesIO(client.get("/export").data))
+        w = next(x for x in json.loads(zf.read("wines.json")) if x["name"] == "Exp Whisky")
+        assert w["category"] == "whisky"
+        assert w["spirit_details"]["abv"] == 46
+        assert [c["name"] for c in w["casks"]] == ["Ex-Bourbon"]
+
+    def test_import_restores_spirit_data(self, client, db, upload_dir):
+        from export_import import match_wines, apply_import
+        import spirits
+        parsed = {
+            "wines": [{"name": "Imp Whisky", "category": "whisky", "type": "Single Malt",
+                       "quantity": 1,
+                       "spirit_details": {"abv": 43, "age_years": 12},
+                       "casks": [{"name": "Oloroso Sherry", "years": 12}]}],
+            "timeline": [], "purchases": [], "images": {}, "original_ids": [None],
+        }
+        apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir, strategy="skip")
+        wid = db.execute("SELECT id FROM wines WHERE name='Imp Whisky'").fetchone()[0]
+        assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "whisky"
+        assert spirits.get_details(db, wid)["abv"] == 43
+        assert [c["name"] for c in spirits.list_casks(db, wid)] == ["Oloroso Sherry"]
+
+    def test_legacy_archive_without_category_imports_as_wine(self, client, db, upload_dir):
+        from export_import import match_wines, apply_import
+        parsed = {"wines": [{"name": "Legacy Cat", "type": "red", "quantity": 1}],
+                  "timeline": [], "purchases": [], "images": {}, "original_ids": [None]}
+        apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir, strategy="skip")
+        wid = db.execute("SELECT id FROM wines WHERE name='Legacy Cat'").fetchone()[0]
+        assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "wine"
+
+
+# ── description round-trip ────────────────────────────────────────────────────
+
+class TestDescriptionRoundTrip:
+    def test_description_is_exported_and_reimported(self, client, db, upload_dir):
+        from export_import import (build_export_zip, parse_import_file,
+                                   match_wines, apply_import)
+        client.post("/add", data={
+            "name": "Rundlauf", "quantity": "1",
+            "description": "Beschreibung der KI", "notes": "Meine Notiz",
+        }, headers={"X-Requested-With": "XMLHttpRequest"})
+
+        blob = build_export_zip(db, upload_dir, app_version="test")
+        db.execute("DELETE FROM wines")
+        parsed = parse_import_file(blob, "backup.zip")
+        apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir,
+                     strategy="overwrite")
+
+        row = db.execute("SELECT notes, description FROM wines WHERE name='Rundlauf'").fetchone()
+        assert row["description"] == "Beschreibung der KI"
+        assert row["notes"] == "Meine Notiz"
+
+    def test_csv_appends_description_at_the_end(self):
+        """Existing spreadsheets must keep their column positions."""
+        from export_import import CSV_COLUMNS
+        assert CSV_COLUMNS[-1] == "description"
+
+    def test_german_csv_header_is_accepted(self):
+        from export_import import CSV_ALIASES
+        assert CSV_ALIASES["beschreibung"] == "description"
+
+    def test_archive_without_a_description_still_imports(self, db, upload_dir):
+        """Backups made before this field existed must keep working."""
+        from export_import import match_wines, apply_import
+        parsed = {
+            "wines": [{"name": "Altes Backup", "quantity": 1, "category": "wine"}],
+            "original_ids": [None], "timeline": [], "purchases": [], "images": {},
+        }
+        apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir,
+                     strategy="skip")
+        row = db.execute("SELECT description FROM wines WHERE name='Altes Backup'").fetchone()
+        assert row is not None
+        assert not row["description"]

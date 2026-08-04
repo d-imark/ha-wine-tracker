@@ -232,6 +232,66 @@ class TestReanalyzeWine:
         data = json.loads(resp.data)
         assert data.get("ok") is False or resp.status_code >= 400
 
+    def _call(self, client, monkeypatch, scope, reply, category="wine"):
+        import app as wine_app
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "load_options",
+                            lambda: {"ai_provider": "openai", "openai_api_key": "k",
+                                     "currency": "CHF", "openai_web_search": False})
+        seen = {}
+
+        def fake_analyze(opts, img, mt, ctx, sc="all"):
+            seen["scope"] = sc
+            seen["image"] = img
+            return dict(reply)
+
+        monkeypatch.setattr(wine_app, "_analyze_wine_from_context", fake_analyze)
+        resp = client.post("/api/reanalyze-wine", data=json.dumps({
+            "wine_context": {"name": "X", "category": category}, "scope": scope,
+        }), content_type="application/json")
+        return json.loads(resp.data), seen
+
+    def test_scope_reaches_the_analysis(self, client, monkeypatch):
+        data, seen = self._call(client, monkeypatch, "price", {"price": 42})
+        assert seen["scope"] == "price"
+        assert data["scope"] == "price"
+
+    def test_unknown_scope_becomes_all(self, client, monkeypatch):
+        data, seen = self._call(client, monkeypatch, "whatever", {"price": 42})
+        assert seen["scope"] == "all"
+        assert data["scope"] == "all"
+
+    def test_scoped_reply_is_stripped_to_its_fields(self, client, monkeypatch):
+        """Even when the model ignores the instruction and answers with extras,
+        a price lookup must never hand back a new vintage or producer."""
+        data, _ = self._call(client, monkeypatch, "price", {
+            "price": 42, "vintage": 1999, "winery": "Wrong Winery",
+            "grapes": [{"name": "Merlot", "pct": 100}],
+            "ai_rationale": "weil",
+        })
+        assert set(data["fields"]) == {"price", "ai_rationale"}
+
+    def test_profile_scope_keeps_its_estimates(self, client, monkeypatch):
+        data, _ = self._call(client, monkeypatch, "profile", {
+            "maturity_data": {"peak": [2030, 2035]}, "drink_from": 2028,
+            "taste_profile": {"body": 4}, "food_pairings": ["Lamm"],
+            "price": 99, "name": "Neuer Name",
+        })
+        fields = data["fields"]
+        assert "maturity_data" in fields and "drink_from" in fields
+        assert "price" not in fields and "name" not in fields
+
+    def test_full_scope_passes_everything_through(self, client, monkeypatch):
+        data, _ = self._call(client, monkeypatch, "all", {
+            "price": 42, "vintage": 1999, "name": "Voller Name"})
+        assert set(data["fields"]) >= {"price", "vintage", "name"}
+
+    def test_spirit_profile_scope_strips_wine_estimates(self, client, monkeypatch):
+        data, _ = self._call(client, monkeypatch, "profile", {
+            "taste_profile": {"smoke": 3}, "maturity_data": {"peak": [2030, 2035]},
+        }, category="whisky")
+        assert set(data["fields"]) == {"taste_profile"}
+
 
 # ── GET /api/vivino-search ────────────────────────────────────────────────────
 #
@@ -2151,3 +2211,89 @@ def test_reconcile_accepts_grape_list(client, db):
     values = [it["value"] for it in data["items"] if it["entity"] == "grape"]
     assert "Zzz Unknown Grape" in values
     assert "Merlot" not in values
+
+
+def test_reconcile_uses_the_spirit_region_list(client, db):
+    """Islay is unknown to the wine list but known to the spirit list, so it must
+    only be flagged for reconciliation when the category says wine."""
+    as_wine = client.post("/api/reference/reconcile", json={
+        "region": "Islay", "country": "United Kingdom"}).get_json()
+    assert "Islay" in [it["value"] for it in as_wine["items"]]
+
+    as_whisky = client.post("/api/reference/reconcile", json={
+        "category": "whisky", "region": "Islay", "country": "United Kingdom"}).get_json()
+    assert as_whisky["items"] == []
+
+
+def test_reconcile_skips_grapes_for_spirits(client, db):
+    resp = client.post("/api/reference/reconcile", json={
+        "category": "whisky", "grapes": ["Zzz Unknown Grape"], "region": "Islay"})
+    assert resp.get_json()["items"] == []
+
+
+def test_reference_list_exposes_spirit_regions(client, db):
+    data = client.get("/api/reference/spirit_regions").get_json()
+    assert data["ok"]
+    names = {i["name"] for i in data["items"]}
+    assert "Islay" in names and "Rioja" not in names
+
+
+def test_wine_json_includes_spirit_data(client, db):
+    import json as J
+    client.post("/add", data={
+        "name": "Api Whisky", "category": "whisky", "type": "Single Malt",
+        "quantity": "1", "abv": "46",
+        "casks": J.dumps([{"name": "Ex-Bourbon", "years": 10}]),
+    }, follow_redirects=True)
+    wid = db.execute("SELECT id FROM wines WHERE name='Api Whisky'").fetchone()[0]
+    w = client.get(f"/api/wine/{wid}").get_json()["wine"]
+    assert w["category"] == "whisky"
+    assert w["spirit_details"]["abv"] == 46
+    assert [c["name"] for c in w["casks"]] == ["Ex-Bourbon"]
+
+
+def test_index_area_filter(client, db):
+    client.post("/add", data={"name": "Area Wine", "type": "red", "quantity": "1"},
+                follow_redirects=True)
+    client.post("/add", data={"name": "Area Whisky", "category": "whisky",
+                              "type": "Single Malt", "quantity": "1"},
+                follow_redirects=True)
+    cellar = client.get("/?area=cellar").get_data(as_text=True)
+    assert "Area Wine" in cellar and "Area Whisky" not in cellar
+    bar = client.get("/?area=bar").get_data(as_text=True)
+    assert "Area Whisky" in bar and "Area Wine" not in bar
+
+
+class TestOpenBottleRoutes:
+    def _whisky(self, client, db, qty=2):
+        client.post("/add", data={"name": "Route Whisky", "category": "whisky",
+                                  "type": "Single Malt", "quantity": str(qty)},
+                    follow_redirects=True)
+        return db.execute("SELECT id FROM wines WHERE name='Route Whisky'").fetchone()[0]
+
+    def test_open_then_fill_then_finish(self, client, db):
+        wid = self._whisky(client, db)
+        r = client.post(f"/api/wine/{wid}/open")
+        assert r.status_code == 200 and r.get_json()["ok"] is True
+        assert r.get_json()["wine"]["spirit_details"]["fill_level"] == 100
+        assert r.get_json()["wine"]["quantity"] == 1
+
+        r = client.post(f"/api/wine/{wid}/fill", json={"percent": 55})
+        assert r.get_json()["wine"]["spirit_details"]["fill_level"] == 55
+
+        r = client.post(f"/api/wine/{wid}/finish")
+        assert r.get_json()["wine"]["spirit_details"]["opened_at"] is None
+
+    def test_open_without_stock_is_rejected(self, client, db):
+        wid = self._whisky(client, db, qty=0)
+        r = client.post(f"/api/wine/{wid}/open")
+        assert r.status_code == 400 and r.get_json()["error"] == "not_possible"
+
+    def test_fill_with_bad_value_is_rejected(self, client, db):
+        wid = self._whisky(client, db)
+        client.post(f"/api/wine/{wid}/open")
+        r = client.post(f"/api/wine/{wid}/fill", json={"percent": 500})
+        assert r.status_code == 400
+
+    def test_unknown_wine_is_404(self, client):
+        assert client.post("/api/wine/999999/open").status_code == 404

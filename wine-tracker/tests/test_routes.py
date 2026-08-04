@@ -677,6 +677,117 @@ class TestStatsPage:
         # 2*0.75 + 1*1.5 = 3.0 liters
         assert b"3.0" in resp.data
 
+    def _seed_both_areas(self, client):
+        import json as J
+        client.post("/add", data={"name": "Stat Barolo", "type": "Rotwein",
+                                  "quantity": "4", "region": "Piemont",
+                                  "price": "60"}, headers=AJAX)
+        client.post("/add", data={"name": "Stat Lagavulin", "category": "whisky",
+                                  "type": "Single Malt", "quantity": "2",
+                                  "region": "Islay", "price": "90", "abv": "43",
+                                  "age_years": "16",
+                                  "casks": J.dumps([{"name": "Ex-Bourbon", "years": 16}])},
+                    headers=AJAX)
+
+    def test_stats_counts_are_area_scoped(self, client):
+        """Mixing 4 bottles of Barolo into the bar's totals means nothing."""
+        self._seed_both_areas(client)
+        cellar = client.get("/stats?area=cellar").data.decode()
+        bar = client.get("/stats?area=bar").data.decode()
+        assert "Stat Barolo" in cellar and "Stat Lagavulin" not in cellar
+        assert "Stat Lagavulin" in bar and "Stat Barolo" not in bar
+
+    def test_stats_defaults_to_the_cellar(self, client):
+        self._seed_both_areas(client)
+        html = client.get("/stats").data.decode()
+        assert "Stat Barolo" in html and "Stat Lagavulin" not in html
+
+    def test_stats_unknown_area_falls_back_to_cellar(self, client):
+        self._seed_both_areas(client)
+        html = client.get("/stats?area=garage").data.decode()
+        assert "Stat Barolo" in html and "Stat Lagavulin" not in html
+
+    @staticmethod
+    def _chart_keys(html):
+        """The types the donut/bar charts actually plot.
+
+        Deliberately not a plain substring search over the page: the shared edit
+        modal and the colour palette mention every type name regardless of area.
+        """
+        import re
+        return set(re.findall(r'data-key="([^"]+)"', html))
+
+    @staticmethod
+    def _globe_regions(html):
+        import re
+        block = re.search(r'class="globe-legend".*?</div>\s*</div>', html, re.S)
+        return set(re.findall(r"<span>([^<]+)</span>", block.group(0))) if block else set()
+
+    def test_stats_types_do_not_leak_between_areas(self, client):
+        self._seed_both_areas(client)
+        cellar = self._chart_keys(client.get("/stats?area=cellar").data.decode())
+        bar = self._chart_keys(client.get("/stats?area=bar").data.decode())
+        assert "Rotwein" in cellar and "Single Malt" not in cellar
+        assert "Single Malt" in bar and "Rotwein" not in bar
+
+    def test_stats_regions_do_not_leak_between_areas(self, client):
+        self._seed_both_areas(client)
+        cellar = self._globe_regions(client.get("/stats?area=cellar").data.decode())
+        bar = self._globe_regions(client.get("/stats?area=bar").data.decode())
+        assert "Piemont" in cellar and "Islay" not in cellar
+        assert "Islay" in bar and "Piemont" not in bar
+
+    def test_stats_bar_uses_the_age_statement(self, client):
+        """A 16 year old whisky is 16 years old, regardless of the vintage
+        field - the cellar's "current year minus vintage" makes no sense here."""
+        self._seed_both_areas(client)
+        html = client.get("/stats?area=bar").data.decode()
+        assert "~16" in html
+
+    def test_stats_area_switch_present(self, client, sample_wine):
+        html = client.get("/stats").data.decode()
+        assert 'class="area-switch"' in html
+        assert "setArea('bar')" in html
+
+    def test_stats_wording_follows_the_area(self, client):
+        self._seed_both_areas(client)
+        # a second entry per area so both sides use the plural wording
+        client.post("/add", data={"name": "Stat Ardbeg", "category": "whisky",
+                                  "type": "Single Malt", "quantity": "1"}, headers=AJAX)
+        client.post("/add", data={"name": "Stat Chianti", "type": "Rotwein",
+                                  "quantity": "1"}, headers=AJAX)
+        import re
+
+        def rendered(html):
+            """Only the visible labels. The page also embeds the whole
+            translation dict for JS, which naturally holds both wordings."""
+            return (set(re.findall(r'class="label">([^<]+)<', html))
+                    | set(re.findall(r'class="map-card">\s*<h2>.*?</i>\s*([^<]+)<',
+                                     html, re.S)))
+
+        cellar = rendered(client.get("/stats?area=cellar").data.decode())
+        bar = rendered(client.get("/stats?area=bar").data.decode())
+        assert "Verschiedene Weine" in cellar
+        assert "Herkunft Deiner Weine" in " ".join(cellar)
+        assert "Verschiedene Abfüllungen" in bar
+        assert "Herkunft Deiner Spirituosen" in " ".join(bar)
+        assert "Verschiedene Weine" not in bar
+
+    def test_nav_no_longer_says_wine_cellar(self, client):
+        """The first nav item covers both areas now, so "Weinkeller" was wrong.
+
+        "Weinkeller" still legitimately labels the cellar side of the area
+        switch - only the nav entry had to change.
+        """
+        import re
+        for path in ("/", "/stats", "/timeline", "/reference"):
+            html = client.get(path).data.decode()
+            nav = [n.strip() for n in
+                   re.findall(r'class="nav-link[^"]*"[^>]*>([^<]*)<', html) if n.strip()]
+            assert nav, path
+            assert nav[0] == "Sammlung", (path, nav)
+            assert not any("Weinkeller" in n for n in nav), (path, nav)
+
     def test_stats_tooltip_data_contains_wine_id(self, client, sample_wine):
         """WINE_DATA in stats page should include wine IDs for clickable tooltips."""
         wine_id = sample_wine["wine"]["id"]
@@ -1479,3 +1590,153 @@ def test_add_wine_legacy_grape_fallback(client, db):
     wid = db.execute("SELECT id FROM wines WHERE name='Legacy Grape'").fetchone()[0]
     import grapes
     assert [r["name"] for r in grapes.list_wine_grapes(db, wid)] == ["Tempranillo", "Garnacha"]
+
+
+# ── spirits: category, details, casks ─────────────────────────────────────────
+
+def test_add_whisky_stores_details_and_casks(client, db):
+    resp = client.post("/add", data={
+        "name": "Lagavulin 16", "category": "whisky", "type": "Single Malt",
+        "region": "Islay", "quantity": "2", "abv": "43", "age_years": "16",
+        "bottler": "Original", "batch_number": "Batch 003", "peat_ppm": "35",
+        "casks": json.dumps([{"name": "Ex-Bourbon", "years": 14},
+                             {"name": "PX Sherry", "years": 2}]),
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    wid = db.execute("SELECT id FROM wines WHERE name='Lagavulin 16'").fetchone()[0]
+    assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "whisky"
+
+    import spirits
+    d = spirits.get_details(db, wid)
+    assert d["abv"] == 43 and d["age_years"] == 16 and d["batch_number"] == "Batch 003"
+    assert [c["name"] for c in spirits.list_casks(db, wid)] == ["Ex-Bourbon", "PX Sherry"]
+    assert d["cask_summary"] == "Ex-Bourbon → PX Sherry"
+
+
+def test_add_wine_stays_wine_and_has_no_spirit_row(client, db):
+    client.post("/add", data={"name": "Barolo Cat", "type": "red", "quantity": "1"},
+                follow_redirects=True)
+    wid = db.execute("SELECT id FROM wines WHERE name='Barolo Cat'").fetchone()[0]
+    assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "wine"
+    assert db.execute("SELECT COUNT(*) FROM spirit_details WHERE wine_id=?",
+                      (wid,)).fetchone()[0] == 0
+
+
+def test_edit_without_spirit_fields_keeps_them(client, db):
+    """A quantity-only edit must not wipe the whisky details."""
+    client.post("/add", data={
+        "name": "Keep Details", "category": "whisky", "type": "Single Malt",
+        "quantity": "1", "abv": "46",
+    }, follow_redirects=True)
+    wid = db.execute("SELECT id FROM wines WHERE name='Keep Details'").fetchone()[0]
+    client.post(f"/edit/{wid}", data={
+        "name": "Keep Details", "type": "Single Malt", "quantity": "3", "rating": "0",
+    }, follow_redirects=True)
+    import spirits
+    assert spirits.get_details(db, wid)["abv"] == 46
+    assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "whisky"
+
+
+def test_unknown_category_falls_back_to_wine(client, db):
+    client.post("/add", data={"name": "Weird Cat", "type": "red", "quantity": "1",
+                              "category": "bogus"}, follow_redirects=True)
+    wid = db.execute("SELECT id FROM wines WHERE name='Weird Cat'").fetchone()[0]
+    assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "wine"
+
+
+# ── description vs. notes ─────────────────────────────────────────────────────
+
+class TestDescriptionAndNotes:
+    """`notes` is the user's own field. Everything the AI writes about a bottle
+    goes to `description` instead."""
+
+    def test_both_fields_are_saved_independently(self, client, db):
+        client.post("/add", data={
+            "name": "Zwei Felder", "quantity": "1",
+            "description": "Kraeftiger Rotwein mit dunklen Beeren.",
+            "notes": "Vom Winzer persoenlich gekauft.",
+        }, headers=AJAX)
+        row = db.execute(
+            "SELECT notes, description FROM wines WHERE name='Zwei Felder'").fetchone()
+        assert row["description"] == "Kraeftiger Rotwein mit dunklen Beeren."
+        assert row["notes"] == "Vom Winzer persoenlich gekauft."
+
+    def test_edit_keeps_them_apart(self, client, db):
+        client.post("/add", data={"name": "Trennung", "quantity": "1",
+                                  "description": "A", "notes": "B"}, headers=AJAX)
+        wid = db.execute("SELECT id FROM wines WHERE name='Trennung'").fetchone()[0]
+        client.post(f"/edit/{wid}", data={"name": "Trennung", "quantity": "1",
+                                          "description": "A2", "notes": "B2"}, headers=AJAX)
+        row = db.execute("SELECT notes, description FROM wines WHERE id=?", (wid,)).fetchone()
+        assert (row["description"], row["notes"]) == ("A2", "B2")
+
+    def test_partial_edit_preserves_the_description(self, client, db):
+        """A quantity-only update must not blank a field it does not carry."""
+        client.post("/add", data={"name": "Teilupdate", "quantity": "1",
+                                  "description": "Bleibt stehen"}, headers=AJAX)
+        wid = db.execute("SELECT id FROM wines WHERE name='Teilupdate'").fetchone()[0]
+        client.post(f"/edit/{wid}", data={"name": "Teilupdate", "quantity": "5"}, headers=AJAX)
+        row = db.execute("SELECT quantity, description FROM wines WHERE id=?", (wid,)).fetchone()
+        assert row["quantity"] == 5
+        assert row["description"] == "Bleibt stehen"
+
+    def test_search_covers_both_fields(self, client, db):
+        client.post("/add", data={"name": "Suchtest A", "quantity": "1",
+                                  "description": "Zzzbeschreibung"}, headers=AJAX)
+        client.post("/add", data={"name": "Suchtest B", "quantity": "1",
+                                  "notes": "Zzznotiz"}, headers=AJAX)
+        assert b"Suchtest A" in client.get("/?q=Zzzbeschreibung").data
+        assert b"Suchtest B" in client.get("/?q=Zzznotiz").data
+
+    def test_duplicate_carries_the_description(self, client, db):
+        client.post("/add", data={"name": "Dupli", "quantity": "1",
+                                  "description": "Kopiert mich", "notes": "Auch ich"},
+                    headers=AJAX)
+        wid = db.execute("SELECT id FROM wines WHERE name='Dupli'").fetchone()[0]
+        client.post(f"/duplicate/{wid}", data={"quantity": "1"}, headers=AJAX)
+        rows = db.execute("SELECT description FROM wines WHERE name='Dupli'").fetchall()
+        assert len(rows) == 2
+        assert all(r["description"] == "Kopiert mich" for r in rows)
+
+    def test_form_offers_both_fields(self, client):
+        html = client.get("/").data.decode()
+        assert 'id="wine_description"' in html
+        assert 'id="wine_notes"' in html
+        assert 'name="description"' in html
+
+
+class TestNotesToDescriptionMigration:
+    def test_moves_notes_and_clears_them(self, client, db):
+        import app as wine_app
+        db.execute("INSERT INTO wines (name, quantity, notes, category) "
+                   "VALUES ('Alt', 1, 'KI-Text von damals', 'wine')")
+        db.execute("DELETE FROM app_meta WHERE key='notes_to_description'")
+        moved = wine_app.migrate_notes_to_description(db)
+        assert moved >= 1
+        row = db.execute("SELECT notes, description FROM wines WHERE name='Alt'").fetchone()
+        assert row["description"] == "KI-Text von damals"
+        assert row["notes"] == ""
+
+    def test_never_runs_twice(self, client, db):
+        """The decisive property: a second run would sweep up the personal notes
+        the user has typed since."""
+        import app as wine_app
+        db.execute("DELETE FROM app_meta WHERE key='notes_to_description'")
+        wine_app.migrate_notes_to_description(db)
+
+        db.execute("INSERT INTO wines (name, quantity, notes, category) "
+                   "VALUES ('Neu', 1, 'Meine private Notiz', 'wine')")
+        assert wine_app.migrate_notes_to_description(db) == 0
+        row = db.execute("SELECT notes, description FROM wines WHERE name='Neu'").fetchone()
+        assert row["notes"] == "Meine private Notiz"
+        assert not row["description"]
+
+    def test_does_not_overwrite_an_existing_description(self, client, db):
+        import app as wine_app
+        db.execute("INSERT INTO wines (name, quantity, notes, description, category) "
+                   "VALUES ('Beides', 1, 'Notiz', 'Schon da', 'wine')")
+        db.execute("DELETE FROM app_meta WHERE key='notes_to_description'")
+        wine_app.migrate_notes_to_description(db)
+        row = db.execute("SELECT notes, description FROM wines WHERE name='Beides'").fetchone()
+        assert row["description"] == "Schon da"
+        assert row["notes"] == "Notiz"      # left alone, nothing to move into

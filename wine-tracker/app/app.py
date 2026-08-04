@@ -4,6 +4,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import time
 import uuid
 from collections import defaultdict
 from datetime import date, datetime
@@ -14,6 +15,7 @@ import reference
 import images
 import purchases
 import grapes
+import spirits
 from export_import import (
     build_export_zip, export_filename,
     parse_import_file, match_wines, apply_import, ImportError as WineImportError,
@@ -166,7 +168,7 @@ def _ssl_verify():
         return True
 
 
-APP_VERSION = "1.14.2"
+APP_VERSION = "1.15.0"
 
 HA_OPTIONS = load_options()
 
@@ -280,6 +282,7 @@ WINE_LABELS = {
         "grape":        "Rebsorte",
         "drink_window": "Trinkfenster",
         "notes":        "Notizen",
+        "description":  "Beschreibung",
         "quantity":     "Menge",
         "bottles":      "Fl.",
         "rating":       "Bewertung",
@@ -292,6 +295,7 @@ WINE_LABELS = {
         "grape":        "Grape variety",
         "drink_window": "Drinking window",
         "notes":        "Notes",
+        "description":  "Description",
         "quantity":     "Quantity",
         "bottles":      "btl.",
         "rating":       "Rating",
@@ -304,6 +308,7 @@ WINE_LABELS = {
         "grape":        "Cépage",
         "drink_window": "Fenêtre de dégustation",
         "notes":        "Notes",
+        "description":  "Description",
         "quantity":     "Quantité",
         "bottles":      "btl.",
         "rating":       "Note",
@@ -316,6 +321,7 @@ WINE_LABELS = {
         "grape":        "Vitigno",
         "drink_window": "Finestra di consumo",
         "notes":        "Note",
+        "description":  "Descrizione",
         "quantity":     "Quantità",
         "bottles":      "btl.",
         "rating":       "Valutazione",
@@ -328,6 +334,7 @@ WINE_LABELS = {
         "grape":        "Variedad",
         "drink_window": "Ventana de consumo",
         "notes":        "Notas",
+        "description":  "Descripción",
         "quantity":     "Cantidad",
         "bottles":      "bot.",
         "rating":       "Valoración",
@@ -340,6 +347,7 @@ WINE_LABELS = {
         "grape":        "Casta",
         "drink_window": "Janela de consumo",
         "notes":        "Notas",
+        "description":  "Descrição",
         "quantity":     "Quantidade",
         "bottles":      "gf.",
         "rating":       "Avaliação",
@@ -352,6 +360,7 @@ WINE_LABELS = {
         "grape":        "Druivenras",
         "drink_window": "Drinkvenster",
         "notes":        "Notities",
+        "description":  "Beschrijving",
         "quantity":     "Aantal",
         "bottles":      "fl.",
         "rating":       "Beoordeling",
@@ -479,6 +488,11 @@ def inject_globals():
             "SELECT key, color, is_custom FROM ref_wine_types ORDER BY sort_order, key"
         ).fetchall()
         ctx["wine_types_ref"] = [dict(r) for r in type_rows]
+        ctx["spirit_types_ref"] = [dict(r) for r in db.execute(
+            "SELECT key, color, is_custom FROM ref_spirit_types ORDER BY sort_order, key"
+        ).fetchall()]
+        ctx["ref_cask_names"] = [r[0] for r in db.execute(
+            "SELECT name FROM ref_cask_types ORDER BY sort_order, name").fetchall()]
         ctx["wine_type_colors"] = {r["key"]: r["color"] for r in type_rows}
         ctx["wine_type_custom_keys"] = [r["key"] for r in type_rows if r["is_custom"]]
     except Exception:
@@ -489,6 +503,8 @@ def inject_globals():
         ctx.setdefault("used_locations", [])
         ctx.setdefault("used_wineries", [])
         ctx.setdefault("wine_types_ref", [{"key": k, "color": None, "is_custom": 0} for k in WINE_TYPES])
+        ctx.setdefault("spirit_types_ref", [])
+        ctx.setdefault("ref_cask_names", [])
         ctx.setdefault("wine_type_colors", {})
         ctx.setdefault("wine_type_custom_keys", [])
     return ctx
@@ -533,6 +549,116 @@ def backfill_wine_grapes(db):
         entries = [{"name": n, "pct": None} for n in grapes.split_legacy(w["grape"])]
         if entries:
             grapes.set_wine_grapes(db, w["id"], entries)
+
+
+# Child tables that belong to exactly one wine and must go when it does.
+# `timeline` is deliberately NOT in this list: it keeps the history of removed
+# wines and renders them as "(deleted)".
+WINE_CHILD_TABLES = ("wine_grapes", "wine_purchases", "wine_images",
+                     "spirit_details", "spirit_casks")
+
+
+def delete_wine_children(db, wine_id):
+    """Remove every child row of a wine.
+
+    The connection does not run with PRAGMA foreign_keys ON (turning it on
+    globally would break deletion outright, because timeline references wines
+    without ON DELETE CASCADE), so the declared cascades never fire and the
+    cleanup has to be explicit.
+    """
+    for table in WINE_CHILD_TABLES:
+        try:
+            db.execute(f"DELETE FROM {table} WHERE wine_id=?", (wine_id,))
+        except sqlite3.OperationalError:
+            pass          # table not created yet on very old databases
+
+
+def cleanup_orphans(db):
+    """One-time: drop child rows whose wine was deleted before the cleanup
+    existed. Returns the number of removed rows."""
+    removed = 0
+    for table in WINE_CHILD_TABLES:
+        try:
+            cur = db.execute(
+                f"DELETE FROM {table} WHERE wine_id NOT IN (SELECT id FROM wines)")
+            removed += cur.rowcount or 0
+        except sqlite3.OperationalError:
+            pass
+    return removed
+
+
+CATEGORIES = ("wine", "whisky", "spirit")
+
+# The two areas of the app. Every list and every statistic belongs to exactly
+# one of them - a bottle count that mixes Barolo and Lagavulin means nothing.
+AREA_CATEGORIES = {"cellar": ("wine",), "bar": ("whisky", "spirit")}
+
+
+def _area_from_request(default="cellar"):
+    value = (request.args.get("area") or "").strip().lower()
+    return value if value in AREA_CATEGORIES else default
+
+
+def _area_sql(area, col="category"):
+    """Return (condition, params) restricting a `wines` query to one area.
+
+    `col` lets a joined query qualify the column ("w.category").
+    """
+    cats = AREA_CATEGORIES.get(area, AREA_CATEGORIES["cellar"])
+    return "%s IN (%s)" % (col, ",".join("?" * len(cats))), list(cats)
+
+
+def _category_from_form(form):
+    value = (form.get("category") or "").strip().lower()
+    return value if value in CATEGORIES else "wine"
+
+
+def _spirit_payload_from_form(form):
+    """Return (details, casks) from the posted form.
+
+    Only keys actually present land in `details`, so a partial post (e.g. the
+    quantity stepper) leaves the other whisky fields untouched. `casks` is None
+    when the form carries no cask data at all.
+    """
+    numeric = {"abv": float, "age_years": int, "distilled_year": int,
+               "bottled_year": int, "peat_ppm": int}
+    flags = ("cask_strength", "single_cask", "chill_filtered")
+    text = ("bottler", "batch_number", "cask_number")
+
+    details = {}
+    for key, cast in numeric.items():
+        if key in form:
+            raw = (form.get(key) or "").strip()
+            try:
+                details[key] = cast(float(raw)) if raw else None
+            except (TypeError, ValueError):
+                details[key] = None
+    for key in flags:
+        if key in form:
+            details[key] = 1 if (form.get(key) or "").strip() in ("1", "on", "true") else 0
+    for key in text:
+        if key in form:
+            details[key] = (form.get(key) or "").strip() or None
+
+    casks = None
+    if "casks" in form:
+        casks = []
+        try:
+            data = json.loads((form.get("casks") or "").strip() or "[]")
+            if isinstance(data, list):
+                casks = [{"name": (e.get("name") or "").strip(), "years": e.get("years")}
+                         for e in data if isinstance(e, dict)]
+        except (json.JSONDecodeError, TypeError):
+            casks = []
+    return details, casks
+
+
+def _save_spirit_payload(db, wine_id, form):
+    details, casks = _spirit_payload_from_form(form)
+    if details:
+        spirits.set_details(db, wine_id, details)
+    if casks is not None:
+        spirits.set_casks(db, wine_id, casks)
 
 
 def _grapes_from_form(form):
@@ -592,6 +718,10 @@ def init_db():
             "ai_rationale":   "TEXT",
             "winery":         "TEXT",
             "ai_price":       "REAL",
+            "category":       "TEXT NOT NULL DEFAULT 'wine'",
+            # `notes` belongs to the user. Everything the AI writes about the
+            # bottle goes here instead.
+            "description":    "TEXT",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -660,6 +790,9 @@ def init_db():
         # ── reference-data tables + bundled seed (TP1) ────────────────────
         reference.create_reference_tables(db)
         reference.seed_reference_data(db)
+        # Whisky regions were briefly seeded into the wine region list; they now
+        # have their own (see reference.SPIRIT_REGIONS).
+        reference.migrate_spirit_regions_out_of_regions(db)
 
         # ── wine images table + legacy single-image migration (BP1) ───────
         images.create_images_table(db)
@@ -667,6 +800,9 @@ def init_db():
 
         # ── backfill wines.country from free-text region (TP3c) ───────────
         migrate_country_from_region(db)
+
+        # ── notes belong to the user; AI text moves to description ─────────
+        migrate_notes_to_description(db)
 
         # ── purchase lots + one-time price backfill ───────────────────────
         purchases.create_purchases_table(db)
@@ -693,6 +829,13 @@ def init_db():
         grapes.relink_unmatched(db)
         grapes.dedupe_wine_grapes(db)
 
+        # ── spirits: details + cask chain ──────────────────────────────────
+        spirits.create_spirit_tables(db)
+
+        # One-time: child rows left behind by deletions from before the
+        # explicit cleanup existed (the declared cascades never fired).
+        cleanup_orphans(db)
+
         db.commit()
 
 
@@ -713,7 +856,24 @@ def geocode_region(region_name):
     return None
 
 
-def resolve_map_coords(db, region, country=None):
+def _match_region(db, value, country_code=None, category="wine"):
+    """Match a region in the list belonging to `category`, falling back to the
+    other one. The fallback matters for bottles that were entered before wine
+    and spirit regions were split apart, and for the map, which just needs
+    coordinates regardless of which list holds them."""
+    primary = reference.region_entity(category)
+    other = "region" if primary == "spirit_region" else "spirit_region"
+    for entity in (primary, other):
+        try:
+            row = reference.match_reference(db, entity, value, country_code)
+        except Exception:
+            row = None
+        if row:
+            return row
+    return None
+
+
+def resolve_map_coords(db, region, country=None, category="wine"):
     """Resolve [lat, lon] for the globe from the reference data (TP4).
 
     Priority: reference region coords -> that region's country centroid ->
@@ -726,7 +886,7 @@ def resolve_map_coords(db, region, country=None):
         return None
 
     if region:
-        r = reference.match_reference(db, "region", region)
+        r = _match_region(db, region, category=category)
         if r:
             if r["lat"] is not None and r["lon"] is not None:
                 return [r["lat"], r["lon"]]
@@ -750,11 +910,11 @@ def resolve_map_coords(db, region, country=None):
     return None
 
 
-def _derive_country_from_region(db, region_text):
+def _derive_country_from_region(db, region_text, category="wine"):
     """Best-effort country name for a free-text region (uses TP1 matching)."""
     if not region_text:
         return None
-    reg = reference.match_reference(db, "region", region_text)
+    reg = _match_region(db, region_text, category=category)
     if reg and reg["country_code"]:
         c = db.execute("SELECT name FROM ref_countries WHERE code=?", (reg["country_code"],)).fetchone()
         if c:
@@ -770,16 +930,55 @@ def _derive_country_from_region(db, region_text):
     return None
 
 
+# ── One-shot migrations ───────────────────────────────────────────────────────
+# Most migrations here are safe to repeat (add a column, fill an empty field).
+# Some are not: anything that MOVES user data must run exactly once, so it needs
+# a record of having run rather than a guess from the data's shape.
+
+def _migration_done(db, key):
+    db.execute("CREATE TABLE IF NOT EXISTS app_meta ("
+               "key TEXT PRIMARY KEY, value TEXT)")
+    return db.execute("SELECT 1 FROM app_meta WHERE key=?", (key,)).fetchone() is not None
+
+
+def _mark_migration_done(db, key):
+    db.execute("INSERT OR REPLACE INTO app_meta (key, value) VALUES (?,?)",
+               (key, datetime.now().isoformat()))
+
+
+def migrate_notes_to_description(db):
+    """One-time: move the AI's tasting text out of `notes` into `description`.
+
+    `notes` used to receive whatever the AI wrote, which left the user no field
+    of their own. It is now theirs alone.
+
+    This MUST NOT repeat: on a later start it would sweep up the personal notes
+    the user has typed since. Hence the app_meta guard rather than a check like
+    "description is still empty everywhere".
+    """
+    if _migration_done(db, "notes_to_description"):
+        return 0
+    cur = db.execute(
+        "UPDATE wines SET description = notes, notes = '' "
+        "WHERE notes IS NOT NULL AND notes != '' "
+        "AND (description IS NULL OR description = '')")
+    moved = cur.rowcount or 0
+    _mark_migration_done(db, "notes_to_description")
+    if moved:
+        app.logger.info("Moved AI notes into description for %d bottles", moved)
+    return moved
+
+
 def migrate_country_from_region(db):
     """One-time backfill: fill wines.country (when empty) from the free-text
     region, resolved against the reference data. Never overwrites an existing
     country and never rewrites the region."""
     rows = db.execute(
-        "SELECT id, region FROM wines "
+        "SELECT id, region, category FROM wines "
         "WHERE (country IS NULL OR country = '') AND region IS NOT NULL AND region != ''"
     ).fetchall()
     for w in rows:
-        country = _derive_country_from_region(db, w["region"])
+        country = _derive_country_from_region(db, w["region"], category=w["category"])
         if country:
             db.execute("UPDATE wines SET country=? WHERE id=?", (country, w["id"]))
 
@@ -805,17 +1004,27 @@ def wine_json(wine_id):
                 d[key] = None
     d["images"] = images.list_images(db, wine_id)
     d["grapes"] = grapes.list_wine_grapes(db, wine_id)
+    d["spirit_details"] = spirits.get_details(db, wine_id)
+    d["casks"] = spirits.list_casks(db, wine_id)
     d["purchase_count"] = db.execute(
         "SELECT COUNT(*) FROM wine_purchases WHERE wine_id=?", (wine_id,)).fetchone()[0]
     return d
 
 
 def stats_json():
-    """Return current stats dict."""
+    """Return current stats dict.
+
+    An open spirits bottle still counts as one bottle on hand, so it is added
+    to the sealed quantity.
+    """
     db = get_db()
-    s = db.execute(
-        "SELECT SUM(quantity) as total, COUNT(DISTINCT name) as types FROM wines WHERE quantity > 0"
-    ).fetchone()
+    s = db.execute("""
+        SELECT SUM(w.quantity + CASE WHEN sd.opened_at IS NOT NULL THEN 1 ELSE 0 END) AS total,
+               COUNT(DISTINCT w.name) AS types
+          FROM wines w
+          LEFT JOIN spirit_details sd ON sd.wine_id = w.id
+         WHERE w.quantity > 0 OR sd.opened_at IS NOT NULL
+    """).fetchone()
     return {"total": s["total"] or 0, "types": s["types"] or 0}
 
 
@@ -933,23 +1142,32 @@ def index():
     q = request.args.get("q", "").strip()
     t = request.args.get("type", "")
     show_empty = request.args.get("show_empty", "1")
+    area = (request.args.get("area") or "").strip().lower()
 
     sql = "SELECT * FROM wines WHERE 1=1"
     params = []
 
     if q:
-        sql += " AND (name LIKE ? OR region LIKE ? OR notes LIKE ?)"
-        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        sql += (" AND (name LIKE ? OR region LIKE ? OR notes LIKE ?"
+                " OR description LIKE ?)")
+        params += [f"%{q}%"] * 4
     if t:
         sql += " AND type = ?"
         params.append(t)
     if show_empty == "0":
         sql += " AND quantity > 0"
+    # Area switch: the cellar shows wine, the bar everything else.
+    if area == "cellar":
+        sql += " AND category = 'wine'"
+    elif area == "bar":
+        sql += " AND category != 'wine'"
 
     sql += " ORDER BY type, name, year"
     wines = [dict(row) for row in db.execute(sql, params).fetchall()]
     for w in wines:
         w["grapes"] = grapes.list_wine_grapes(db, w["id"])
+        w["spirit_details"] = spirits.get_details(db, w["id"])
+        w["casks"] = spirits.list_casks(db, w["id"])
 
     stats = db.execute(
         "SELECT SUM(quantity) as total, COUNT(DISTINCT name) as types FROM wines WHERE quantity > 0"
@@ -970,6 +1188,7 @@ def index():
         active_type=t,
         show_empty=show_empty,
         stats=stats,
+        area=area or "cellar",
     )
 
 
@@ -1015,10 +1234,11 @@ def add():
     food_pairings_raw = request.form.get("food_pairings", "").strip() or None
     cur = db.execute(
         """INSERT INTO wines
-           (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
+           (name, winery, year, type, region, quantity, rating, vivino_rating, notes, description,
+            image, added,
             purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-            maturity_data, taste_profile, food_pairings, country, ai_rationale)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            maturity_data, taste_profile, food_pairings, country, ai_rationale, category)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("winery", "").strip() or None,
@@ -1029,6 +1249,7 @@ def add():
             _parse_rating(request.form.get("rating", 0)),
             _parse_rating(request.form.get("vivino_rating", "")) or None,
             request.form.get("notes", "").strip(),
+            request.form.get("description", "").strip(),
             image,
             str(date.today()),
             request.form.get("purchased_at", "").strip() or None,
@@ -1044,11 +1265,13 @@ def add():
             food_pairings_raw,
             request.form.get("country", "").strip() or None,
             request.form.get("ai_rationale", "").strip() or None,
+            _category_from_form(request.form),
         ),
     )
     db.commit()
     new_id = cur.lastrowid
     grapes.set_wine_grapes(db, new_id, _grapes_from_form(request.form))
+    _save_spirit_payload(db, new_id, request.form)
     images.sync_primary(db, new_id, "", image)
     db.commit()
     # Log the addition
@@ -1147,9 +1370,11 @@ def edit(wine_id):
         purchased_at_val = wine["purchased_at"]
     db.execute(
         """UPDATE wines SET name=?, winery=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
-           notes=?, image=?, purchased_at=?, ai_price=?, drink_from=?, drink_until=?, location=?,
+           notes=?, description=?, image=?, purchased_at=?, ai_price=?, drink_from=?, drink_until=?,
+           location=?,
            grape=?, vivino_id=?, bottle_format=?,
-           maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?
+           maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?,
+           category=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
@@ -1161,6 +1386,9 @@ def edit(wine_id):
             _parse_rating(request.form.get("rating", 0)),
             _vivino_rating_for_edit(request.form, wine),
             request.form.get("notes", "").strip(),
+            # Preserve a description the form does not carry (partial updates).
+            request.form.get("description", "").strip()
+            if "description" in request.form else (wine["description"] or ""),
             image,
             purchased_at_val,
             ai_price_val,
@@ -1175,6 +1403,9 @@ def edit(wine_id):
             food_pairings_raw,
             country_val,
             ai_rationale_val,
+            # An edit that does not post a category keeps the current one.
+            (_category_from_form(request.form)
+             if "category" in request.form else (wine["category"] or "wine")),
             wine_id,
         ),
     )
@@ -1193,6 +1424,7 @@ def edit(wine_id):
     # quantity change (viewChangeQty) omits both keys, so structured pct survives.
     if "grapes" in request.form or "grape" in request.form:
         grapes.set_wine_grapes(db, wine_id, _grapes_from_form(request.form))
+    _save_spirit_payload(db, wine_id, request.form)
     images.sync_primary(db, wine_id, wine["image"], image)
     db.commit()
     if is_ajax():
@@ -1220,10 +1452,11 @@ def duplicate(wine_id):
             shutil.copy2(src, os.path.join(UPLOAD_DIR, new_image))
 
     db.execute(
-        """INSERT INTO wines (name, winery, year, type, region, quantity, rating, vivino_rating, notes, image, added,
+        """INSERT INTO wines (name, winery, year, type, region, quantity, rating, vivino_rating, notes,
+           description, image, added,
            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
            maturity_data, taste_profile, food_pairings, country, ai_rationale)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             wine["winery"],
@@ -1234,6 +1467,7 @@ def duplicate(wine_id):
             wine["rating"],
             wine["vivino_rating"],
             wine["notes"],
+            wine["description"],
             new_image,
             str(date.today()),
             wine["purchased_at"],
@@ -1286,6 +1520,7 @@ def delete(wine_id):
                 os.remove(os.path.join(UPLOAD_DIR, wine["image"]))
             except FileNotFoundError:
                 pass
+    delete_wine_children(db, wine_id)
     db.execute("DELETE FROM wines WHERE id=?", (wine_id,))
     db.commit()
     if is_ajax():
@@ -1387,32 +1622,46 @@ def stats_page():
     db = get_db()
     current_year = datetime.now().year
 
+    # Cellar and bar are separate collections, so every figure below is scoped
+    # to one of them. `A` is the area condition, spliced into each query.
+    area = _area_from_request()
+    A, ap = _area_sql(area)
+    AW, _ = _area_sql(area, "w.category")      # for queries that join
+
+    def q(sql, extra=()):
+        return db.execute(sql, ap + list(extra))
+
     # Total bottles & distinct wines
-    totals = db.execute(
-        "SELECT SUM(quantity) as bottles, COUNT(*) as wines FROM wines"
+    totals = q(
+        f"SELECT SUM(quantity) as bottles, COUNT(*) as wines FROM wines WHERE {A}"
     ).fetchone()
 
     # Bottles by type
-    by_type = [dict(r) for r in db.execute(
-        "SELECT type, SUM(quantity) as qty FROM wines WHERE type IS NOT NULL AND type != '' GROUP BY type ORDER BY qty DESC"
+    by_type = [dict(r) for r in q(
+        f"SELECT type, SUM(quantity) as qty FROM wines WHERE {A} "
+        "AND type IS NOT NULL AND type != '' GROUP BY type ORDER BY qty DESC"
     ).fetchall()]
 
     # Top regions (bar chart - limited)
-    top_regions = [dict(r) for r in db.execute(
-        "SELECT region, SUM(quantity) as qty FROM wines WHERE region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC LIMIT 7"
+    top_regions = [dict(r) for r in q(
+        f"SELECT region, SUM(quantity) as qty FROM wines WHERE {A} "
+        "AND region IS NOT NULL AND region != '' GROUP BY region ORDER BY qty DESC LIMIT 7"
     ).fetchall()]
 
     # Map points (for the globe), resolved via reference data with a country
     # centroid fallback (TP4). Grouped by region+country; wines with only a
     # country still get a marker at the country centroid.
-    map_groups = db.execute(
-        "SELECT region, country, SUM(quantity) as qty FROM wines "
-        "WHERE (region IS NOT NULL AND region != '') OR (country IS NOT NULL AND country != '') "
+    map_groups = q(
+        f"SELECT region, country, SUM(quantity) as qty FROM wines WHERE {A} "
+        "AND ((region IS NOT NULL AND region != '') OR (country IS NOT NULL AND country != '')) "
         "GROUP BY region, country ORDER BY qty DESC"
     ).fetchall()
     map_points = []
     for r in map_groups:
-        coords = resolve_map_coords(db, r["region"], r["country"])
+        # The area fixes which region list to consult, so Islay resolves on the
+        # bar's map and Rioja on the cellar's.
+        coords = resolve_map_coords(db, r["region"], r["country"],
+                                    category=AREA_CATEGORIES[area][0])
         if coords:
             map_points.append({
                 "region": r["region"] or r["country"],
@@ -1420,59 +1669,80 @@ def stats_page():
             })
 
     # Total liters (quantity * bottle_format)
-    total_liters = db.execute(
-        "SELECT SUM(quantity * COALESCE(bottle_format, 0.75)) as liters FROM wines"
+    total_liters = q(
+        f"SELECT SUM(quantity * COALESCE(bottle_format, 0.75)) as liters FROM wines WHERE {A}"
     ).fetchone()["liters"] or 0
 
     # Total value
-    value = db.execute(
+    value = q(
         "SELECT SUM(quantity * price) as total_value, AVG(price) as avg_price, "
-        "MIN(price) as min_price, MAX(price) as max_price FROM wines WHERE price IS NOT NULL AND price > 0"
+        f"MIN(price) as min_price, MAX(price) as max_price FROM wines WHERE {A} "
+        "AND price IS NOT NULL AND price > 0"
     ).fetchone()
 
-    # Most expensive wine
-    most_expensive = db.execute(
-        "SELECT id, name, year, type, price FROM wines WHERE price IS NOT NULL ORDER BY price DESC LIMIT 1"
+    # Most expensive bottle
+    most_expensive = q(
+        f"SELECT id, name, year, type, price FROM wines WHERE {A} "
+        "AND price IS NOT NULL ORDER BY price DESC LIMIT 1"
     ).fetchone()
 
-    # Cheapest wine
-    cheapest = db.execute(
-        "SELECT id, name, year, type, price FROM wines WHERE price IS NOT NULL AND price > 0 ORDER BY price ASC LIMIT 1"
+    # Cheapest bottle
+    cheapest = q(
+        f"SELECT id, name, year, type, price FROM wines WHERE {A} "
+        "AND price IS NOT NULL AND price > 0 ORDER BY price ASC LIMIT 1"
     ).fetchone()
 
-    # Best rated wines
-    best_rated = [dict(r) for r in db.execute(
-        "SELECT id, name, year, type, rating, quantity FROM wines WHERE rating > 0 ORDER BY rating DESC, name LIMIT 5"
+    # Best rated bottles
+    best_rated = [dict(r) for r in q(
+        f"SELECT id, name, year, type, rating, quantity FROM wines WHERE {A} "
+        "AND rating > 0 ORDER BY rating DESC, name LIMIT 5"
     ).fetchall()]
 
-    # Average age
-    avg_age = db.execute(
-        f"SELECT AVG({current_year} - year) as avg_age FROM wines WHERE year IS NOT NULL AND year > 0"
-    ).fetchone()
-
-    # Oldest wine
-    oldest = db.execute(
-        "SELECT name, year, type FROM wines WHERE year IS NOT NULL AND year > 0 ORDER BY year ASC LIMIT 1"
-    ).fetchone()
-
-    # Newest wine
-    newest = db.execute(
-        "SELECT name, year, type FROM wines WHERE year IS NOT NULL AND year > 0 ORDER BY year DESC LIMIT 1"
-    ).fetchone()
+    # Average age. For the bar this is the age statement in years, not the gap
+    # to a vintage - a 12 year old Lagavulin bottled in 2015 is not 11 years old.
+    if area == "bar":
+        avg_age = q(
+            f"SELECT AVG(sd.age_years) as avg_age FROM wines w "
+            f"JOIN spirit_details sd ON sd.wine_id = w.id WHERE {AW} "
+            "AND sd.age_years IS NOT NULL AND sd.age_years > 0"
+        ).fetchone()
+        oldest = q(
+            f"SELECT w.name, sd.age_years as year, w.type FROM wines w "
+            f"JOIN spirit_details sd ON sd.wine_id = w.id WHERE {AW} "
+            "AND sd.age_years IS NOT NULL AND sd.age_years > 0 ORDER BY sd.age_years DESC LIMIT 1"
+        ).fetchone()
+        newest = q(
+            f"SELECT w.name, sd.age_years as year, w.type FROM wines w "
+            f"JOIN spirit_details sd ON sd.wine_id = w.id WHERE {AW} "
+            "AND sd.age_years IS NOT NULL AND sd.age_years > 0 ORDER BY sd.age_years ASC LIMIT 1"
+        ).fetchone()
+    else:
+        avg_age = q(
+            f"SELECT AVG({current_year} - year) as avg_age FROM wines WHERE {A} "
+            "AND year IS NOT NULL AND year > 0"
+        ).fetchone()
+        oldest = q(
+            f"SELECT name, year, type FROM wines WHERE {A} "
+            "AND year IS NOT NULL AND year > 0 ORDER BY year ASC LIMIT 1"
+        ).fetchone()
+        newest = q(
+            f"SELECT name, year, type FROM wines WHERE {A} "
+            "AND year IS NOT NULL AND year > 0 ORDER BY year DESC LIMIT 1"
+        ).fetchone()
 
     # Recently added
-    recent = [dict(r) for r in db.execute(
-        "SELECT id, name, year, type, added FROM wines ORDER BY id DESC LIMIT 3"
+    recent = [dict(r) for r in q(
+        f"SELECT id, name, year, type, added FROM wines WHERE {A} ORDER BY id DESC LIMIT 3"
     ).fetchall()]
 
     # Bottles in stock vs out
-    in_stock = db.execute("SELECT SUM(quantity) FROM wines WHERE quantity > 0").fetchone()[0] or 0
-    out_of_stock = db.execute("SELECT COUNT(*) FROM wines WHERE quantity = 0").fetchone()[0] or 0
+    in_stock = q(f"SELECT SUM(quantity) FROM wines WHERE {A} AND quantity > 0").fetchone()[0] or 0
+    out_of_stock = q(f"SELECT COUNT(*) FROM wines WHERE {A} AND quantity = 0").fetchone()[0] or 0
 
     # Drink window chart - bottles per year, stacked by type
-    dw_wines = [dict(r) for r in db.execute(
-        "SELECT id, name, year, type, quantity, drink_from, drink_until FROM wines "
-        "WHERE drink_until IS NOT NULL AND drink_until != '' AND quantity > 0"
+    dw_wines = [dict(r) for r in q(
+        f"SELECT id, name, year, type, quantity, drink_from, drink_until FROM wines WHERE {A} "
+        "AND drink_until IS NOT NULL AND drink_until != '' AND quantity > 0"
     ).fetchall()]
     dw_by_year = defaultdict(lambda: defaultdict(int))
     dw_names_by_year = defaultdict(lambda: defaultdict(list))
@@ -1511,11 +1781,15 @@ def stats_page():
     start_y, start_m = month_add(today.year, today.month, -6)
     first_of_six = date(start_y, start_m, 1)
 
+    # Scoped to the area via the bottle the event belongs to. Events of deleted
+    # bottles drop out (their wine row is gone), same as they are already absent
+    # from current_stock - so the curve stays internally consistent.
     tl_rows = db.execute(
-        "SELECT action, quantity, timestamp FROM timeline "
-        "WHERE action IN ('added','consumed','restocked','removed') "
-        "AND timestamp >= ? ORDER BY timestamp",
-        (first_of_six.isoformat(),)
+        "SELECT t.action, t.quantity, t.timestamp FROM timeline t "
+        f"JOIN wines w ON w.id = t.wine_id WHERE {AW} "
+        "AND t.action IN ('added','consumed','restocked','removed') "
+        "AND t.timestamp >= ? ORDER BY t.timestamp",
+        ap + [first_of_six.isoformat()]
     ).fetchall()
 
     monthly_delta = defaultdict(lambda: {"added": 0, "consumed": 0, "restocked": 0, "removed": 0})
@@ -1561,27 +1835,34 @@ def stats_page():
             "consumed": md["consumed"] + md["removed"],
         })
 
-    # Tooltip data - wine names grouped by type and region
+    # Tooltip data - bottle names grouped by type and region
     wines_by_type = {}
-    for row in db.execute(
-        "SELECT id, name, year, type, quantity FROM wines "
-        "WHERE type IS NOT NULL AND type != '' AND quantity > 0 ORDER BY name"
+    for row in q(
+        f"SELECT id, name, year, type, quantity FROM wines WHERE {A} "
+        "AND type IS NOT NULL AND type != '' AND quantity > 0 ORDER BY name"
     ).fetchall():
         wines_by_type.setdefault(row["type"], []).append(
             {"n": row["name"], "y": row["year"], "q": row["quantity"], "id": row["id"]})
 
     wines_by_region = {}
-    for row in db.execute(
-        "SELECT id, name, year, region, quantity FROM wines "
-        "WHERE region IS NOT NULL AND region != '' AND quantity > 0 ORDER BY name"
+    for row in q(
+        f"SELECT id, name, year, region, quantity FROM wines WHERE {A} "
+        "AND region IS NOT NULL AND region != '' AND quantity > 0 ORDER BY name"
     ).fetchall():
         wines_by_region.setdefault(row["region"], []).append(
             {"n": row["name"], "y": row["year"], "q": row["quantity"], "id": row["id"]})
 
-    type_translations = {t: T.get(f"wine_type_{t}", t) for t in WINE_TYPES}
+    # The bar's types come from the spirit vocabulary, which carries no
+    # wine_type_* translations - the raw key is the label there.
+    if area == "bar":
+        type_translations = {r["key"]: r["key"]
+                             for r in db.execute("SELECT key FROM ref_spirit_types")}
+    else:
+        type_translations = {t: T.get(f"wine_type_{t}", t) for t in WINE_TYPES}
 
     return render_template(
         "stats.html",
+        area=area,
         totals=totals,
         total_liters=total_liters,
         by_type=by_type,
@@ -1849,7 +2130,17 @@ def _call_openai_smart(image_b64, media_type, prompt, opts):
         return _call_openai(image_b64, media_type, prompt, opts)
 
 
-def _canonicalize_ai_fields(db, fields):
+def _valid_types(db, category="wine"):
+    """Allowed `type` values for a category - wine types or spirit types."""
+    if category in ("whisky", "spirit"):
+        try:
+            return {r[0] for r in db.execute("SELECT key FROM ref_spirit_types")}
+        except Exception:
+            return set()
+    return set(WINE_TYPES)
+
+
+def _canonicalize_ai_fields(db, fields, category="wine"):
     """Map AI/Vivino values onto the reference vocabulary via alias lookup.
 
     "Sylvaner" becomes "Silvaner", "Shiraz" becomes "Syrah", "Toskana" becomes
@@ -1866,6 +2157,27 @@ def _canonicalize_ai_fields(db, fields):
             return value
         return row[key] if row else value
 
+    if category in ("whisky", "spirit"):
+        # Spirits carry their own vocabulary: spirit types and cask names.
+        if fields.get("wine_type"):
+            row = None
+            try:
+                row = reference.match_reference(db, "spirit_type", fields["wine_type"])
+            except Exception:
+                pass
+            if row:
+                fields["wine_type"] = row["key"]
+        if isinstance(fields.get("casks"), list):
+            for c in fields["casks"]:
+                if isinstance(c, dict) and c.get("name"):
+                    row = None
+                    try:
+                        row = reference.match_reference(db, "cask_type", c["name"])
+                    except Exception:
+                        pass
+                    if row:
+                        c["name"] = row["name"]
+
     country_code = None
     if fields.get("country"):
         try:
@@ -1877,10 +2189,14 @@ def _canonicalize_ai_fields(db, fields):
             country_code = row["code"]
 
     if fields.get("region"):
-        fields["region"] = canon("region", fields["region"], country_code)
+        fields["region"] = canon(reference.region_entity(category),
+                                 fields["region"], country_code)
 
-    if fields.get("wine_type"):
+    if category == "wine" and fields.get("wine_type"):
         fields["wine_type"] = canon("wine_type", fields["wine_type"], key="key")
+
+    if category != "wine":
+        return fields          # grapes are a wine-only concept
 
     def canon_grape(name):
         """Models like to annotate synonyms ("Johannisberg / Sylvaner",
@@ -2192,6 +2508,8 @@ def _build_wine_cellar_context():
             parts.append(
                 f"{labels['drink_window']}: {w.get('drink_from', '?')}-{w.get('drink_until', '?')}"
             )
+        if w.get("description"):
+            parts.append(f"{labels['description']}: {w['description']}")
         if w.get("notes"):
             parts.append(f"{labels['notes']}: {w['notes']}")
         lines.append(" | ".join(parts))
@@ -2235,7 +2553,15 @@ def analyze_wine():
                   "es": "Spanish", "pt": "Portuguese", "nl": "Dutch"}
     lang_name = lang_names.get(LANG, "English")
     currency = (opts.get("currency") or "CHF").strip() or "CHF"
-    prompt = f"""Analyze this wine bottle label image. Extract the following fields and return ONLY valid JSON:
+    category = _category_from_form(request.form)
+    if category in ("whisky", "spirit"):
+        # Spirits reuse the shared schema/rules; the wine prompt below stays as is.
+        prompt = ("Analyze this bottle label image. Extract the following fields and "
+                  "return ONLY valid JSON:\n"
+                  + _wine_json_schema(category) + "\n"
+                  + _wine_json_rules(LANG, currency, category))
+    else:
+        prompt = f"""Analyze this wine bottle label image. Extract the following fields and return ONLY valid JSON:
 {{
   "name": "wine name (without the producer)",
   "winery": "producer / winery name, or empty string",
@@ -2247,7 +2573,7 @@ def analyze_wine():
   "price": number or null,
   "drink_from": year as integer or null,
   "drink_until": year as integer or null,
-  "notes": "brief tasting notes if visible on label",
+  "description": "2-3 sentence description of the wine: style, aroma, taste",
   "maturity_data": {{
     "youth": [start_year, end_year],
     "maturity": [start_year, end_year],
@@ -2275,7 +2601,7 @@ Rules:
 - taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
 - food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown.
 - If a field cannot be determined, set it to null or empty string
-- The "notes" and "food_pairings" fields MUST be written in {lang_name}
+- The "description" and "food_pairings" fields MUST be written in {lang_name}
 - Return ONLY the JSON object, no markdown, no explanation"""
 
     # Dispatch to the selected provider
@@ -2294,10 +2620,10 @@ Rules:
 
         raw = call_fn(image_data, media_type, prompt, opts)
         fields = _parse_ai_json(raw)
-        fields = _canonicalize_ai_fields(get_db(), fields)
+        fields = _canonicalize_ai_fields(get_db(), fields, category)
 
-        # Validate wine_type
-        if fields.get("wine_type") and fields["wine_type"] not in WINE_TYPES:
+        # Validate the type against the category's vocabulary
+        if fields.get("wine_type") and fields["wine_type"] not in _valid_types(get_db(), category):
             fields["wine_type"] = ""
 
         return jsonify({"ok": True, "fields": fields, "image_filename": image_filename})
@@ -2655,47 +2981,199 @@ def vivino_image():
 
 # ── AI Re-analysis (image, text, or both) ─────────────────────────────────────
 
-def _wine_json_schema():
-    return """{
-  "name": "wine name (without the producer)",
-  "winery": "producer / winery name, or empty string",
-  "wine_type": "one of: Rotwein, Weisswein, Rosé, Schaumwein, Dessertwein, Likörwein, Anderes",
-  "vintage": year as integer or null,
-  "region": "wine region",
-  "grape": "grape variety/varieties",
-  "grapes": [{"name": "grape variety", "pct": percentage as number 0-100 or null}],
-  "price": number or null,
-  "drink_from": year as integer or null,
-  "drink_until": year as integer or null,
-  "notes": "brief tasting notes",
-  "maturity_data": {"youth": [start_year, end_year], "maturity": [start_year, end_year], "peak": [start_year, end_year], "decline": [start_year, end_year]},
-  "taste_profile": {"body": 1-5, "tannin": 1-5, "acidity": 1-5, "sweetness": 1-5},
-  "food_pairings": ["dish1", "dish2", "dish3"],
-  "ai_rationale": "1-2 sentence basis for the identification and estimates, or null"
-}"""
+# ── AI schema, assembled per field ────────────────────────────────────────────
+# Kept as (key, schema line, rule line) triples so a scoped request can ask for a
+# subset. Asking only for what the user wants updated keeps the model from
+# "helpfully" rewriting facts it was not asked about - and it answers faster.
+_SCHEMA_WINE = [
+    ("name",        '"name": "wine name (without the producer)"',
+     '- winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".'),
+    ("winery",      '"winery": "producer / winery name, or empty string"',
+     '- If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.'),
+    ("wine_type",   '"wine_type": "one of: Rotwein, Weisswein, Rosé, Schaumwein, Dessertwein, Likörwein, Anderes"',
+     "- wine_type MUST be exactly one of the listed values"),
+    ("vintage",     '"vintage": year as integer or null',
+     "- vintage must be a 4-digit year or null. If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never \"correct\" it from a shop listing of another vintage."),
+    ("region",      '"region": "wine region"', None),
+    ("country",     '"country": "country of origin"', None),
+    ("grape",       '"grape": "grape variety/varieties"', None),
+    ("grapes",      '"grapes": [{"name": "grape variety", "pct": percentage as number 0-100 or null}]',
+     '- grapes: array of the wine\'s grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.'),
+    ("price",       '"price": number or null', "PRICE_RULE"),
+    ("drink_from",  '"drink_from": year as integer or null', None),
+    ("drink_until", '"drink_until": year as integer or null',
+     "- drink_from/drink_until: estimate a reasonable drinking window based on wine type, grape, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate."),
+    ("description", '"description": "2-3 sentence description of the bottle: style, aroma, taste"',
+     "DESCRIPTION_RULE"),
+    ("maturity_data", '"maturity_data": {"youth": [start_year, end_year], "maturity": [start_year, end_year], "peak": [start_year, end_year], "decline": [start_year, end_year]}',
+     "- maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown."),
+    ("taste_profile", '"taste_profile": {"body": 1-5, "tannin": 1-5, "acidity": 1-5, "sweetness": 1-5}',
+     "- taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown."),
+    ("food_pairings", '"food_pairings": ["dish1", "dish2", "dish3"]',
+     "- food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown."),
+]
+
+_SCHEMA_SPIRIT = [
+    ("name",       '"name": "bottling name (without the distillery)"', None),
+    ("winery",     '"winery": "distillery or brand, or empty string"',
+     '- winery: the distillery or brand (e.g. "Lagavulin", "Gregor Kuonen"); empty string if not identifiable. Do NOT repeat it inside "name". If the known information already names a distillery, return exactly that one. NEVER replace it with a different producer, even when another distillery makes a similarly named bottling.'),
+    ("wine_type",  '"wine_type": "one of: Single Malt, Blended Malt, Blended Scotch, Single Grain, Bourbon, Rye, Tennessee, Irish, Rum, Gin, Cognac, Armagnac, Brandy, Grappa, Tequila, Mezcal, Wodka, Likör, Obstbrand, Anderes Destillat"',
+     "- wine_type MUST be exactly one of the listed values"),
+    ("region",     '"region": "region, e.g. Islay, Speyside, Kentucky"', None),
+    ("country",    '"country": "country of origin"', None),
+    ("abv",        '"abv": alcohol by volume as number or null',
+     "- abv: alcohol by volume as a plain number (e.g. 46.3), null if unknown."),
+    ("age_years",  '"age_years": age statement in years as number, or null for NAS',
+     "- age_years: only the official age statement. Return null for NAS bottlings - do NOT compute it from distilled/bottled years."),
+    ("distilled_year", '"distilled_year": year as integer or null', None),
+    ("bottled_year",   '"bottled_year": year as integer or null',
+     "- distilled_year/bottled_year: 4-digit years or null. If the known information already gives one, keep it."),
+    ("casks",      '"casks": [{"name": "cask type", "years": years in that cask as number or null}]',
+     '- casks: the maturation chain in order. First entry = initial cask, any further entries are finishes. Each item has a name (cask type) plus years in that cask when known, otherwise null. Use plain cask names like "Ex-Bourbon" or "PX Sherry" - no extra wording.'),
+    ("bottler",    '"bottler": "Original bottling or the independent bottler\'s name"', None),
+    ("batch_number", '"batch_number": "batch or lot number as printed, or null"',
+     '- batch_number: exactly as printed (e.g. "Batch 003"), null if there is none.'),
+    ("cask_strength", '"cask_strength": true or false', None),
+    ("single_cask",   '"single_cask": true or false',
+     "- cask_strength / single_cask: true only when the label or a reliable source states it."),
+    ("peat_ppm",   '"peat_ppm": phenol ppm as number or null',
+     "- peat_ppm: only for peated whisky and only when a source states the phenol level."),
+    ("price",      '"price": number or null', "PRICE_RULE"),
+    ("description", '"description": "2-3 sentence description of the bottling: style, aroma, taste"',
+     "DESCRIPTION_RULE"),
+    ("taste_profile", '"taste_profile": {"smoke": 1-5, "sweetness": 1-5, "fruit": 1-5, "spice": 1-5}',
+     "- taste_profile: estimate smoke, sweetness, fruit and spice from 1 (low) to 5 (high)."),
+]
+
+_RATIONALE = ('"ai_rationale": "1-2 sentence basis for the identification and estimates, or null"',
+              "- ai_rationale: 1-2 short sentences in {lang_name} explaining what the identification "
+              "and estimates are based on. Do NOT invent URLs or citations. Set to null if you have "
+              "no real basis.")
+
+# What each scope asks for. "all" means every field of the category.
+AI_SCOPES = ("all", "price", "profile")
+_SCOPE_FIELDS = {
+    "wine":   {"price": ("price",),
+               "profile": ("drink_from", "drink_until", "maturity_data",
+                           "taste_profile", "food_pairings")},
+    "spirit": {"price": ("price",),
+               "profile": ("taste_profile",)},
+}
 
 
-def _wine_json_rules(lang="en", currency=None):
+def _scope_keys(category, scope):
+    """Field keys a scope requests, or None for the whole schema."""
+    if scope not in AI_SCOPES or scope == "all":
+        return None
+    fam = "spirit" if category in ("whisky", "spirit") else "wine"
+    return _SCOPE_FIELDS[fam].get(scope)
+
+
+def _wine_json_schema(category="wine", scope="all"):
+    table = _SCHEMA_SPIRIT if category in ("whisky", "spirit") else _SCHEMA_WINE
+    keys = _scope_keys(category, scope)
+    lines = [line for key, line, _ in table if keys is None or key in keys]
+    lines.append(_RATIONALE[0])
+    return "{\n  " + ",\n  ".join(lines) + "\n}"
+
+
+# Which retail market a price should come from. There is no country option, but
+# currency plus language pins it down: a distinct currency decides on its own,
+# and inside the euro zone the language does. A local shop also quotes the target
+# currency directly, so preferring it avoids a conversion step entirely.
+_MARKET_BY_CURRENCY = {
+    "CHF": ("Switzerland", ".ch"),
+    "GBP": ("the United Kingdom", ".co.uk"),
+    "USD": ("the United States", ".com"),
+    "SEK": ("Sweden", ".se"),
+    "NOK": ("Norway", ".no"),
+    "DKK": ("Denmark", ".dk"),
+    "PLN": ("Poland", ".pl"),
+    "CZK": ("Czechia", ".cz"),
+    "HUF": ("Hungary", ".hu"),
+    "CAD": ("Canada", ".ca"),
+    "AUD": ("Australia", ".com.au"),
+}
+_MARKET_BY_EURO_LANG = {
+    "de": ("Germany or Austria", ".de or .at"),
+    "fr": ("France", ".fr"),
+    "it": ("Italy", ".it"),
+    "es": ("Spain", ".es"),
+    "pt": ("Portugal", ".pt"),
+    "nl": ("the Netherlands or Belgium", ".nl or .be"),
+}
+
+
+def _price_market(currency, lang):
+    """Return (country phrase, domain hint) for the local retail market, or None."""
+    cur = (currency or "").strip().upper()
+    if cur in _MARKET_BY_CURRENCY:
+        return _MARKET_BY_CURRENCY[cur]
+    if cur == "EUR":
+        return _MARKET_BY_EURO_LANG.get((lang or "").strip().lower())
+    return None
+
+
+def _wine_json_rules(lang="en", currency=None, category="wine", scope="all"):
+    """Assemble the ruleset for exactly the fields the scope asks for.
+
+    Rules for fields that are not being requested are left out: telling the
+    model how to estimate a drinking window while asking it only for a price
+    invites it to answer with fields nobody asked about.
+    """
     lang_names = {"de": "German", "en": "English", "fr": "French", "it": "Italian",
                   "es": "Spanish", "pt": "Portuguese", "nl": "Dutch"}
     lang_name = lang_names.get(lang, "English")
     currency = (currency or HA_OPTIONS.get("currency") or "CHF").strip() or "CHF"
-    return f"""Rules:
-- wine_type MUST be exactly one of the listed values
-- winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".
-- If the known information already names a winery, return exactly that winery. NEVER replace it with a different producer, even when another producer makes a similarly named wine - research the wine of the given producer instead.
-- grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
-- vintage must be a 4-digit year or null
-- If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never "correct" it from a shop listing or catalog entry of another vintage.
-- drink_from/drink_until: estimate a reasonable drinking window based on wine type, grape, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
-- price: the retail bottle price as a plain number in {currency}, without any currency symbol. If your sources quote another currency, CONVERT the amount to {currency} at current exchange rates and name the original currency and amount in ai_rationale. Return null if you have no price.
-- maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
-- taste_profile: Estimate body (light 1 to full 5), tannin (low 1 to high 5), acidity (low 1 to high 5), sweetness (dry 1 to sweet 5) based on wine type and grape variety. Set to null if wine type is unknown.
-- food_pairings: Suggest 3-5 food pairings based on the wine type and characteristics. Write food names in {lang_name}. Set to null if wine type is unknown.
-- ai_rationale: 1-2 short sentences in {lang_name} explaining what the identification and estimates are based on (label text, producer, region/grape typicity). Do NOT invent URLs or citations. Set to null if you have no real basis.
-- If a field cannot be determined, set it to null or empty string
-- The "notes" and "food_pairings" fields MUST be written in {lang_name}
-- Return ONLY the JSON object, no markdown, no explanation"""
+
+    # One rule, not two: two lines both starting with "- price:" read as
+    # competing instructions. The country phrase is always used as "in {country}"
+    # so it works for "Switzerland" and "the United Kingdom" alike.
+    market = _price_market(currency, lang)
+    if market:
+        country, tld = market
+        where = (
+            f" Look for shops located in {country} FIRST (typically {tld} domains) and take "
+            f"the price a buyer in {country} would actually pay. Only when no retailer in "
+            f"{country} lists this bottle, fall back to a shop abroad - and name the country "
+            f"the price came from in ai_rationale.")
+    else:
+        where = ""
+    price_rule = (
+        f"- price: the retail bottle price as a plain number in {currency}, without any "
+        f"currency symbol.{where} If your sources quote another currency, CONVERT the amount "
+        f"to {currency} at current exchange rates and name the original currency and amount "
+        f"in ai_rationale. Return null if you have no price.")
+    description_rule = (
+        f'- description: 2-3 sentences about the bottle itself - style, aroma, taste, '
+        f'what makes it distinctive. Written in {lang_name}. This is the shop-style '
+        f'description; do NOT address the user and do NOT mention the price.\n'
+        f'- NEVER return a "notes" field. Notes belong to the user alone.')
+
+    table = _SCHEMA_SPIRIT if category in ("whisky", "spirit") else _SCHEMA_WINE
+    keys = _scope_keys(category, scope)
+
+    lines, seen = [], set()
+    for key, _, rule in table:
+        if keys is not None and key not in keys:
+            continue
+        if not rule:
+            continue
+        rule = {"PRICE_RULE": price_rule,
+                "DESCRIPTION_RULE": description_rule}.get(rule, rule)
+        rule = rule.replace("{lang_name}", lang_name)
+        if rule not in seen:
+            seen.add(rule)
+            lines.append(rule)
+
+    lines.append(_RATIONALE[1].replace("{lang_name}", lang_name))
+    lines.append("- If a field cannot be determined, set it to null or empty string")
+    if keys is not None:
+        # The decisive instruction for a scoped call.
+        lines.append("- Return ONLY the listed keys. Do NOT include any other field, "
+                     "and do NOT correct or restate information you were given.")
+    lines.append("- Return ONLY the JSON object, no markdown, no explanation")
+    return "Rules:\n" + "\n".join(lines)
 
 
 def _load_image_b64(image_filename):
@@ -2717,12 +3195,17 @@ def _load_image_b64(image_filename):
     return image_b64, media_type
 
 
-def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
+def _analyze_wine_from_context(opts, image_b64, media_type, wine_context, scope="all"):
     """Call the configured AI provider to extract/enrich wine fields.
 
     Returns a dict of wine fields (may be partial), or raises on error.
     Accepts image, text context, or both. Used by both the /api/reanalyze-wine
     HTTP endpoint and the chat ADD_WINE enrichment pass.
+
+    `scope` narrows the request: "all" researches the whole bottle, "price" only
+    looks up the current price, "profile" only re-estimates the maturity/taste
+    figures. A narrow scope gets a narrow schema, a narrow ruleset and its own
+    task wording, so the model neither wanders off nor rewrites untouched facts.
     """
     context_parts = []
     if wine_context.get("name"):    context_parts.append(f"Name: {wine_context['name']}")
@@ -2732,21 +3215,58 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
     if wine_context.get("region"):  context_parts.append(f"Region: {wine_context['region']}")
     if wine_context.get("country"): context_parts.append(f"Country: {wine_context['country']}")
     if wine_context.get("grape"):   context_parts.append(f"Grape: {wine_context['grape']}")
+    # Spirits-only context
+    if wine_context.get("casks"):     context_parts.append(f"Casks: {wine_context['casks']}")
+    if wine_context.get("abv"):       context_parts.append(f"ABV: {wine_context['abv']}")
+    if wine_context.get("age_years"): context_parts.append(f"Age: {wine_context['age_years']} years")
+    if wine_context.get("bottler"):   context_parts.append(f"Bottler: {wine_context['bottler']}")
 
     if not image_b64 and not context_parts:
         raise ValueError("no_data")
 
-    schema = _wine_json_schema()
-    rules = _wine_json_rules(LANG, opts.get("currency"))
+    category = (str(wine_context.get("category") or "wine")).strip().lower()
+    if category not in CATEGORIES:
+        category = "wine"
+    if scope not in AI_SCOPES:
+        scope = "all"
+    schema = _wine_json_schema(category, scope)
+    rules = _wine_json_rules(LANG, opts.get("currency"), category, scope)
 
-    if image_b64 and context_parts:
-        ctx = "\n".join(context_parts)
-        prompt = f"Analyze this wine bottle label image. The user already knows:\n{ctx}\n\nExtract/verify the following fields and return ONLY valid JSON:\n{schema}\n{rules}"
+    # Never call a whisky a wine - the wording steers what the model looks for.
+    subject = {"whisky": "whisky", "spirit": "spirit"}.get(category, "wine")
+    ctx = "\n".join(context_parts)
+
+    if scope != "all":
+        # A scoped call is about figures, not about reading a label - the photo
+        # would only cost tokens and tempt the model into re-identifying.
+        image_b64, media_type = None, "image/jpeg"
+
+    if scope == "price":
+        # A price lookup is a search task, not an identification task. The market
+        # matters as much as the bottle: a foreign price is the wrong answer even
+        # when it is correct, so name the home market up front too.
+        market = _price_market(opts.get("currency"), LANG)
+        where = (f"Search online shops based in {market[0]} first ({market[1]} domains), "
+                 f"then {market[0]}-focused price comparison sites. "
+                 if market else "Search current online shops and price comparison sites. ")
+        prompt = (
+            f"Find the current retail price of this exact {subject}:\n{ctx}\n\n"
+            f"{where}Use the price for this specific bottling and vintage, not a different "
+            f"year or a similarly named product. Return ONLY valid JSON:\n{schema}\n{rules}")
+    elif scope == "profile":
+        what = ("taste profile" if category in ("whisky", "spirit")
+                else "drinking window, maturity phases, taste profile and food pairings")
+        prompt = (
+            f"Re-assess the {what} of this {subject} using your {subject} expertise:\n{ctx}\n\n"
+            f"These are estimates, not label facts - base them on the style, origin and age "
+            f"given above. Do NOT re-identify the bottle and do NOT change any other field. "
+            f"Return ONLY valid JSON:\n{schema}\n{rules}")
+    elif image_b64 and context_parts:
+        prompt = f"Analyze this {subject} bottle label image. The user already knows:\n{ctx}\n\nExtract/verify the following fields and return ONLY valid JSON:\n{schema}\n{rules}"
     elif image_b64:
-        prompt = f"Analyze this wine bottle label image. Extract the following fields and return ONLY valid JSON:\n{schema}\n{rules}"
+        prompt = f"Analyze this {subject} bottle label image. Extract the following fields and return ONLY valid JSON:\n{schema}\n{rules}"
     else:
-        ctx = "\n".join(context_parts)
-        prompt = f"Based on the following wine information, fill in as many missing details as possible using your wine expertise. Known information:\n{ctx}\n\nReturn ONLY valid JSON with these fields (fill in what you can determine):\n{schema}\n{rules}"
+        prompt = f"Based on the following {subject} information, fill in as many missing details as possible using your {subject} expertise. Known information:\n{ctx}\n\nReturn ONLY valid JSON with these fields (fill in what you can determine):\n{schema}\n{rules}"
 
     provider = opts.get("ai_provider", "none").strip().lower()
     dispatch = {
@@ -2772,8 +3292,18 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context):
     if known_winery:
         fields["winery"] = known_winery
 
-    if fields.get("wine_type") and fields["wine_type"] not in WINE_TYPES:
-        fields["wine_type"] = ""
+    if fields.get("wine_type"):
+        # Wine types come from a constant; spirit types need the DB, which is
+        # only available inside a request (this helper also runs from tests).
+        if category == "wine":
+            allowed = set(WINE_TYPES)
+        else:
+            try:
+                allowed = _valid_types(get_db(), category)
+            except Exception:
+                allowed = set()
+        if allowed and fields["wine_type"] not in allowed:
+            fields["wine_type"] = ""
 
     return fields
 
@@ -2790,13 +3320,24 @@ def reanalyze_wine():
     body = request.get_json(silent=True) or {}
     image_filename = (body.get("image_filename") or "").strip()
     wine_context = body.get("wine_context") or {}
+    scope = (body.get("scope") or "all").strip().lower()
+    if scope not in AI_SCOPES:
+        scope = "all"
 
     image_b64, media_type = _load_image_b64(image_filename)
 
     try:
-        fields = _analyze_wine_from_context(opts, image_b64, media_type, wine_context)
-        fields = _canonicalize_ai_fields(get_db(), fields)
-        return jsonify({"ok": True, "fields": fields})
+        fields = _analyze_wine_from_context(opts, image_b64, media_type, wine_context, scope)
+        _cat = (str(wine_context.get("category") or "wine")).strip().lower()
+        _cat = _cat if _cat in CATEGORIES else "wine"
+        fields = _canonicalize_ai_fields(get_db(), fields, _cat)
+        # A scoped call must not smuggle in fields nobody asked for, even when
+        # the model ignores the instruction and answers with extras.
+        allowed = _scope_keys(_cat, scope)
+        if allowed is not None:
+            keep = set(allowed) | {"ai_rationale"}
+            fields = {k: v for k, v in fields.items() if k in keep}
+        return jsonify({"ok": True, "fields": fields, "scope": scope})
 
     except ValueError as e:
         code = str(e)
@@ -3088,9 +3629,9 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
 
     db.execute(
         """INSERT INTO wines
-           (name, year, type, region, quantity, rating, notes, image, added,
+           (name, year, type, region, quantity, rating, notes, description, image, added,
             purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             name,
             year,
@@ -3098,7 +3639,10 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
             data.get("region", ""),
             quantity,
             rating,
+            # notes only when the user dictated one; the assistant's own prose
+            # about the bottle goes to description.
             data.get("notes", ""),
+            data.get("description", ""),
             wine_image,
             now,
             data.get("purchased_at", ""),
@@ -3208,7 +3752,7 @@ def _process_chat_edit_wine(response_text, db):
     updates = {}
     field_map = {
         "name": str, "region": str, "grape": str, "notes": str,
-        "location": str, "purchased_at": str,
+        "description": str, "location": str, "purchased_at": str,
     }
     for field, cast in field_map.items():
         if field in data and data[field] is not None:
@@ -3310,6 +3854,7 @@ def _process_chat_delete_wine(response_text, db):
         if os.path.isfile(img_path):
             os.remove(img_path)
 
+    delete_wine_children(db, wine_id)
     db.execute("DELETE FROM wines WHERE id = ?", (wine_id,))
     # Log to timeline
     if wine_qty > 0:
@@ -3513,17 +4058,23 @@ def api_chat():
             f"If multiple images were uploaded, ask the user which image to use.\n"
             f"[ADD_WINE]\n"
             f'{{"name": "Wine Name", "year": 2020, "wine_type": "Rotwein", "region": "Region, Country", '
-            f'"grape": "Grape Variety", "quantity": 1, "rating": 0, "notes": "Tasting notes", '
+            f'"grape": "Grape Variety", "quantity": 1, "rating": 0, '
+            f'"description": "2-3 sentences about style, aroma and taste", '
             f'"price": 0, "drink_from": null, "drink_until": null, "location": "", '
             f'"image_index": 1}}\n'
             f"[/ADD_WINE]\n"
-            f"- image_index: which uploaded image to use (1-based), or null for no image\n\n"
+            f"- image_index: which uploaded image to use (1-based), or null for no image\n"
+            f"- description: YOUR text about the bottle (style, aroma, taste)\n"
+            f'- notes: the USER\'S own field. Only ever set it when the user explicitly '
+            f'dictates a note ("note down that this was for the wedding"). Never put a '
+            f"tasting description there.\n\n"
             f"=== EDIT WINE ===\n"
             f"Use the wine ID from [ID:...] in the cellar data. Only include fields that should change.\n"
             f"[EDIT_WINE]\n"
             f'{{"id": 42, "year": 2021, "quantity": 3, "rating": 4}}\n'
             f"[/EDIT_WINE]\n"
-            f"- Supported fields: name, year, wine_type, region, grape, quantity, rating, notes, price, drink_from, drink_until, location, purchased_at\n\n"
+            f"- Supported fields: name, year, wine_type, region, grape, quantity, rating, description, notes, price, drink_from, drink_until, location, purchased_at\n"
+            f"- Same rule as above: notes only on the user's explicit dictation.\n\n"
             f"=== DELETE WINE ===\n"
             f"Use the wine ID from [ID:...] in the cellar data. Be VERY careful - always double-confirm deletion.\n"
             f"[DELETE_WINE]\n"
@@ -3652,31 +4203,67 @@ def api_reference_detail(entity, entry_id):
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
+# The answer for a given (value, candidates) never changes, and the same unknown
+# value gets asked again every time the user re-saves the same bottle. Keeping
+# the verdicts in memory turns those repeats into instant responses. Bounded so a
+# long-running instance cannot grow without limit; cleared on restart.
+_RC_PICK_CACHE = {}
+_RC_PICK_CACHE_MAX = 500
+
+
 def _ai_reconcile_pick(opts, entity, value, candidates):
     """Ask the configured AI which known candidate equals `value`, or None."""
     if not candidates:
         return None
-    label = "grape variety" if entity == "grape" else "wine region"
+    key = (entity, reference.normalize_name(value), tuple(candidates))
+    if key in _RC_PICK_CACHE:
+        return _RC_PICK_CACHE[key]
+
+    label = {"grape": "grape variety", "spirit_region": "spirit region"}.get(entity, "wine region")
     prompt = (
         f'A user entered the {label} "{value}". Which ONE of the following known '
         f'{label}s is the same thing? Reply with the exact name from the list, or the '
         f'single word NEW if none match.\nList:\n' + "\n".join("- " + c for c in candidates)
     )
+    pick = None
     try:
         resp = _call_chat(opts.get("ai_provider"), [{"role": "user", "content": prompt}], "", opts)
         ans = reference.normalize_name((resp or "").strip().strip('".'))
         for c in candidates:
             if reference.normalize_name(c) == ans:
-                return c
+                pick = c
+                break
     except Exception:
         app.logger.exception("AI reconcile pick failed")
-    return None
+        return None          # a failure is not a verdict - do not cache it
+
+    if len(_RC_PICK_CACHE) >= _RC_PICK_CACHE_MAX:
+        _RC_PICK_CACHE.clear()
+    _RC_PICK_CACHE[key] = pick
+    return pick
+
+
+# A fuzzy score this high needs no second opinion ("Sylvaner" vs "Silvaner");
+# below the lower bound nothing plausible exists, so the AI would only say NEW.
+# Both bounds exist to keep the save path off the network whenever possible.
+_RC_AI_CERTAIN = 0.92
+_RC_AI_HOPELESS = 0.45
+# Hard ceiling on the whole AI stage. Reconciliation is a convenience; saving
+# must never hang behind it. A single pick measured 3-12s against a reasoning
+# model, so this cuts the tail rather than the typical case.
+_RC_AI_TIMEOUT = 8.0
 
 
 @app.route("/api/reference/reconcile", methods=["POST"])
 def api_reference_reconcile():
     """For unknown grape/region values, return known-match suggestions (+ an AI
-    pick when configured) so the save flow can ask the user to reconcile."""
+    pick when configured) so the save flow can ask the user to reconcile.
+
+    Every unknown value used to cost one *serial* AI round-trip, which made
+    saving take 20s+ for a three-grape blend. Now the DB work happens first and
+    only the genuinely ambiguous values go to the AI - concurrently, so the wait
+    is one round-trip instead of one per value.
+    """
     db = get_db()
     body = request.get_json(silent=True) or {}
     country = (body.get("country") or "").strip()
@@ -3688,31 +4275,76 @@ def api_reference_reconcile():
     opts = load_options()
     ai_on = _is_ai_configured(opts)
     items = []
+    ai_jobs = []          # (item, entity, value, candidate names) - resolved below
 
     def _reconcile(entity, value, scope):
         if not value or reference.match_reference(db, entity, value, scope):
             return  # empty or already known (exact/alias) - nothing to reconcile
+        scored = reference.suggest_scored(db, entity, value, scope, limit=5)
         suggestions = [
             {"id": r["id"], "name": r["name"], "is_custom": r["is_custom"]}
-            for r in reference.suggest_matches(db, entity, value, scope, limit=5)
+            for _, r in scored
         ]
-        ai_pick = _ai_reconcile_pick(opts, entity, value, [s["name"] for s in suggestions]) if ai_on else None
-        items.append({"entity": entity, "value": value, "country_code": country_code,
-                      "suggestions": suggestions, "ai_pick": ai_pick})
+        item = {"entity": entity, "value": value, "country_code": country_code,
+                "suggestions": suggestions, "ai_pick": None, "pick_source": None}
+        items.append(item)
 
-    # Grapes: accept both a singular "grape" and a "grapes" list (blends).
-    grape_values = []
-    single = (body.get("grape") or "").strip()
-    if single:
-        grape_values.append(single)
-    for gv in (body.get("grapes") or []):
-        gv = (str(gv) or "").strip()
-        if gv and gv not in grape_values:
-            grape_values.append(gv)
-    for value in grape_values:
-        _reconcile("grape", value, None)
+        top = scored[0][0] if scored else 0.0
+        if top >= _RC_AI_CERTAIN:
+            # Decisive spelling match - calling an AI to confirm "Merlott" is
+            # "Merlot" would only cost seconds. Flagged as such so the dialog
+            # does not credit the AI for it.
+            item["ai_pick"] = suggestions[0]["name"]
+            item["pick_source"] = "fuzzy"
+        elif ai_on and suggestions and top >= _RC_AI_HOPELESS:
+            ai_jobs.append((item, entity, value, [s["name"] for s in suggestions]))
 
-    _reconcile("region", (body.get("region") or "").strip(), country_code)
+    category = (body.get("category") or "wine").strip().lower()
+    if category not in CATEGORIES:
+        category = "wine"
+
+    # Grapes are a wine-only concept.
+    if category == "wine":
+        # Accept both a singular "grape" and a "grapes" list (blends).
+        grape_values = []
+        single = (body.get("grape") or "").strip()
+        if single:
+            grape_values.append(single)
+        for gv in (body.get("grapes") or []):
+            gv = (str(gv) or "").strip()
+            if gv and gv not in grape_values:
+                grape_values.append(gv)
+        for value in grape_values:
+            _reconcile("grape", value, None)
+
+    _reconcile(reference.region_entity(category),
+               (body.get("region") or "").strip(), country_code)
+
+    # The AI picks are independent of each other and touch no DB connection, so
+    # they run side by side. Wall time = the slowest single call, not their sum.
+    if ai_jobs:
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(max_workers=min(5, len(ai_jobs)))
+        try:
+            futures = [
+                (pool.submit(_ai_reconcile_pick, opts, entity, value, names), item)
+                for item, entity, value, names in ai_jobs
+            ]
+            # One shared deadline, not one per call - otherwise n slow providers
+            # would still add up to n * timeout.
+            deadline = time.monotonic() + _RC_AI_TIMEOUT
+            for fut, item in futures:
+                try:
+                    item["ai_pick"] = fut.result(
+                        timeout=max(0.0, deadline - time.monotonic()))
+                    if item["ai_pick"]:
+                        item["pick_source"] = "ai"
+                except Exception:
+                    item["ai_pick"] = None   # slow/failed provider: just no pick
+        finally:
+            # Do not wait on stragglers - the user is waiting to save. Their
+            # threads finish in the background and their results are discarded.
+            pool.shutdown(wait=False)
 
     return jsonify({"ok": True, "items": items})
 
@@ -3828,6 +4460,33 @@ def api_wine_purchase_detail(wine_id, pid):
         return jsonify({"ok": False, "error": "not_found"}), 404
     return jsonify({"ok": True, "purchases": purchases.list_purchases(db, wine_id),
                     **purchases.weighted_average(db, wine_id)})
+
+
+def _spirit_action(wine_id, fn):
+    """Shared plumbing for the open-bottle actions."""
+    db = get_db()
+    if not db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    if not fn(db):
+        return jsonify({"ok": False, "error": "not_possible"}), 400
+    return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
+
+
+@app.route("/api/wine/<int:wine_id>/open", methods=["POST"])
+def api_wine_open(wine_id):
+    return _spirit_action(
+        wine_id, lambda db: spirits.open_bottle(db, wine_id, str(date.today())))
+
+
+@app.route("/api/wine/<int:wine_id>/fill", methods=["POST"])
+def api_wine_fill(wine_id):
+    percent = (request.get_json(silent=True) or {}).get("percent")
+    return _spirit_action(wine_id, lambda db: spirits.set_fill_level(db, wine_id, percent))
+
+
+@app.route("/api/wine/<int:wine_id>/finish", methods=["POST"])
+def api_wine_finish(wine_id):
+    return _spirit_action(wine_id, lambda db: spirits.finish_bottle(db, wine_id))
 
 
 @app.route("/api/wine/<int:wine_id>/images/vivino", methods=["POST"])
