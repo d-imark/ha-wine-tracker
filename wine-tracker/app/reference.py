@@ -1,6 +1,7 @@
 """Reference-data layer (TP1): schema, idempotent seeding, matching, listing.
 
-Bundled reference data (countries, regions, grapes, wine types, bottle formats)
+Bundled reference data (countries, wine + spirit regions, grapes, wine types,
+spirit types, cask types, bottle formats)
 lives in reference_data.py and is seeded into DB tables so users can extend it
 with their own (is_custom=1) entries. Functions take a sqlite3 connection so they
 are usable both inside the Flask app and in tests.
@@ -18,9 +19,18 @@ import reference_data as rd
 _ENTITY_TABLE = {
     "country": "ref_countries",
     "region": "ref_regions",
+    "spirit_region": "ref_spirit_regions",
     "grape": "ref_grapes",
     "wine_type": "ref_wine_types",
 }
+
+# Both region entities share the same table shape and country scoping.
+_REGION_ENTITIES = ("region", "spirit_region")
+
+
+def region_entity(category):
+    """Wine and spirits keep separate region lists - pick the right one."""
+    return "spirit_region" if str(category or "").lower() in ("whisky", "spirit") else "region"
 
 
 class UnknownEntity(Exception):
@@ -48,6 +58,10 @@ _DDL = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT, norm TEXT, country_code TEXT, lat REAL, lon REAL,
         aliases TEXT, is_custom INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS ref_spirit_regions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, norm TEXT, country_code TEXT, lat REAL, lon REAL,
+        aliases TEXT, is_custom INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)""",
     """CREATE TABLE IF NOT EXISTS ref_grapes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE, norm TEXT, color TEXT, aliases TEXT,
@@ -59,6 +73,14 @@ _DDL = [
     """CREATE TABLE IF NOT EXISTS ref_bottle_formats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE, norm TEXT, liters REAL,
+        is_custom INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS ref_spirit_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE, norm TEXT, color TEXT, aliases TEXT,
+        is_custom INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS ref_cask_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE, norm TEXT, aliases TEXT,
         is_custom INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)""",
 ]
 
@@ -109,6 +131,20 @@ def seed_reference_data(db):
         db.executemany("INSERT INTO ref_regions (name,norm,country_code,lat,lon,aliases,sort_order) "
                        "VALUES (?,?,?,?,?,?,?)", rows)
 
+    # spirit regions - own list, same natural key: (norm, country_code)
+    seen = {(r[0], r[1]) for r in db.execute("SELECT norm, country_code FROM ref_spirit_regions")}
+    rows = []
+    for i, r in enumerate(rd.SPIRIT_REGIONS):
+        norm = normalize_name(r["name"])
+        key = (norm, r["country_code"])
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append((r["name"], norm, r["country_code"], r.get("lat"), r.get("lon"), _al(r), i))
+    if rows:
+        db.executemany("INSERT INTO ref_spirit_regions (name,norm,country_code,lat,lon,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?,?,?)", rows)
+
     # grapes - natural key: norm
     seen = {r[0] for r in db.execute("SELECT norm FROM ref_grapes")}
     rows = []
@@ -147,6 +183,31 @@ def seed_reference_data(db):
         db.executemany("INSERT INTO ref_bottle_formats (name,norm,liters,sort_order) "
                        "VALUES (?,?,?,?)", rows)
 
+    # spirit_types - natural key: key
+    seen = {r[0] for r in db.execute("SELECT key FROM ref_spirit_types")}
+    rows = []
+    for i, s in enumerate(rd.SPIRIT_TYPES):
+        if s["key"] in seen:
+            continue
+        seen.add(s["key"])
+        rows.append((s["key"], normalize_name(s["key"]), s.get("color"), _al(s), i))
+    if rows:
+        db.executemany("INSERT INTO ref_spirit_types (key,norm,color,aliases,sort_order) "
+                       "VALUES (?,?,?,?,?)", rows)
+
+    # cask_types - natural key: norm
+    seen = {r[0] for r in db.execute("SELECT norm FROM ref_cask_types")}
+    rows = []
+    for i, c in enumerate(rd.CASK_TYPES):
+        norm = normalize_name(c["name"])
+        if norm in seen:
+            continue
+        seen.add(norm)
+        rows.append((c["name"], norm, _al(c), i))
+    if rows:
+        db.executemany("INSERT INTO ref_cask_types (name,norm,aliases,sort_order) "
+                       "VALUES (?,?,?,?)", rows)
+
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
@@ -161,12 +222,34 @@ def _alias_norms(row):
     return {normalize_name(a) for a in _aliases_list(row)}
 
 
+def migrate_spirit_regions_out_of_regions(db):
+    """Remove the whisky regions that an earlier build seeded into ref_regions.
+
+    They now live in ref_spirit_regions. Only built-in rows (is_custom=0) are
+    dropped - a region the user added themselves stays where they put it. The
+    wines' region text is never touched.
+
+    Deliberately an explicit list, NOT all of SPIRIT_REGIONS: names like Jerez
+    and Cognac are genuine wine regions too and must stay in ref_regions.
+    """
+    stray = [("Islay", "GB"), ("Speyside", "GB"), ("Highlands", "GB"),
+             ("Lowlands", "GB"), ("Campbeltown", "GB"), ("Islands", "GB")]
+    removed = 0
+    for name, cc in stray:
+        cur = db.execute(
+            "DELETE FROM ref_regions WHERE norm=? AND country_code=? AND is_custom=0",
+            (normalize_name(name), cc))
+        removed += cur.rowcount or 0
+    return removed
+
+
 def match_reference(db, entity, value, country_code=None):
     """Return the matching reference row or None.
 
-    entity: 'country' | 'region' | 'grape' | 'wine_type'
-    Country matches by ISO code first, then normalized name/aliases. Region is
-    matched within country_code when given.
+    entity: 'country' | 'region' | 'spirit_region' | 'grape' | 'wine_type' |
+            'spirit_type' | 'cask_type'
+    Country matches by ISO code first, then normalized name/aliases. Both region
+    entities are matched within country_code when given.
     """
     nv = normalize_name(value)
 
@@ -197,11 +280,27 @@ def match_reference(db, entity, value, country_code=None):
                 return row
         return None
 
-    if entity == "region":
+    if entity == "spirit_type":
+        if not nv:
+            return None
+        for row in db.execute("SELECT * FROM ref_spirit_types"):
+            if row["norm"] == nv or normalize_name(row["key"]) == nv or nv in _alias_norms(row):
+                return row
+        return None
+
+    if entity == "cask_type":
+        if not nv:
+            return None
+        for row in db.execute("SELECT * FROM ref_cask_types"):
+            if row["norm"] == nv or nv in _alias_norms(row):
+                return row
+        return None
+
+    if entity in _REGION_ENTITIES:
         if not nv:
             return None
         cc = country_code.upper() if country_code else None
-        for row in db.execute("SELECT * FROM ref_regions"):
+        for row in db.execute(f"SELECT * FROM {_ENTITY_TABLE[entity]}"):
             if cc and (row["country_code"] or "").upper() != cc:
                 continue
             if row["norm"] == nv or nv in _alias_norms(row):
@@ -229,22 +328,23 @@ def add_custom_entry(db, entity, **fields):
             (name, norm, fields.get("color"), aliases))
         return db.execute("SELECT * FROM ref_grapes WHERE id=?", (cur.lastrowid,)).fetchone()
 
-    if entity == "region":
+    if entity in _REGION_ENTITIES:
+        table = _ENTITY_TABLE[entity]
         cur = db.execute(
-            "INSERT INTO ref_regions (name,norm,country_code,lat,lon,aliases,is_custom,sort_order) "
+            f"INSERT INTO {table} (name,norm,country_code,lat,lon,aliases,is_custom,sort_order) "
             "VALUES (?,?,?,?,?,?,1,0)",
             (name, norm, fields.get("country_code"), fields.get("lat"), fields.get("lon"), aliases))
-        return db.execute("SELECT * FROM ref_regions WHERE id=?", (cur.lastrowid,)).fetchone()
+        return db.execute(f"SELECT * FROM {table} WHERE id=?", (cur.lastrowid,)).fetchone()
 
     raise UnknownEntity(f"add_custom_entry unsupported for entity: {entity}")
 
 
-def suggest_matches(db, entity, value, country_code=None, limit=5):
-    """Return reference rows ranked by fuzzy similarity to `value`, best first.
+def suggest_scored(db, entity, value, country_code=None, limit=5):
+    """Like suggest_matches, but returns (score, row) pairs.
 
-    Basis for the no-AI reconciliation fallback: when a value doesn't match
-    exactly, offer the closest known entries. Regions are scoped to country_code.
-    Score = best fuzzy ratio over the entry's name + its aliases.
+    The caller needs the scores to decide whether asking an AI is worth it: a
+    near-perfect fuzzy hit needs no second opinion, and a hopeless one has no
+    candidate for the AI to pick either way.
     """
     table = _ENTITY_TABLE.get(entity)
     if not table:
@@ -254,14 +354,24 @@ def suggest_matches(db, entity, value, country_code=None, limit=5):
 
     scored = []
     for row in db.execute(f"SELECT * FROM {table}"):
-        if entity == "region" and cc and (row["country_code"] or "").upper() != cc:
+        if entity in _REGION_ENTITIES and cc and (row["country_code"] or "").upper() != cc:
             continue
         candidates = [row["norm"]] + list(_alias_norms(row))
         score = max((difflib.SequenceMatcher(None, nv, c).ratio() for c in candidates if c),
                     default=0.0)
         scored.append((score, row))
     scored.sort(key=lambda t: t[0], reverse=True)
-    return [row for _, row in scored[:limit]]
+    return scored[:limit]
+
+
+def suggest_matches(db, entity, value, country_code=None, limit=5):
+    """Return reference rows ranked by fuzzy similarity to `value`, best first.
+
+    Basis for the no-AI reconciliation fallback: when a value doesn't match
+    exactly, offer the closest known entries. Regions are scoped to country_code.
+    Score = best fuzzy ratio over the entry's name + its aliases.
+    """
+    return [row for _, row in suggest_scored(db, entity, value, country_code, limit)]
 
 
 def add_alias(db, entity, entry_id, alias):
@@ -290,12 +400,19 @@ _CRUD = {
                         "required": ["code", "name"], "namecol": "name"},
     "regions":        {"table": "ref_regions", "cols": ["name", "country_code", "lat", "lon", "aliases"],
                         "required": ["name", "country_code"], "namecol": "name"},
+    "spirit_regions": {"table": "ref_spirit_regions",
+                        "cols": ["name", "country_code", "lat", "lon", "aliases"],
+                        "required": ["name", "country_code"], "namecol": "name"},
     "grapes":         {"table": "ref_grapes", "cols": ["name", "color", "aliases"],
                         "required": ["name"], "namecol": "name"},
     "wine_types":     {"table": "ref_wine_types", "cols": ["key", "color", "aliases"],
                         "required": ["key"], "namecol": "key"},
     "bottle_formats": {"table": "ref_bottle_formats", "cols": ["name", "liters"],
                         "required": ["name", "liters"], "namecol": "name"},
+    "spirit_types":   {"table": "ref_spirit_types", "cols": ["key", "color", "aliases"],
+                        "required": ["key"], "namecol": "key"},
+    "cask_types":     {"table": "ref_cask_types", "cols": ["name", "aliases"],
+                        "required": ["name"], "namecol": "name"},
 }
 
 _FLOAT_COLS = {"lat", "lon", "liters"}
@@ -323,7 +440,7 @@ def _norm_value(entity, fields):
 def _duplicate_exists(db, entity, norm, fields, exclude_id=None):
     spec = _CRUD[entity]
     table = spec["table"]
-    if entity == "regions":
+    if entity in ("regions", "spirit_regions"):
         sql = "SELECT id FROM %s WHERE norm=? AND country_code=?" % table
         params = [norm, _coerce("country_code", fields.get("country_code"))]
     elif entity == "countries":
@@ -413,9 +530,12 @@ def delete_custom(db, entity, entry_id):
 _LIST = {
     "countries":      ("ref_countries",      "name"),
     "regions":        ("ref_regions",        "name"),
+    "spirit_regions": ("ref_spirit_regions", "name"),
     "grapes":         ("ref_grapes",         "name"),
     "wine_types":     ("ref_wine_types",     "key"),
     "bottle_formats": ("ref_bottle_formats", "sort_order"),
+    "spirit_types":   ("ref_spirit_types",   "sort_order"),
+    "cask_types":     ("ref_cask_types",     "sort_order"),
 }
 
 
@@ -425,7 +545,7 @@ def list_reference(db, entity, country=None):
     table, name_col = _LIST[entity]
     sql = f"SELECT * FROM {table}"
     params = []
-    if entity == "regions" and country:
+    if entity in ("regions", "spirit_regions") and country:
         sql += " WHERE country_code=?"
         params.append(country.upper())
     sql += f" ORDER BY sort_order, {name_col}"

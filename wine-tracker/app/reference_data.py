@@ -503,3 +503,108 @@ BOTTLE_FORMATS = [
     {'name': 'Balthazar', 'liters': 12.0},
     {'name': 'Nebuchadnezzar', 'liters': 15.0},
 ]
+
+
+# ── Spirits (whisky focus) ────────────────────────────────────────────────────
+# Types the `wines.type` column uses when category is 'whisky' or 'spirit'.
+SPIRIT_TYPES = [
+    {'key': 'Single Malt', 'color': '#b8860b', 'aliases': ['Single Malt Whisky', 'Single Malt Scotch']},
+    {'key': 'Blended Malt', 'color': '#b8860b', 'aliases': ['Vatted Malt']},
+    {'key': 'Blended Scotch', 'color': '#b8860b', 'aliases': ['Blend', 'Blended Whisky']},
+    {'key': 'Single Grain', 'color': '#b8860b', 'aliases': ['Grain']},
+    {'key': 'Bourbon', 'color': '#a0522d', 'aliases': ['Straight Bourbon']},
+    {'key': 'Rye', 'color': '#a0522d', 'aliases': ['Rye Whiskey']},
+    {'key': 'Tennessee', 'color': '#a0522d', 'aliases': ['Tennessee Whiskey']},
+    {'key': 'Irish', 'color': '#b8860b', 'aliases': ['Irish Whiskey']},
+    {'key': 'Rum', 'color': '#8b4513', 'aliases': ['Ron', 'Rhum']},
+    {'key': 'Gin', 'color': '#5f9ea0', 'aliases': ['London Dry']},
+    {'key': 'Cognac', 'color': '#a0522d', 'aliases': []},
+    {'key': 'Armagnac', 'color': '#a0522d', 'aliases': []},
+    {'key': 'Brandy', 'color': '#a0522d', 'aliases': ['Weinbrand']},
+    {'key': 'Grappa', 'color': '#dcdcdc', 'aliases': ['Marc', 'Tresterbrand']},
+    {'key': 'Tequila', 'color': '#9acd32', 'aliases': []},
+    {'key': 'Mezcal', 'color': '#9acd32', 'aliases': []},
+    {'key': 'Wodka', 'color': '#dcdcdc', 'aliases': ['Vodka']},
+    {'key': 'Likör', 'color': '#da70d6', 'aliases': ['Liqueur', 'Likoer']},
+    {'key': 'Obstbrand', 'color': '#dcdcdc', 'aliases': ['Eau de Vie', 'Schnaps']},
+    {'key': 'Anderes Destillat', 'color': None, 'aliases': ['Sonstiges Destillat']},
+]
+
+# Cask types for the maturation chain (initial cask + finishes).
+CASK_TYPES = [
+    {'name': 'Ex-Bourbon', 'aliases': ['Bourbon', 'Bourbon Barrel', 'American Oak']},
+    {'name': 'Oloroso Sherry', 'aliases': ['Oloroso']},
+    {'name': 'PX Sherry', 'aliases': ['PX', 'Pedro Ximenez', 'Pedro Ximénez']},
+    {'name': 'Fino Sherry', 'aliases': ['Fino']},
+    {'name': 'Amontillado Sherry', 'aliases': ['Amontillado']},
+    {'name': 'Sherry', 'aliases': ['Sherry Cask']},
+    {'name': 'Port', 'aliases': ['Portwein', 'Port Pipe']},
+    {'name': 'Madeira', 'aliases': []},
+    {'name': 'Sauternes', 'aliases': []},
+    {'name': 'Rotweinfass', 'aliases': ['Red Wine', 'Wine Cask', 'Rotwein']},
+    {'name': 'Virgin Oak', 'aliases': ['New Oak', 'Neues Holz']},
+    {'name': 'Rumfass', 'aliases': ['Rum Cask']},
+    {'name': 'Mizunara', 'aliases': ['Japanese Oak']},
+    {'name': 'Refill Hogshead', 'aliases': ['Hogshead', 'Refill']},
+    {'name': 'Quarter Cask', 'aliases': []},
+    {'name': 'Butt', 'aliases': ['Sherry Butt']},
+]
+
+# Spirit regions - a list of their own. Wine and spirit regions barely overlap
+# and the few shared names (Cognac, Jerez) mean different things per category,
+# so mixing them into REGIONS produced nonsense suggestions in both directions.
+SPIRIT_REGIONS = [
+    # Scotland
+    {'name': 'Islay', 'country_code': 'GB', 'lat': 55.75, 'lon': -6.20, 'aliases': []},
+    {'name': 'Speyside', 'country_code': 'GB', 'lat': 57.45, 'lon': -3.20, 'aliases': []},
+    {'name': 'Highlands', 'country_code': 'GB', 'lat': 57.12, 'lon': -4.71,
+     'aliases': ['Highland', 'Northern Highlands', 'Western Highlands']},
+    {'name': 'Lowlands', 'country_code': 'GB', 'lat': 55.60, 'lon': -3.80,
+     'aliases': ['Lowland']},
+    {'name': 'Campbeltown', 'country_code': 'GB', 'lat': 55.42, 'lon': -5.60, 'aliases': []},
+    {'name': 'Islands', 'country_code': 'GB', 'lat': 57.50, 'lon': -6.20,
+     'aliases': ['Island', 'Orkney', 'Skye', 'Jura', 'Mull', 'Arran']},
+    # Ireland
+    {'name': 'Irland', 'country_code': 'IE', 'lat': 53.35, 'lon': -7.75,
+     'aliases': ['Ireland', 'Irish']},
+    # United States
+    {'name': 'Kentucky', 'country_code': 'US', 'lat': 37.84, 'lon': -84.27, 'aliases': []},
+    {'name': 'Tennessee', 'country_code': 'US', 'lat': 35.86, 'lon': -86.66, 'aliases': []},
+    {'name': 'Indiana', 'country_code': 'US', 'lat': 39.77, 'lon': -86.15,
+     'aliases': ['MGP']},
+    # Rest of the whisky world
+    {'name': 'Honshu', 'country_code': 'JP', 'lat': 36.20, 'lon': 138.25,
+     'aliases': ['Japan', 'Nagano', 'Yamanashi']},
+    {'name': 'Hokkaido', 'country_code': 'JP', 'lat': 43.06, 'lon': 141.35, 'aliases': []},
+    {'name': 'Yilan', 'country_code': 'TW', 'lat': 24.75, 'lon': 121.75,
+     'aliases': ['Taiwan', 'Ilan']},
+    {'name': 'Goa', 'country_code': 'IN', 'lat': 15.30, 'lon': 74.12, 'aliases': []},
+    {'name': 'Tasmanien', 'country_code': 'AU', 'lat': -42.05, 'lon': 146.80,
+     'aliases': ['Tasmania']},
+    # Brandy / other spirits
+    {'name': 'Cognac', 'country_code': 'FR', 'lat': 45.69, 'lon': -0.33, 'aliases': []},
+    {'name': 'Armagnac', 'country_code': 'FR', 'lat': 43.85, 'lon': 0.10, 'aliases': []},
+    {'name': 'Normandie', 'country_code': 'FR', 'lat': 49.10, 'lon': 0.10,
+     'aliases': ['Normandy', 'Calvados', 'Pays d’Auge']},
+    {'name': 'Jerez', 'country_code': 'ES', 'lat': 36.68, 'lon': -6.14,
+     'aliases': ['Brandy de Jerez']},
+    {'name': 'Jalisco', 'country_code': 'MX', 'lat': 20.66, 'lon': -103.35,
+     'aliases': ['Tequila']},
+    {'name': 'Oaxaca', 'country_code': 'MX', 'lat': 17.07, 'lon': -96.72,
+     'aliases': ['Mezcal']},
+    # Countries without an established regional system for spirits get one
+    # country-level entry, so the region field still resolves on the map.
+    {'name': 'Schweiz', 'country_code': 'CH', 'lat': 46.80, 'lon': 8.23,
+     'aliases': ['Switzerland', 'Suisse', 'Svizzera']},
+    {'name': 'Deutschland', 'country_code': 'DE', 'lat': 51.17, 'lon': 10.45,
+     'aliases': ['Germany']},
+]
+
+# Spirit bottle sizes - names stay bare, the UI appends the litre value.
+BOTTLE_FORMATS += [
+    {'name': 'Spirituose', 'liters': 0.7},
+    {'name': 'Halbliter', 'liters': 0.5},
+    {'name': 'Kleinflasche', 'liters': 0.35},
+    {'name': 'Probe', 'liters': 0.2},
+    {'name': 'Miniatur', 'liters': 0.05},
+]

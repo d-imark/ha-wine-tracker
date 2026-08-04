@@ -193,7 +193,9 @@ class TestTranslateWineType:
 class TestWineJsonSchema:
     def test_schema_contains_all_fields(self):
         schema = wine_app._wine_json_schema()
-        for field in ["name", "winery", "region", "grape", "grapes", "price", "notes"]:
+        # `notes` is deliberately absent - it belongs to the user, the AI writes
+        # `description` instead. See TestAiNeverWritesNotes.
+        for field in ["name", "winery", "region", "grape", "grapes", "price", "description"]:
             assert field in schema
 
     def test_schema_omits_bottle_format(self):
@@ -204,6 +206,246 @@ class TestWineJsonSchema:
     def test_rules_request_the_configured_currency(self):
         rules = wine_app._wine_json_rules("de", "EUR")
         assert "EUR" in rules
+
+
+class TestAiScopes:
+    """A scoped refresh must ask for its fields only - both in the schema and in
+    the ruleset, so the model has neither the slots nor the instructions to
+    rewrite anything else."""
+
+    def test_price_scope_asks_only_for_the_price(self):
+        s = wine_app._wine_json_schema("wine", "price")
+        assert '"price"' in s and '"ai_rationale"' in s
+        for gone in ("vintage", "grapes", "maturity_data", "taste_profile", "notes", "winery"):
+            assert gone not in s, gone
+
+    def test_profile_scope_asks_only_for_estimates(self):
+        s = wine_app._wine_json_schema("wine", "profile")
+        for want in ("drink_from", "drink_until", "maturity_data",
+                     "taste_profile", "food_pairings"):
+            assert want in s, want
+        for gone in ("vintage", "grapes", "price", "winery", "region"):
+            assert gone not in s, gone
+
+    def test_spirit_profile_scope_is_the_taste_profile(self):
+        s = wine_app._wine_json_schema("whisky", "profile")
+        assert "taste_profile" in s
+        # a whisky has no drinking window or maturity phases
+        for gone in ("maturity_data", "drink_from", "food_pairings", "abv", "casks"):
+            assert gone not in s, gone
+
+    def test_all_scope_is_unchanged(self):
+        assert (wine_app._wine_json_schema("wine", "all")
+                == wine_app._wine_json_schema("wine"))
+        s = wine_app._wine_json_schema("wine", "all")
+        for want in ("name", "winery", "vintage", "grapes", "price", "maturity_data"):
+            assert want in s, want
+
+    def test_unknown_scope_falls_back_to_all(self):
+        assert (wine_app._wine_json_schema("wine", "nonsense")
+                == wine_app._wine_json_schema("wine", "all"))
+
+    def test_scoped_rules_drop_unrelated_instructions(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "price")
+        assert "CHF" in rules
+        assert "maturity_data" not in rules
+        assert "food_pairings" not in rules
+        # and it is told explicitly not to volunteer anything else
+        assert "Return ONLY the listed keys" in rules
+
+    def test_full_rules_keep_every_instruction(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "all")
+        for want in ("maturity_data", "food_pairings", "drink_from", "grapes"):
+            assert want in rules, want
+        assert "Return ONLY the listed keys" not in rules
+
+    def test_profile_rules_do_not_mention_the_price(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "profile")
+        assert "retail bottle price" not in rules
+
+    def test_scoped_call_drops_the_image_and_uses_its_own_task_wording(self, monkeypatch):
+        """A price lookup is a search task: the label photo only costs tokens and
+        tempts the model into re-identifying the bottle."""
+        captured = {}
+
+        def fake_call(image_b64, media_type, prompt, opts):
+            captured["image"] = image_b64
+            captured["prompt"] = prompt
+            return '{"price": 42}'
+
+        monkeypatch.setattr(wine_app, "_call_openai", fake_call)
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "CHF",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, "ZmFrZQ==", "image/jpeg", {"name": "Barolo", "category": "wine"}, "price")
+        assert captured["image"] is None
+        assert "retail price" in captured["prompt"]
+        assert "bottle label image" not in captured["prompt"]
+
+    def test_profile_prompt_forbids_re_identifying(self, monkeypatch):
+        captured = {}
+        def grab(i, m, prompt, o):
+            captured["p"] = prompt
+            return "{}"
+
+        monkeypatch.setattr(wine_app, "_call_openai", grab)
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "CHF",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, None, None, {"name": "Barolo", "category": "wine"}, "profile")
+        assert "Do NOT re-identify" in captured["p"]
+        assert "drinking window" in captured["p"]
+
+    def test_spirit_profile_prompt_talks_about_taste_only(self, monkeypatch):
+        captured = {}
+        def grab(i, m, prompt, o):
+            captured["p"] = prompt
+            return "{}"
+
+        monkeypatch.setattr(wine_app, "_call_openai", grab)
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "CHF",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, None, None, {"name": "Lagavulin", "category": "whisky"}, "profile")
+        assert "taste profile" in captured["p"]
+        assert "whisky" in captured["p"] and "drinking window" not in captured["p"]
+
+    def test_scope_keys(self):
+        assert wine_app._scope_keys("wine", "all") is None
+        assert wine_app._scope_keys("wine", "price") == ("price",)
+        assert "maturity_data" in wine_app._scope_keys("wine", "profile")
+        assert wine_app._scope_keys("whisky", "profile") == ("taste_profile",)
+
+
+class TestAiNeverWritesNotes:
+    """`notes` is the user's field. The AI is not offered it anywhere - not in a
+    schema, not in a rule, not in the chat action format."""
+
+    @pytest.mark.parametrize("category", ["wine", "whisky", "spirit"])
+    @pytest.mark.parametrize("scope", ["all", "price", "profile"])
+    def test_no_schema_ever_requests_notes(self, category, scope):
+        assert '"notes"' not in wine_app._wine_json_schema(category, scope)
+
+    @pytest.mark.parametrize("category", ["wine", "whisky"])
+    def test_full_schema_requests_a_description(self, category):
+        assert '"description"' in wine_app._wine_json_schema(category, "all")
+
+    def test_rules_forbid_returning_notes(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "all")
+        assert 'NEVER return a "notes" field' in rules
+        assert "- description:" in rules
+
+    def test_description_is_requested_in_the_configured_language(self):
+        assert "German" in wine_app._wine_json_rules("de", "CHF", "wine", "all")
+        assert "Italian" in wine_app._wine_json_rules("it", "CHF", "wine", "all")
+
+    def test_scan_schema_asks_for_a_description_not_notes(self):
+        """The label-scan prompt is built separately from the reload schema."""
+        import re
+        src = open(os.path.join(APP_DIR, "app.py"), encoding="utf-8").read()
+        block = re.search(r'"wine name \(without the producer\)".*?food_pairings', src, re.S)
+        assert block, "scan schema block not found"
+        assert '"notes"' not in block.group(0)
+        assert '"description"' in block.group(0)
+
+    def test_chat_add_uses_description_and_guards_notes(self):
+        src = open(os.path.join(APP_DIR, "app.py"), encoding="utf-8").read()
+        assert '"description": "2-3 sentences about style, aroma and taste"' in src
+        assert '"notes": "Tasting notes"' not in src
+        # the guard text; matched without the apostrophe, which is escaped in the source
+        assert "own field. Only ever set it when the user explicitly" in src
+        assert "Never put a" in src and "tasting description there" in src
+
+
+class TestPriceMarket:
+    """A price from a foreign shop is the wrong answer even when it is correct.
+    There is no country option, so the market is derived from currency+language."""
+
+    @pytest.mark.parametrize("currency,lang,country,tld", [
+        ("CHF", "de", "Switzerland", ".ch"),
+        ("GBP", "en", "the United Kingdom", ".co.uk"),
+        ("USD", "en", "the United States", ".com"),
+        ("SEK", "sv", "Sweden", ".se"),
+    ])
+    def test_distinct_currency_decides_alone(self, currency, lang, country, tld):
+        assert wine_app._price_market(currency, lang) == (country, tld)
+
+    @pytest.mark.parametrize("lang,country", [
+        ("de", "Germany or Austria"), ("fr", "France"), ("it", "Italy"),
+        ("es", "Spain"), ("pt", "Portugal"), ("nl", "the Netherlands or Belgium"),
+    ])
+    def test_language_decides_inside_the_euro_zone(self, lang, country):
+        assert wine_app._price_market("EUR", lang)[0] == country
+
+    def test_lowercase_and_padded_currency(self):
+        assert wine_app._price_market(" chf ", "de")[0] == "Switzerland"
+
+    def test_unknown_currency_has_no_market(self):
+        assert wine_app._price_market("XYZ", "en") is None
+        assert wine_app._price_market("", "en") is None
+        assert wine_app._price_market(None, None) is None
+
+    def test_unknown_euro_language_has_no_market(self):
+        assert wine_app._price_market("EUR", "sv") is None
+
+    def test_price_rule_names_the_local_market_first(self):
+        rule = [l for l in wine_app._wine_json_rules("de", "CHF", "wine", "price").split("\n")
+                if l.startswith("- price")][0]
+        assert "shops located in Switzerland FIRST" in rule
+        assert ".ch domains" in rule
+        # and it must still demand the target currency
+        assert "in CHF" in rule
+
+    def test_price_rule_is_a_single_instruction(self):
+        """Two lines both starting with '- price:' read as competing rules."""
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "price")
+        assert len([l for l in rules.split("\n") if l.startswith("- price")]) == 1
+
+    def test_local_market_applies_to_a_full_refresh_too(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "all")
+        assert "shops located in Switzerland FIRST" in rules
+
+    def test_unknown_currency_drops_the_hint_silently(self):
+        rules = wine_app._wine_json_rules("en", "XYZ", "wine", "price")
+        assert "FIRST" not in rules
+        assert "in XYZ" in rules
+
+    def test_spirits_get_the_same_market_preference(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "whisky", "price")
+        assert "Switzerland" in rules
+
+    def test_price_prompt_names_the_market_up_front(self, monkeypatch):
+        captured = {}
+
+        def grab(i, m, prompt, o):
+            captured["p"] = prompt
+            return '{"price": 42}'
+
+        monkeypatch.setattr(wine_app, "_call_openai", grab)
+        monkeypatch.setattr(wine_app, "LANG", "de")
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "CHF",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, None, None, {"name": "Barolo", "category": "wine"}, "price")
+        # the task line itself, before the rules, already points at the market
+        task = captured["p"].split("Rules:")[0]
+        assert "shops based in Switzerland first" in task
+        assert ".ch domains" in task
+
+    def test_price_prompt_without_a_known_market(self, monkeypatch):
+        captured = {}
+
+        def grab(i, m, prompt, o):
+            captured["p"] = prompt
+            return '{"price": 42}'
+
+        monkeypatch.setattr(wine_app, "_call_openai", grab)
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "XYZ",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, None, None, {"name": "Barolo", "category": "wine"}, "price")
+        task = captured["p"].split("Rules:")[0]
+        assert "current online shops and price comparison sites" in task
 
 
 # ── ENV variable config override ─────────────────────────────────────────────
@@ -508,3 +750,70 @@ class TestCanonicalizeAiFields:
 
     def test_empty_fields_survive(self, db):
         assert self._run(db, {})== {}
+
+
+class TestSpiritAiSchema:
+    def test_whisky_schema_has_spirit_fields(self):
+        import app as wine_app
+        s = wine_app._wine_json_schema("whisky")
+        for f in ("abv", "age_years", "cask", "bottler", "batch_number", "peat_ppm"):
+            assert f in s, f
+
+    def test_whisky_schema_drops_wine_fields(self):
+        import app as wine_app
+        s = wine_app._wine_json_schema("whisky")
+        for f in ("grapes", "maturity_data", "food_pairings", "drink_from"):
+            assert f not in s, f
+
+    def test_wine_schema_unchanged(self):
+        import app as wine_app
+        s = wine_app._wine_json_schema("wine")
+        assert "grapes" in s and "abv" not in s
+
+    def test_whisky_rules_mention_casks(self):
+        import app as wine_app
+        r = wine_app._wine_json_rules("de", "CHF", "whisky")
+        assert "casks" in r and "CHF" in r
+        assert "grapes:" not in r
+
+    def test_valid_types_are_category_aware(self, db):
+        import app as wine_app
+        assert "Rotwein" in wine_app._valid_types(db, "wine")
+        assert "Single Malt" in wine_app._valid_types(db, "whisky")
+        assert "Single Malt" not in wine_app._valid_types(db, "wine")
+
+    def test_cask_alias_is_canonicalized(self, db):
+        import app as wine_app
+        out = wine_app._canonicalize_ai_fields(
+            db, {"casks": [{"name": "PX", "years": 2}]}, "whisky")
+        assert out["casks"][0]["name"] == "PX Sherry"
+
+    def test_spirit_type_alias_is_canonicalized(self, db):
+        import app as wine_app
+        out = wine_app._canonicalize_ai_fields(db, {"wine_type": "Vodka"}, "whisky")
+        assert out["wine_type"] == "Wodka"
+
+    def test_wine_canonicalization_unaffected(self, db):
+        import app as wine_app
+        out = wine_app._canonicalize_ai_fields(db, {"grape": "Shiraz"}, "wine")
+        assert out["grape"] == "Syrah"
+
+    def test_spirit_region_alias_is_canonicalized(self, db):
+        import app as wine_app
+        out = wine_app._canonicalize_ai_fields(
+            db, {"region": "Orkney", "country": "United Kingdom"}, "whisky")
+        assert out["region"] == "Islands"
+
+    def test_wine_region_not_resolved_from_spirit_list(self, db):
+        """A wine claiming to come from Orkney stays untouched - it is not a
+        wine region, so the wine list has nothing to map it onto."""
+        import app as wine_app
+        out = wine_app._canonicalize_ai_fields(db, {"region": "Orkney"}, "wine")
+        assert out["region"] == "Orkney"
+
+    def test_map_coords_resolve_for_spirit_regions(self, db):
+        import app as wine_app
+        coords = wine_app.resolve_map_coords(db, "Islay", None, category="whisky")
+        assert coords and round(coords[0], 1) == 55.8
+        # the fallback finds it even when the category is not passed
+        assert wine_app.resolve_map_coords(db, "Islay", None) == coords

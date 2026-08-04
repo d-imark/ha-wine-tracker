@@ -114,6 +114,12 @@ html[data-theme="homeassistant"].light {
 /* ── Base Reset ────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* The browser's own [hidden] rule loses against any class that sets a display
+   value (e.g. .source-option { display: flex }), so an element with the hidden
+   attribute would stay visible. Everything that toggles `hidden` from JS -
+   the category-dependent fields, tabs and source options - relies on this. */
+[hidden] { display: none !important; }
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
@@ -193,7 +199,11 @@ html.light .nav-link:hover { background: rgba(0,0,0,.06); }
 html.light .nav-menu-item:hover { background: rgba(0,0,0,.04); }
 .nav-menu-item.active { color: var(--text); font-weight: 700; }
 
-@media (max-width: 800px) {
+/* The five nav links need ~950px next to the badge, search, filter and theme
+   button. Below that the hamburger takes over - at 800px they still fitted
+   into the header only by overflowing it sideways. Kept at 1000px so longer
+   translations have room too. */
+@media (max-width: 1000px) {
   .nav-links { display: none; }
   .nav-hamburger { display: flex; }
 }
@@ -300,6 +310,13 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
   .chat-header-actions .chat-header-btn { height: 30px; width: 30px; }
   .nav-hamburger { display: none; }
 
+  /* Below ~360px the brand, area switch and the fixed-width search box together
+     push the theme button past the right edge. Only the search box can give. */
+  @media (max-width: 360px) {
+    header { padding: 0 .5rem; gap: .4rem; }
+    .search-wrap { width: 92px; }
+  }
+
   /* Bottom Tab Bar */
   .bottom-tab-bar {
     display: flex;
@@ -360,7 +377,12 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
   color: #fff; z-index: 2;
   transform: rotate(-45deg);
   box-shadow: 0 2px 4px rgba(0,0,0,.18);
+  /* the band is clipped by the card corner - never let text spill past it */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Spirit types like "Single Malt" or "Blended Scotch" are far longer than
+   "ROTWEIN" and would run out of the diagonal band. */
+.ribbon-long { font-size: .52rem; letter-spacing: 0; padding: 3px 0; }
 .ribbon-rotwein     { background: var(--wine-rotwein); }
 .ribbon-weisswein   { background: var(--wine-weisswein); color: #333; }
 .ribbon-rose        { background: var(--wine-rose); color: #333; }
@@ -895,6 +917,34 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 .btn-submit:hover { background: var(--accent2); }
 
+/* Explains why the reconcile dialog appeared and where the AI suggestion in it
+   comes from. */
+.rc-note {
+  display: flex; align-items: flex-start; gap: .5rem;
+  padding: .6rem 1.25rem; font-size: .78rem; line-height: 1.4;
+  color: var(--muted); background: rgba(127,127,127,.07);
+  border-bottom: 1px solid var(--border);
+}
+.rc-note .mdi { font-size: 1rem; flex-shrink: 0; margin-top: .05rem; }
+
+/* Busy state: the reference check may wait on an AI round-trip, so the button
+   has to show that something is happening instead of looking frozen. */
+.btn-submit.btn-busy {
+  background: var(--accent2); cursor: progress; opacity: .85;
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  font-size: .85rem;
+}
+.btn-spinner {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff; border-radius: 50%;
+  animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner { animation-duration: 2s; }
+}
+
 /* ── Form Footer (Submit + Reload Popover) ─────────────────────────────────── */
 .form-footer {
   display: flex; align-items: center; gap: .75rem;
@@ -930,7 +980,62 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   border-radius: 6px; transition: background .15s; text-align: left;
 }
 .reload-popover-option:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.reload-popover-option .mdi { font-size: 1.15rem; opacity: .8; }
+.reload-popover-option .mdi { font-size: 1.15rem; opacity: .8; flex-shrink: 0; }
+/* Each scope carries a one-line explanation of what it will touch. */
+.reload-popover { min-width: 260px; }
+.reload-popover-option { align-items: flex-start; }
+.reload-popover-option .mdi { margin-top: .1rem; }
+.reload-popover-option span { display: flex; flex-direction: column; gap: .1rem; }
+.reload-popover-option small { color: var(--muted); font-size: .75rem; line-height: 1.25; }
+.reload-popover-sep { height: 1px; background: var(--border); margin: .35rem .4rem; }
+
+/* ── AI progress ──────────────────────────────────────────────────────────── */
+/* Own overlay rather than .modal-overlay, so the generic backdrop/Escape
+   handlers cannot hide it while the request keeps running. Above the confirm
+   dialog (260) so it is never covered. */
+.ai-progress-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.55);
+  align-items: center; justify-content: center;
+  padding: 1rem;
+}
+.ai-progress-overlay.open { display: flex; }
+.ai-progress-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.25rem; width: min(92vw, 380px);
+  display: flex; flex-direction: column; gap: .75rem;
+}
+.ai-progress-head {
+  display: flex; align-items: center; gap: .5rem;
+  font-weight: 700; font-size: .98rem; color: var(--text);
+}
+.ai-progress-head .mdi { font-size: 1.3rem; color: var(--accent); }
+.ai-progress-track {
+  height: 5px; border-radius: 3px; overflow: hidden;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+/* Indeterminate on purpose: a web-searching model reports no progress, so a
+   percentage would be invented. The sweep only says "still working". */
+.ai-progress-fill {
+  display: block; height: 100%; width: 40%; border-radius: 3px;
+  background: var(--accent);
+  animation: ai-sweep 1.4s ease-in-out infinite;
+}
+@keyframes ai-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.ai-progress-meta {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .75rem;
+  font-size: .78rem; color: var(--muted); line-height: 1.35;
+}
+.ai-progress-time { font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.ai-progress-cancel { align-self: flex-end; width: auto; padding: 0 1rem; }
+@media (prefers-reduced-motion: reduce) {
+  .ai-progress-fill { animation-duration: 3s; }
+}
 
 /* ── Vivino ID Popover ────────────────────────────────────────────────────── */
 .vivino-id-popover-wrap { position: relative; }
@@ -1277,6 +1382,23 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   font-size: .88rem; color: var(--muted); line-height: 1.5;
   padding: .75rem 0; white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/* The user's own notes sit apart from the researched description, so it stays
+   obvious which text is theirs. */
+.view-note-block { padding-top: .25rem; }
+.view-note-label {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); opacity: .75;
+}
+.view-notes-own {
+  padding: .35rem 0 .75rem; color: var(--text);
+  border-left: 2px solid var(--border); padding-left: .6rem; margin-top: .3rem;
+}
+
+/* Small clarifier next to a field label ("filled by the AI" / "yours only"). */
+.label-hint {
+  font-weight: 400; font-size: .72rem; color: var(--muted);
+  opacity: .8; margin-left: .35rem;
+}
 
 .view-actions {
   display: flex; gap: .6rem; padding-top: .5rem; align-items: center; flex-wrap: wrap;
@@ -1457,7 +1579,9 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 /* ── Stats: Stat Cards ─────────────────────────────────────────────────────── */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  /* min() so the 300px floor cannot push the card wider than the container -
+     on a 320px screen a hard minmax(300px,...) overflows by the page padding. */
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 1.25rem; margin-bottom: 1.5rem;
 }
 .stat-card {
@@ -2663,6 +2787,10 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   font-size: .65rem; font-weight: 600; padding: .05rem .35rem; border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
 }
+/* A pure spelling match must not look like an AI verdict. */
+.rc-ai.rc-fuzzy {
+  background: rgba(127,127,127,.16); color: var(--muted);
+}
 
 /* ── AI reload confirm dialog ──────────────────────────────────────────────── */
 #aiReloadModal { z-index: 260; }  /* above the edit modal (200) it opens from */
@@ -2891,3 +3019,71 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   .grape-row { gap: 4px; }
   .grape-row .grape-pct { width: 52px; }
 }
+
+/* ── Spirits: whisky tab + cask chain ───────────────────────────────────────── */
+.spirit-flags { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.spirit-flags label { display: inline-flex; align-items: center; gap: 6px;
+  font-size: .9rem; color: var(--text); margin: 0; }
+.spirit-flags input[type=checkbox] { width: auto; }
+
+.cask-row { display: flex; align-items: center; gap: 6px; }
+.cask-role { flex: 0 0 74px; font-size: .78rem; color: var(--muted); }
+.cask-row .cask-name { flex: 1 1 auto; min-width: 0; }
+.cask-row .cask-years { flex: 0 0 auto; width: 58px; text-align: right;
+  -moz-appearance: textfield; appearance: textfield; }
+.cask-row .cask-years::-webkit-outer-spin-button,
+.cask-row .cask-years::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cask-years-unit { flex: 0 0 auto; font-size: .8rem; opacity: .6; }
+.cask-arrow { opacity: .5; margin: 0 2px; }
+
+@media (max-width: 600px) {
+  .cask-row { flex-wrap: wrap; }
+  .cask-role { flex-basis: 100%; }
+}
+
+/* ── Area switch (cellar / bar) + fill level ────────────────────────────────── */
+.area-switch { display: inline-flex; border: 1px solid var(--border);
+  border-radius: 999px; overflow: hidden; flex: 0 0 auto; }
+/* Flex spacers would only centre the switch if both sides weighed the same -
+   they do not (search, filter and theme sit on the right), so pin it. */
+@media (min-width: 601px) {
+  header { position: sticky; }
+  .area-switch { position: absolute; left: 50%; transform: translateX(-50%); }
+}
+.area-btn { background: none; border: none; padding: 6px 14px; cursor: pointer;
+  color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.area-btn.active { background: var(--accent); color: #fff; }
+
+.fill-wrap { display: inline-flex; align-items: center; gap: 8px; }
+.fill-bar { display: inline-block; width: 70px; height: 8px; border-radius: 4px;
+  background: var(--border); overflow: hidden; }
+.fill-bar-in { display: block; height: 100%; background: var(--accent); }
+.fill-range { width: 110px; }
+.fill-pct { font-size: .85rem; min-width: 42px; text-align: right; }
+.card-open { opacity: .9; }
+
+.area-btn { display: inline-flex; align-items: center; gap: 6px; }
+.area-btn .mdi { font-size: 1.05rem; line-height: 1; }
+.area-btn .area-lbl { display: inline; }
+
+@media (max-width: 600px) {
+  /* Icon-only switch - the labels would push the header into a sideways scroll */
+  .area-btn .area-lbl { display: none; }
+  .area-btn { padding: 6px 9px; }
+  /* let the search give way rather than push the header into a scroll */
+  .search-wrap { width: 100px; min-width: 60px; flex: 0 1 100px; }
+  .fill-bar { display: none; }
+  .fill-range { width: 130px; }
+}
+
+/* ── Ribbon colours for spirit types ────────────────────────────────────────── */
+.ribbon-single-malt, .ribbon-blended-malt, .ribbon-blended-scotch,
+.ribbon-single-grain, .ribbon-irish        { background: #b8860b; }
+.ribbon-bourbon, .ribbon-rye, .ribbon-tennessee,
+.ribbon-cognac, .ribbon-armagnac, .ribbon-brandy { background: #a0522d; }
+.ribbon-rum                                 { background: #8b4513; }
+.ribbon-gin                                 { background: #5f9ea0; }
+.ribbon-tequila, .ribbon-mezcal             { background: #9acd32; color: #333; }
+.ribbon-wodka, .ribbon-grappa, .ribbon-obstbrand { background: #b9b9b9; color: #333; }
+.ribbon-likör, .ribbon-likoer               { background: #da70d6; }
+.ribbon-anderes-destillat                   { background: var(--wine-anderes); }

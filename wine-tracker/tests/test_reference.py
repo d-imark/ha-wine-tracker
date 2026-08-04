@@ -230,7 +230,104 @@ class TestReconcile:
         assert item["entity"] == "grape"
         names = [s["name"] for s in item["suggestions"]]
         assert "Cabernet Sauvignon" in names
-        assert item["ai_pick"] is None  # no AI configured in tests
+
+    def test_decisive_typo_is_picked_without_ai(self, client):
+        """A near-perfect spelling match needs no AI round-trip, and must be
+        labelled as a spelling match rather than credited to the AI."""
+        item = self._post(client, {"grape": "Cabernet Savignon"})["items"][0]
+        assert item["ai_pick"] == "Cabernet Sauvignon"
+        assert item["pick_source"] == "fuzzy"
+
+    def test_hopeless_value_gets_no_pick(self, client):
+        """Nothing plausible exists, so there is nothing to suggest either -
+        and no AI call is worth making (none is configured in tests anyway)."""
+        item = self._post(client, {"grape": "Zzzqqx Yyw"})["items"][0]
+        assert item["ai_pick"] is None
+        assert item["pick_source"] is None
+
+    def test_reconcile_stays_off_the_network_when_ai_is_off(self, client, monkeypatch):
+        import app as wine_app
+
+        def boom(*a, **k):
+            raise AssertionError("no AI call may happen when no provider is configured")
+
+        monkeypatch.setattr(wine_app, "_call_chat", boom)
+        data = self._post(client, {"grapes": ["Merlott", "Zzzqqx Yyw"], "region": "Rioja"})
+        assert data["ok"] is True
+
+    def test_ai_picks_run_concurrently(self, client, monkeypatch):
+        """Three ambiguous values used to cost three serial round-trips. The
+        whole stage must now take about as long as the slowest single call."""
+        import time as t
+        import app as wine_app
+
+        calls = []
+
+        def slow_pick(opts, entity, value, candidates):
+            calls.append(value)
+            t.sleep(0.6)
+            return candidates[0] if candidates else None
+
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "_ai_reconcile_pick", slow_pick)
+
+        started = t.monotonic()
+        data = self._post(client, {"grapes": ["Sylvaner Blanc", "Rieslinger Weiss",
+                                              "Chardonnet Blanc"]})
+        elapsed = t.monotonic() - started
+        assert len(calls) == 3, calls
+        # serial would be >= 1.8s; concurrent stays near a single call
+        assert elapsed < 1.5, elapsed
+        assert all(i["pick_source"] == "ai" for i in data["items"])
+
+    def test_slow_provider_cannot_block_saving(self, client, monkeypatch):
+        import time as t
+        import app as wine_app
+
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "_RC_AI_TIMEOUT", 0.4)
+        monkeypatch.setattr(wine_app, "_ai_reconcile_pick",
+                            lambda *a, **k: (t.sleep(5), "nope")[1])
+
+        started = t.monotonic()
+        data = self._post(client, {"grape": "Sylvaner Blanc"})
+        elapsed = t.monotonic() - started
+        assert elapsed < 2.0, elapsed          # gave up instead of waiting 5s
+        assert data["items"][0]["ai_pick"] is None
+        assert data["ok"] is True
+
+    def test_repeated_value_is_answered_from_cache(self, client, monkeypatch):
+        import app as wine_app
+
+        calls = []
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "_call_chat",
+                            lambda *a, **k: calls.append(1) or "Silvaner")
+        wine_app._RC_PICK_CACHE.clear()
+
+        first = self._post(client, {"grape": "Sylvaner Blanc"})["items"][0]
+        second = self._post(client, {"grape": "Sylvaner Blanc"})["items"][0]
+        assert first["ai_pick"] == second["ai_pick"] == "Silvaner"
+        assert len(calls) == 1, "the second save must not ask again"
+
+    def test_failures_are_not_cached(self, client, monkeypatch):
+        """A provider outage must not poison the answer for later saves."""
+        import app as wine_app
+
+        state = {"fail": True}
+
+        def flaky(*a, **k):
+            if state["fail"]:
+                raise RuntimeError("provider down")
+            return "Silvaner"
+
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "_call_chat", flaky)
+        wine_app._RC_PICK_CACHE.clear()
+
+        assert self._post(client, {"grape": "Sylvaner Blanc"})["items"][0]["ai_pick"] is None
+        state["fail"] = False
+        assert self._post(client, {"grape": "Sylvaner Blanc"})["items"][0]["ai_pick"] == "Silvaner"
 
     def test_region_scoped_by_country(self, client):
         data = self._post(client, {"region": "Bordeux", "country": "France"})
@@ -301,3 +398,91 @@ class TestReadApi:
     def test_unknown_entity_404(self, client):
         resp = client.get("/api/reference/bogus")
         assert resp.status_code == 404
+
+
+class TestSpiritReferences:
+    def test_spirit_types_seeded(self, db):
+        import reference
+        for key in ("Single Malt", "Bourbon", "Gin", "Rum"):
+            assert reference.match_reference(db, "spirit_type", key), key
+
+    def test_cask_types_seeded(self, db):
+        import reference
+        for name in ("Ex-Bourbon", "PX Sherry", "Oloroso Sherry", "Virgin Oak"):
+            assert reference.match_reference(db, "cask_type", name), name
+
+    def test_cask_alias_resolves(self, db):
+        import reference
+        assert reference.match_reference(db, "cask_type", "Bourbon")["name"] == "Ex-Bourbon"
+        assert reference.match_reference(db, "cask_type", "PX")["name"] == "PX Sherry"
+
+    def test_whisky_regions_seeded(self, db):
+        import reference
+        for name in ("Islay", "Speyside", "Highlands", "Kentucky", "Jalisco"):
+            assert reference.match_reference(db, "spirit_region", name), name
+
+    def test_spirit_regions_are_separate_from_wine_regions(self, db):
+        """Islay is not a wine region and Rioja is not a spirit region."""
+        import reference
+        assert reference.match_reference(db, "region", "Islay") is None
+        assert reference.match_reference(db, "region", "Speyside") is None
+        assert reference.match_reference(db, "spirit_region", "Rioja") is None
+        assert reference.match_reference(db, "region", "Rioja")
+
+    def test_shared_names_stay_in_the_wine_list(self, db):
+        """Jerez is a genuine wine region as well - it must exist in both."""
+        import reference
+        assert reference.match_reference(db, "region", "Jerez")
+        assert reference.match_reference(db, "spirit_region", "Jerez")
+
+    def test_spirit_region_aliases(self, db):
+        import reference
+        assert reference.match_reference(db, "spirit_region", "Orkney")["name"] == "Islands"
+        assert reference.match_reference(db, "spirit_region", "Tequila")["name"] == "Jalisco"
+
+    def test_region_entity_follows_category(self):
+        import reference
+        assert reference.region_entity("whisky") == "spirit_region"
+        assert reference.region_entity("spirit") == "spirit_region"
+        assert reference.region_entity("wine") == "region"
+        assert reference.region_entity(None) == "region"
+
+    def test_spirit_regions_scoped_by_country(self, db):
+        import reference
+        names = {r["name"] for r in reference.list_reference(db, "spirit_regions", "GB")}
+        assert "Islay" in names and "Kentucky" not in names
+
+    def test_migration_moves_stray_regions_but_spares_customs(self, db):
+        """An earlier build seeded whisky regions into ref_regions."""
+        import reference
+        db.execute("INSERT INTO ref_regions (name,norm,country_code,is_custom) VALUES (?,?,?,0)",
+                   ("Islay", reference.normalize_name("Islay"), "GB"))
+        db.execute("INSERT INTO ref_regions (name,norm,country_code,is_custom) VALUES (?,?,?,1)",
+                   ("Campbeltown", reference.normalize_name("Campbeltown"), "GB"))
+        removed = reference.migrate_spirit_regions_out_of_regions(db)
+        assert removed == 1
+        assert reference.match_reference(db, "region", "Islay") is None
+        # the user's own entry stays where they put it
+        assert reference.match_reference(db, "region", "Campbeltown")
+        # and a real wine region is never touched
+        assert reference.match_reference(db, "region", "Jerez")
+
+    def test_custom_spirit_region_can_be_added(self, db):
+        import reference
+        row = reference.add_custom_entry(db, "spirit_region", name="Hanshin",
+                                         country_code="JP", lat=34.7, lon=135.5)
+        assert row["is_custom"] == 1
+        assert reference.match_reference(db, "spirit_region", "Hanshin")["name"] == "Hanshin"
+        # idempotent - a second add returns the same row
+        assert reference.add_custom_entry(db, "spirit_region", name="Hanshin",
+                                          country_code="JP")["id"] == row["id"]
+        # and it did not land in the wine list
+        assert reference.match_reference(db, "region", "Hanshin") is None
+
+    def test_spirit_bottle_formats_seeded(self, db):
+        rows = {r[0] for r in db.execute("SELECT liters FROM ref_bottle_formats")}
+        assert 0.7 in rows and 0.5 in rows and 0.05 in rows
+
+    def test_unknown_value_returns_none(self, db):
+        import reference
+        assert reference.match_reference(db, "cask_type", "Zzz Unknown") is None

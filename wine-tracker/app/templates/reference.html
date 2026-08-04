@@ -43,7 +43,7 @@
 <header>
   <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>
   <nav class="nav-links">
-    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_cellar }}</a>
+    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a class="nav-link" href="{{ ingress }}/chat">{{ t.chat_title }}</a>{% endif %}
     <a class="nav-link" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
     <a class="nav-link" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
@@ -51,7 +51,7 @@
   </nav>
   <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
   <div class="nav-menu" id="navMenu">
-    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_cellar }}</a>
+    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a href="{{ ingress }}/chat" class="nav-menu-item">{{ t.chat_title }}</a>{% endif %}
     <a href="{{ ingress }}/timeline" class="nav-menu-item">{{ t.timeline }}</a>
     <a href="{{ ingress }}/stats" class="nav-menu-item">{{ t.stats_title }}</a>
@@ -116,9 +116,21 @@ var ENTITIES = {
     fields: [['key','text',true], ['color','text',false], ['aliases','text',false]] },
   bottle_formats: { label: L('ref_bottle_formats','Bottle formats'),
     cols: [['name', L('ref_f_name','Name')], ['liters', L('ref_f_liters','Liters')]],
-    fields: [['name','text',true], ['liters','number',true]] }
+    fields: [['name','text',true], ['liters','number',true]] },
+  // Spirits keep their own region list: Islay is not a wine region and Rioja is
+  // not a whisky region, so mixing them produced wrong suggestions both ways.
+  spirit_regions: { label: L('ref_spirit_regions','Spirit regions'),
+    cols: [['name', L('ref_f_name','Name')], ['country_code', L('ref_f_country','Country')], ['lat','Lat'], ['lon','Lon'], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['name','text',true], ['country_code','country',true], ['lat','number',false], ['lon','number',false], ['aliases','text',false]] },
+  spirit_types: { label: L('ref_spirit_types','Spirit types'),
+    cols: [['key', L('ref_f_name','Name')], ['color', L('ref_f_color','Color')], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['key','text',true], ['color','text',false], ['aliases','text',false]] },
+  cask_types: { label: L('ref_cask_types','Cask types'),
+    cols: [['name', L('ref_f_name','Name')], ['aliases', L('ref_f_aliases','Aliases')]],
+    fields: [['name','text',true], ['aliases','text',false]] }
 };
-var ENTITY_ORDER = ['countries','regions','grapes','wine_types','bottle_formats'];
+var ENTITY_ORDER = ['countries','regions','grapes','wine_types','bottle_formats',
+                    'spirit_regions','spirit_types','cask_types'];
 var GRAPE_COLORS = ['red','white','rose','other'];
 
 var _current = 'grapes';
@@ -232,7 +244,7 @@ fetch(INGRESS + '/api/reference/countries').then(function(r){return r.json();}).
 </script>
 
 <nav class="bottom-tab-bar">
-  <a class="tab-item" href="{{ ingress }}/"><i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_cellar }}</span></a>
+  <a class="tab-item" href="{{ ingress }}/"><i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_collection }}</span></a>
   {% if ai_enabled %}<a class="tab-item" href="{{ ingress }}/chat"><i class="mdi mdi-chat"></i><span>{{ t.chat_title }}</span></a>{% endif %}
   <a class="tab-item" href="{{ ingress }}/stats"><i class="mdi mdi-chart-bar"></i><span>{{ t.stats_title }}</span></a>
   <a class="tab-item active" href="{{ ingress }}/reference"><i class="mdi mdi-database"></i><span>{{ t.ref_title }}</span></a>

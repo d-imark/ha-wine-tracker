@@ -10,6 +10,7 @@
 <script>
 (function(){var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
 </script>
+<script>window.INGRESS='{{ ingress }}';window._areaPath='/stats';</script>
 <title>{{ t.stats_title }} - Wine Tracker</title>
 </head>
 <body>
@@ -17,7 +18,7 @@
 <header>
   <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>
   <nav class="nav-links">
-    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_cellar }}</a>
+    <a class="nav-link" href="{{ ingress }}/">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a class="nav-link" href="#" id="chatFab" onclick="event.preventDefault();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a class="nav-link" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
     <a class="nav-link active" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
@@ -25,11 +26,21 @@
   </nav>
   <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
   <div class="nav-menu" id="navMenu">
-    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_cellar }}</a>
+    <a href="{{ ingress }}/" class="nav-menu-item">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a href="#" class="nav-menu-item" onclick="event.preventDefault();toggleNavMenu();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a href="{{ ingress }}/timeline" class="nav-menu-item">{{ t.timeline }}</a>
     <a href="{{ ingress }}/stats" class="nav-menu-item active">{{ t.stats_title }}</a>
     <a href="{{ ingress }}/reference" class="nav-menu-item">{{ t.ref_title }}</a>
+  </div>
+  {# spacers on both sides keep the switch centred in the header #}
+  <div class="header-spacer"></div>
+  <div class="area-switch" id="areaSwitch">
+    <button type="button" class="area-btn{% if area != 'bar' %} active{% endif %}"
+            onclick="setArea('cellar')" title="{{ t.area_cellar }}" aria-label="{{ t.area_cellar }}">
+      <i class="mdi mdi-bottle-wine"></i><span class="area-lbl">{{ t.area_cellar }}</span></button>
+    <button type="button" class="area-btn{% if area == 'bar' %} active{% endif %}"
+            onclick="setArea('bar')" title="{{ t.area_bar }}" aria-label="{{ t.area_bar }}">
+      <i class="mdi mdi-liquor"></i><span class="area-lbl">{{ t.area_bar }}</span></button>
   </div>
   <div class="header-spacer"></div>
   <button class="theme-toggle" onclick="openModal('settingsModal')" title="{{ t.settings_title }}"><i class="mdi mdi-cog"></i></button>
@@ -37,13 +48,32 @@
 
 <div class="content">
 
+{# Wine wording stays for the cellar; the bar gets its own (a whisky is an
+   "Abfüllung", not a "Wein"). #}
+{%- macro L(key) -%}{{ t[key ~ '_bar'] if area == 'bar' and t[key ~ '_bar'] else t[key] }}{%- endmacro -%}
+{# One palette for both charts. Spirit types need their own entries - without
+   them every segment in the bar fell back to the same "Anderes" grey. Values
+   mirror the ribbon colours in style.css. #}
+{% set type_colors = {
+  'Rotwein': 'var(--wine-rotwein)', 'Weisswein': 'var(--wine-weisswein)',
+  'Rosé': 'var(--wine-rose)', 'Schaumwein': 'var(--wine-schaumwein)',
+  'Dessertwein': 'var(--wine-dessertwein)', 'Likörwein': 'var(--wine-likoerwein)',
+  'Anderes': 'var(--wine-anderes)',
+  'Single Malt': '#b8860b', 'Blended Malt': '#c99a2e', 'Blended Scotch': '#d4a843',
+  'Single Grain': '#a67c0a', 'Irish': '#8fbc5a',
+  'Bourbon': '#a0522d', 'Rye': '#b5643a', 'Tennessee': '#8b4a28',
+  'Cognac': '#96461f', 'Armagnac': '#874019', 'Brandy': '#a85c33',
+  'Rum': '#8b4513', 'Gin': '#5f9ea0', 'Tequila': '#9acd32', 'Mezcal': '#7fae28',
+  'Wodka': '#b9b9b9', 'Grappa': '#c9c9c9', 'Obstbrand': '#a9a9a9',
+  'Likör': '#da70d6', 'Anderes Destillat': 'var(--wine-anderes)'
+} %}
 {% set total_bottles = totals['bottles'] or 0 %}
 {% set total_wines = totals['wines'] or 0 %}
 
 {% if total_wines == 0 %}
   <div class="empty-state">
     <div><i class="mdi mdi-chart-box"></i></div>
-    <p>{{ t.stat_no_data }}<br>{{ t.stat_add_wines_first }}</p>
+    <p>{{ t.stat_no_data }}<br>{{ L('stat_add_wines_first') }}</p>
   </div>
 {% else %}
 
@@ -58,7 +88,7 @@
   <div class="highlight-card">
     <div class="emoji"><i class="mdi mdi-package-variant"></i></div>
     <div class="big-number">{{ total_wines }}</div>
-    <div class="label">{{ t.stat_wine_singular if total_wines == 1 else t.stat_different_wines }}</div>
+    <div class="label">{{ L('stat_wine_singular') if total_wines == 1 else L('stat_different_wines') }}</div>
   </div>
 
   {% if total_liters > 0 %}
@@ -90,7 +120,7 @@
 <!-- ═══════ HERKUNFT MAP ═══════ -->
 {% if map_points %}
 <div class="map-card">
-  <h2><i class="mdi mdi-earth"></i> {{ t.stat_wine_origin }}</h2>
+  <h2><i class="mdi mdi-earth"></i> {{ L('stat_wine_origin') }}</h2>
   <div class="globe-wrap">
     <canvas id="globeCanvas"></canvas>
     <div class="globe-legend">
@@ -119,13 +149,7 @@
           <svg viewBox="0 0 100 100">
             {# Donut segments via stroke-dasharray on circles #}
             {% set ns = namespace(offset=0) %}
-            {% set type_colors = {
-              'Rotwein': 'var(--wine-rotwein)', 'Weisswein': 'var(--wine-weisswein)',
-              'Rosé': 'var(--wine-rose)', 'Schaumwein': 'var(--wine-schaumwein)',
-              'Dessertwein': 'var(--wine-dessertwein)', 'Likörwein': 'var(--wine-likoerwein)',
-              'Anderes': 'var(--wine-anderes)'
-            } %}
-            {% for item in by_type %}
+                        {% for item in by_type %}
             {% set pct = (item['qty'] / type_total * 100) if type_total > 0 else 0 %}
             {% set gap = 1.2 %}
             {% set seg = pct - gap if pct > gap else pct %}
@@ -184,14 +208,7 @@
 
 
 <!-- ═══════ DRINK WINDOW CHART ═══════ -->
-{% if dw_chart %}
-{% set type_colors = {
-  'Rotwein': 'var(--wine-rotwein)', 'Weisswein': 'var(--wine-weisswein)',
-  'Rosé': 'var(--wine-rose)', 'Schaumwein': 'var(--wine-schaumwein)',
-  'Dessertwein': 'var(--wine-dessertwein)', 'Likörwein': 'var(--wine-likoerwein)',
-  'Anderes': 'var(--wine-anderes)'
-} %}
-<div class="stat-grid">
+{% if dw_chart %}<div class="stat-grid">
   <div class="stat-card dw-chart-card">
     <h2><i class="mdi mdi-calendar-range"></i> {{ t.stat_drink_windows }}</h2>
     <div class="stat-body">
@@ -282,7 +299,7 @@
           <div class="rank"><i class="mdi mdi-trending-up"></i></div>
           <div class="wine-info">
             <div class="wine-name">{{ most_expensive['name'] }}</div>
-            <div class="wine-detail">{{ t.stat_most_expensive }}{% if most_expensive['year'] %} · {{ most_expensive['year'] }}{% endif %}</div>
+            <div class="wine-detail">{{ L('stat_most_expensive') }}{% if most_expensive['year'] %} · {{ most_expensive['year'] }}{% endif %}</div>
           </div>
           <div class="wine-price">{{ currency }} {{ "%.2f"|format(most_expensive['price']) }}</div>
         </a>
@@ -293,7 +310,7 @@
           <div class="rank"><i class="mdi mdi-trending-down"></i></div>
           <div class="wine-info">
             <div class="wine-name">{{ cheapest['name'] }}</div>
-            <div class="wine-detail">{{ t.stat_cheapest }}{% if cheapest['year'] %} · {{ cheapest['year'] }}{% endif %}</div>
+            <div class="wine-detail">{{ L('stat_cheapest') }}{% if cheapest['year'] %} · {{ cheapest['year'] }}{% endif %}</div>
           </div>
           <div class="wine-price">{{ currency }} {{ "%.2f"|format(cheapest['price']) }}</div>
         </a>
@@ -303,7 +320,7 @@
           <div class="rank">Ø</div>
           <div class="wine-info">
             <div class="wine-name">{{ t.stat_avg_price_label }}</div>
-            <div class="wine-detail">{{ t.stat_across_all }}</div>
+            <div class="wine-detail">{{ L('stat_across_all') }}</div>
           </div>
           <div class="wine-price">{{ currency }} {{ "%.2f"|format(value['avg_price']) }}</div>
         </div>
@@ -976,7 +993,7 @@ initGlobe();
 
 <nav class="bottom-tab-bar">
   <a class="tab-item" href="{{ ingress }}/">
-    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_cellar }}</span>
+    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_collection }}</span>
   </a>
   {% if ai_enabled %}
   <a class="tab-item" href="{{ ingress }}/chat">

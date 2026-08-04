@@ -10,6 +10,7 @@
 <script>
 (function(){var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
 </script>
+<script>window.INGRESS='{{ ingress }}';window._areaPath='/';</script>
 <title>Wine Tracker</title>
 </head>
 <body>
@@ -17,7 +18,7 @@
 <header>
   <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>
   <nav class="nav-links">
-    <a class="nav-link active" href="{{ ingress }}/">{{ t.nav_cellar }}</a>
+    <a class="nav-link active" href="{{ ingress }}/">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a class="nav-link" href="#" id="chatFab" onclick="event.preventDefault();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a class="nav-link" href="{{ ingress }}/timeline">{{ t.timeline }}</a>
     <a class="nav-link" href="{{ ingress }}/stats">{{ t.stats_title }}</a>
@@ -25,11 +26,21 @@
   </nav>
   <button class="nav-hamburger" onclick="toggleNavMenu(event)" aria-label="Menu"><i class="mdi mdi-menu"></i></button>
   <div class="nav-menu" id="navMenu">
-    <a href="{{ ingress }}/" class="nav-menu-item active">{{ t.nav_cellar }}</a>
+    <a href="{{ ingress }}/" class="nav-menu-item active">{{ t.nav_collection }}</a>
     {% if ai_enabled %}<a href="#" class="nav-menu-item" onclick="event.preventDefault();toggleNavMenu();toggleChatPanel()">{{ t.chat_title }}</a>{% endif %}
     <a href="{{ ingress }}/timeline" class="nav-menu-item">{{ t.timeline }}</a>
     <a href="{{ ingress }}/stats" class="nav-menu-item">{{ t.stats_title }}</a>
     <a href="{{ ingress }}/reference" class="nav-menu-item">{{ t.ref_title }}</a>
+  </div>
+  {# spacers on both sides keep the switch centred in the header #}
+  <div class="header-spacer"></div>
+  <div class="area-switch" id="areaSwitch">
+    <button type="button" class="area-btn{% if area != 'bar' %} active{% endif %}"
+            onclick="setArea('cellar')" title="{{ t.area_cellar }}" aria-label="{{ t.area_cellar }}">
+      <i class="mdi mdi-bottle-wine"></i><span class="area-lbl">{{ t.area_cellar }}</span></button>
+    <button type="button" class="area-btn{% if area == 'bar' %} active{% endif %}"
+            onclick="setArea('bar')" title="{{ t.area_bar }}" aria-label="{{ t.area_bar }}">
+      <i class="mdi mdi-liquor"></i><span class="area-lbl">{{ t.area_bar }}</span></button>
   </div>
   <div class="header-spacer"></div>
   <div id="bottleCountBadge">
@@ -105,25 +116,32 @@
        data-name="{{ w['name'] }}" data-winery="{{ w['winery'] or '' }}" data-year="{{ w['year'] or '' }}"
        data-type="{{ w['type'] or '' }}" data-region="{{ w['region'] or '' }}" data-country="{{ w['country'] or '' }}"
        data-quantity="{{ w['quantity'] }}" data-rating="{{ w['rating'] }}" data-vivino_rating="{{ w['vivino_rating'] or '' }}"
-       data-notes="{{ w['notes'] or '' }}" data-image="{{ w['image'] or '' }}"
+       data-notes="{{ w['notes'] or '' }}" data-description="{{ w['description'] or '' }}"
+       data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
        data-drink_from="{{ w['drink_from'] or '' }}" data-drink_until="{{ w['drink_until'] or '' }}"
        data-location="{{ w['location'] or '' }}"
        data-grape="{{ w['grape'] or '' }}"
+       data-category="{{ w['category'] or 'wine' }}"
+       data-cask="{{ (w['spirit_details'] and w['spirit_details']['cask_summary']) or '' }}"
+       data-bottler="{{ (w['spirit_details'] and w['spirit_details']['bottler']) or '' }}"
+       data-abv="{{ (w['spirit_details'] and w['spirit_details']['abv']) or '' }}"
+       data-age_years="{{ (w['spirit_details'] and w['spirit_details']['age_years']) or '' }}"
        data-vivino_id="{{ w['vivino_id'] or '' }}"
        data-bottle_format="{{ w['bottle_format'] or '0.75' }}">
 
     {% if w['quantity'] == 0 %}
       <div class="ribbon ribbon-empty">{{ t.ribbon_empty }}</div>
     {% elif w['type'] %}
-      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}"{% if w['type'] in wine_type_custom_keys %} style="background:{{ wine_type_colors[w['type']] }};color:#fff"{% endif %}>{{ w['type'] | wine_type }}</div>
+      {% set _rlabel = w['type'] | wine_type %}
+      <div class="ribbon ribbon-{{ w['type']|lower|replace('é','e')|replace('ö','oe')|replace(' ','-') }}{% if _rlabel|length > 9 %} ribbon-long{% endif %}"{% if w['type'] in wine_type_custom_keys %} style="background:{{ wine_type_colors[w['type']] }};color:#fff"{% endif %}>{{ _rlabel }}</div>
     {% endif %}
 
     <div class="card-img{% if w['image'] %} shimmer{% endif %}" onclick="cardImgClick(this)">
       {% if w['image'] %}
         <img src="{{ ingress }}/uploads/{{ w['image'] }}" alt="{{ w['name'] }}" loading="lazy">
       {% else %}
-        <i class="mdi {{ 'mdi-glass-flute' if w['type'] == 'Schaumwein' else 'mdi-glass-wine' }}"></i>
+        <i class="mdi {% if w['category'] and w['category'] != 'wine' %}mdi-liquor{% elif w['type'] == 'Schaumwein' %}mdi-glass-flute{% else %}mdi-glass-wine{% endif %}"></i>
       {% endif %}
     </div>
 
@@ -136,8 +154,8 @@
       {% if w['winery'] %}<div class="card-winery" title="{{ w['winery'] }}">{{ w['winery'] }}</div>{% endif %}
       <div class="card-name" title="{{ w['name'] }}">{{ w['name'] }}</div>
       <div class="card-meta">
-        <span>{{ w['year'] or '' }}</span>
-        <span>{{ w['region'] or '' }}</span>
+        {% if w['year'] %}<span>{{ w['year'] }}</span>{% endif %}
+        {% if w['region'] %}<span>{{ w['region'] }}</span>{% endif %}
       </div>
       {% if w['rating'] or w['vivino_rating'] %}
       <div class="rating-line">
@@ -149,11 +167,14 @@
         {% if w['price'] %}<span class="price">{{ currency }} {{ "%.2f"|format(w['price']) }}</span>{% endif %}
         {% if w['drink_from'] or w['drink_until'] %}<span class="drink-window"><i class="mdi mdi-calendar-range"></i> {{ w['drink_from'] or '?' }}-{{ w['drink_until'] or '?' }}</span>{% endif %}
         {% if w['grapes'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grapes'][0].name }}{% if w['grapes']|length > 1 %} +{{ w['grapes']|length - 1 }}{% endif %}</span>{% elif w['grape'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grape'] }}</span>{% endif %}
+        {% if w['spirit_details'] and w['spirit_details']['cask_summary'] %}<span><i class="mdi mdi-barrel"></i> {{ w['spirit_details']['cask_summary'] }}</span>{% endif %}
+        {% if w['spirit_details'] and w['spirit_details']['abv'] is not none %}<span>{{ w['spirit_details']['abv'] }} %</span>{% endif %}
+        {% if w['spirit_details'] and w['spirit_details']['opened_at'] %}<span class="card-open"><i class="mdi mdi-bottle-tonic"></i> {{ (w['spirit_details']['fill_level'] or 100)|round|int }} %</span>{% endif %}
         {% if w['location'] %}<span><i class="mdi mdi-map-marker"></i> {{ w['location'] }}</span>{% endif %}
         {% if w['vivino_id'] %}<a class="card-vivino-link" href="https://www.vivino.com/w/{{ w['vivino_id'] }}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Vivino"><i class="mdi mdi-open-in-new"></i> Vivino</a>{% endif %}
       </div>
-      {% if w['notes'] %}
-      <div class="card-notes">{{ w['notes'] }}</div>
+      {% if w['description'] or w['notes'] %}
+      <div class="card-notes">{{ w['description'] or w['notes'] }}</div>
       {% endif %}
     </div>
 
@@ -257,6 +278,12 @@ const CURRENCY = '{{ currency }}';
 const T = {{ t | tojson }};
 var WINE_TYPE_COLORS = {{ wine_type_colors | tojson }};
 var WINE_TYPE_CUSTOM = {{ wine_type_custom_keys | tojson }};
+function ribbonSlug(type) {
+  return (type || '').toLowerCase()
+    .replace(/[éö]/g, function(c) { return c === 'é' ? 'e' : 'oe'; })
+    .replace(/\s+/g, '-');
+}
+
 function ribbonStyle(type) {
   return (WINE_TYPE_CUSTOM.indexOf(type) >= 0 && WINE_TYPE_COLORS[type])
     ? ' style="background:' + WINE_TYPE_COLORS[type] + ';color:#fff"' : '';
@@ -264,6 +291,11 @@ function ribbonStyle(type) {
 const AUTH_READONLY = {{ auth_readonly | tojson }};
 window.T = T;
 window.INGRESS = INGRESS;
+
+// ── Area switch: cellar (wine) vs bar (spirits) ──────────────────────────────
+window._area = {{ (area or 'cellar')|tojson }};
+
+// setArea() and the remembered-area restore live in theme.js (shared by all pages).
 
 // ── Hamburger Nav Menu ──────────────────────────────────────────────────────
 function toggleNavMenu(e) {
@@ -461,7 +493,8 @@ function applyFilters() {
       (d.region || '').toLowerCase().indexOf(query) !== -1 ||
       (d.year || '').indexOf(query) !== -1 ||
       (d.grape || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1;
+      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
+      (d.description || '').toLowerCase().indexOf(query) !== -1;
     // Drink window match
     var dwOk = true;
     if (activeDrinkWindow) {
@@ -536,7 +569,8 @@ function updateTabCounts() {
       (d.region || '').toLowerCase().indexOf(query) !== -1 ||
       (d.year || '').indexOf(query) !== -1 ||
       (d.grape || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1;
+      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
+      (d.description || '').toLowerCase().indexOf(query) !== -1;
     var dwOk = true;
     if (activeDrinkWindow) {
       var until = parseInt(d.drink_until);
@@ -587,7 +621,8 @@ function updateTabCounts() {
     var searchOk = !query ||
       (d.name || '').toLowerCase().indexOf(query) !== -1 ||
       (d.region || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1;
+      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
+      (d.description || '').toLowerCase().indexOf(query) !== -1;
     var typeOk = !activeType || d.type === activeType;
     var emptyOk = showEmpty || parseInt(d.quantity) > 0;
     var advOk = !window.AdvancedFilter || window.AdvancedFilter.evaluate(d);
@@ -775,7 +810,7 @@ function getCardData(el) {
     type: d.type || null, region: d.region || null, country: d.country || null,
     quantity: parseInt(d.quantity) || 0, rating: parseFloat(d.rating) || 0,
     vivino_rating: d.vivino_rating ? parseFloat(d.vivino_rating) : null,
-    notes: d.notes || '', image: d.image || null,
+    notes: d.notes || '', description: d.description || '', image: d.image || null,
     purchased_at: d.purchased_at || null, price: d.price ? parseFloat(d.price) : null,
     drink_from: d.drink_from ? parseInt(d.drink_from) : null,
     drink_until: d.drink_until ? parseInt(d.drink_until) : null,
@@ -964,6 +999,13 @@ function viewRow(icon, label, value) {
        + '<span class="view-value">' + escapeHtml(String(value)) + '</span></div>';
 }
 
+// Like viewRow but the value is trusted HTML (chips, fill bar - built here).
+function viewRowHtml(icon, label, html) {
+  return '<div class="view-row"><i class="mdi ' + icon + '"></i>'
+       + '<span class="view-label">' + escapeHtml(label) + '</span>'
+       + '<span class="view-value">' + html + '</span></div>';
+}
+
 function grapeLabel(g) {
   return g.name + ((g.pct === null || g.pct === undefined) ? '' : ' ' + g.pct + ' %');
 }
@@ -1031,7 +1073,9 @@ function openViewModal(id, wine) {
   if (w.type) {
     var typeKey = 'wine_type_' + w.type;
     var typeLabel = T[typeKey] || w.type;
-    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(w.type.toLowerCase().replace(/[éö]/g, function(c){return c==='é'?'e':'oe';})) + '"' + ribbonStyle(w.type) + '>' + escapeHtml(typeLabel) + '</span>';
+    ribbonHtml = '<span class="ribbon ribbon-' + escapeHtml(ribbonSlug(w.type)) +
+      (typeLabel.length > 9 ? ' ribbon-long' : '') + '"' + ribbonStyle(w.type) + '>' +
+      escapeHtml(typeLabel) + '</span>';
   }
   html += viewGalleryHtml(w, ribbonHtml);
 
@@ -1062,8 +1106,11 @@ function openViewModal(id, wine) {
   // Details section
   var details = '';
 
-  // Quantity (always shown; value has an id so the stepper can live-update it)
-  details += '<div class="view-row"><i class="mdi mdi-bottle-wine"></i>'
+  // Quantity (value has an id so the stepper can live-update it). Spirits show
+  // the same number as "sealed" further down, so this row would be redundant -
+  // the id must still exist for the stepper, hence the hidden row.
+  var _qtyRowHidden = (w.category && w.category !== 'wine');
+  details += '<div class="view-row"' + (_qtyRowHidden ? ' hidden' : '') + '><i class="mdi mdi-bottle-wine"></i>'
            + '<span class="view-label">' + escapeHtml(T.label_quantity || 'Quantity') + '</span>'
            + '<span class="view-value" id="viewQtyCount">' + (w.quantity != null ? w.quantity : 0) + '</span></div>';
 
@@ -1076,6 +1123,34 @@ function openViewModal(id, wine) {
   // Grape
   if (w.grapes && w.grapes.length) details += viewGrapeRow(w.grapes);
   else if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
+
+  // ── Spirits: casks, whisky facts and the open bottle ──────────────────────
+  var sd = w.spirit_details || {};
+  if (w.category && w.category !== 'wine') {
+    if (sd.abv != null) details += viewRow('mdi-percent', T.label_abv, sd.abv);
+    if (sd.age_years != null) details += viewRow('mdi-timer-sand', T.label_age, sd.age_years);
+    if (w.casks && w.casks.length) {
+      details += viewRowHtml('mdi-barrel', T.label_casks, w.casks.map(function(c) {
+        return '<span class="grape-chip">' + escapeHtml(c.name) +
+          (c.years == null ? '' : ' ' + c.years + ' ' + (T.casks_years || '')) + '</span>';
+      }).join('<span class="cask-arrow">→</span>'));
+    }
+    if (sd.bottler) details += viewRow('mdi-factory', T.label_bottler, sd.bottler);
+    if (sd.batch_number) details += viewRow('mdi-numeric', T.label_batch, sd.batch_number);
+    if (sd.cask_number) details += viewRow('mdi-barrel-outline', T.label_cask_number, sd.cask_number);
+    if (sd.peat_ppm != null) details += viewRow('mdi-fire', T.label_peat, sd.peat_ppm);
+    var flags = [];
+    if (sd.cask_strength) flags.push(T.label_cask_strength);
+    if (sd.single_cask) flags.push(T.label_single_cask);
+    if (sd.chill_filtered === 0) flags.push('non ' + (T.label_chill_filtered || ''));
+    if (flags.length) details += viewRow('mdi-tag-outline', '', flags.join(' · '));
+
+    details += viewRow('mdi-bottle-wine-outline', T.label_sealed, w.quantity);
+    if (sd.opened_at) {
+      details += viewRow('mdi-calendar-clock', T.label_opened_at, sd.opened_at);
+      details += viewRowHtml('mdi-cup', T.label_fill_level, fillBarHtml(w.id, sd.fill_level));
+    }
+  }
 
   // Purchased at
   if (w.purchased_at) details += viewRow('mdi-cart', T.label_purchased_at || 'Purchased at', w.purchased_at);
@@ -1109,9 +1184,14 @@ function openViewModal(id, wine) {
     html += '<div class="view-details">' + details + '</div>';
   }
 
-  // Notes
+  // Description (researched) and notes (the user's own) are separate blocks.
+  if (w.description) {
+    html += '<div class="view-notes">' + escapeHtml(w.description) + '</div>';
+  }
   if (w.notes) {
-    html += '<div class="view-notes">' + escapeHtml(w.notes) + '</div>';
+    html += '<div class="view-note-block"><div class="view-note-label">' +
+      escapeHtml(T.label_notes || '') + '</div>' +
+      '<div class="view-notes view-notes-own">' + escapeHtml(w.notes) + '</div></div>';
   }
 
   // Maturity graph, taste profile, food pairings
@@ -1128,7 +1208,20 @@ function openViewModal(id, wine) {
           + '<button type="button" title="' + (T.btn_more || '') + '" onclick="viewChangeQty(1)">+</button>'
           + '</div>'
           + '<button type="button" class="view-act-btn" onclick="openPurchasesFromView(' + id + ')">'
-          + '<i class="mdi mdi-cart-outline"></i> ' + escapeHtml(T.purchases_manage || 'Purchases') + '</button>'
+          + '<i class="mdi mdi-cart-outline"></i> ' + escapeHtml(T.purchases_manage || 'Purchases') + '</button>';
+    // Spirits: open a sealed bottle, or mark the open one as empty.
+    if (w.category && w.category !== 'wine') {
+      if (sd.opened_at) {
+        html += '<button type="button" class="view-act-btn" onclick="finishBottle(' + id + ')">'
+              + '<i class="mdi mdi-bottle-tonic-outline"></i> '
+              + escapeHtml(T.btn_finish_bottle || 'Empty') + '</button>';
+      } else if ((w.quantity || 0) > 0) {
+        html += '<button type="button" class="view-act-btn" onclick="openBottle(' + id + ')">'
+              + '<i class="mdi mdi-bottle-tonic"></i> '
+              + escapeHtml(T.btn_open_bottle || 'Open') + '</button>';
+      }
+    }
+    html += ''
           + '<button type="button" class="btn-submit" onclick="editFromView()">' + escapeHtml(T.btn_edit || 'Edit') + '</button>'
           + '<button type="button" class="view-act-btn danger" title="' + escapeHtml(T.btn_delete || 'Delete') + '" onclick="viewDelete()"><i class="mdi mdi-delete"></i></button>';
   }
@@ -1213,6 +1306,7 @@ function viewChangeQty(delta) {
   // structured blend (incl. percentages) on a pure quantity change.
   [['name', w.name], ['year', w.year], ['type', w.type], ['region', w.region],
    ['quantity', newQty], ['rating', w.rating], ['notes', w.notes],
+   ['description', w.description || ''],
    ['bottle_format', w.bottle_format || '0.75'], ['vivino_id', w.vivino_id || ''],
    ['drink_from', w.drink_from || ''], ['drink_until', w.drink_until || ''],
    ['location', w.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
@@ -1310,7 +1404,16 @@ function refreshRegionList() {
   dl.innerHTML = sorted.map(function(v) { return '<option value="' + v.replace(/"/g, '&quot;') + '">'; }).join('');
 }
 
-function wineIcon(type) {
+var SPIRIT_ICONS = {
+  'Gin': 'mdi-bottle-tonic', 'Wodka': 'mdi-bottle-tonic',
+  'Rum': 'mdi-glass-mug', 'Tequila': 'mdi-glass-cocktail', 'Mezcal': 'mdi-glass-cocktail',
+  'Likör': 'mdi-glass-cocktail', 'Grappa': 'mdi-glass-tulip', 'Obstbrand': 'mdi-glass-tulip'
+};
+
+function wineIcon(type, category) {
+  if (category && category !== 'wine') {
+    return '<i class="mdi ' + (SPIRIT_ICONS[type] || 'mdi-liquor') + '"></i>';
+  }
   if (type === 'Schaumwein') return '<i class="mdi mdi-glass-flute"></i>';
   return '<i class="mdi mdi-glass-wine"></i>';
 }
@@ -1323,6 +1426,44 @@ function escapeHtml(s) {
 }
 
 // Compact grape label for cards/table: leading variety (by pct, then order) + "+N".
+// ── Spirits: open bottle ─────────────────────────────────────────────────────
+function fillBarHtml(wineId, pct) {
+  var p = Math.max(0, Math.min(100, pct == null ? 100 : pct));
+  return '<span class="fill-wrap">' +
+    '<span class="fill-bar"><span class="fill-bar-in" style="width:' + p + '%"></span></span>' +
+    '<input type="range" class="fill-range" min="0" max="100" step="5" value="' + p +
+      '" oninput="this.nextElementSibling.textContent = this.value + \' %\'"' +
+      ' onchange="setFill(' + wineId + ', this.value)">' +
+    '<span class="fill-pct">' + Math.round(p) + ' %</span></span>';
+}
+
+function _spiritAction(id, path) {
+  return fetch(INGRESS + '/api/wine/' + id + '/' + path, {
+    method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  }).then(function(r) { return r.json(); });
+}
+
+function openBottle(id) {
+  _spiritAction(id, 'open').then(function(d) {
+    if (d.ok) { closeModal('viewModal'); window.location.reload(); }
+  });
+}
+
+function finishBottle(id) {
+  _spiritAction(id, 'finish').then(function(d) {
+    if (d.ok) { closeModal('viewModal'); window.location.reload(); }
+  });
+}
+
+function setFill(id, percent) {
+  fetch(INGRESS + '/api/wine/' + id + '/fill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: JSON.stringify({ percent: Number(percent) })
+  }).then(function(r) { return r.json(); })
+    .then(function(d) { if (d.ok) openViewModal(d.wine.id, d.wine); });
+}
+
 function grapeLead(list) {
   if (!list || !list.length) return '';
   var sorted = list.slice().sort(function(a, b) { return (b.pct || 0) - (a.pct || 0); });
@@ -1345,14 +1486,20 @@ function renderCard(w) {
   var lead = grapeLead(w.grapes);
   if (lead) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(lead) + '</span>';
   else if (w.grape) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(w.grape) + '</span>';
+  var sdCard = w.spirit_details || {};
+  if (sdCard.cask_summary) extra += '<span><i class="mdi mdi-barrel"></i> ' + escapeHtml(sdCard.cask_summary) + '</span>';
+  if (sdCard.abv != null) extra += '<span>' + sdCard.abv + ' %</span>';
+  if (sdCard.opened_at) extra += '<span class="card-open"><i class="mdi mdi-bottle-tonic"></i> ' +
+    Math.round(sdCard.fill_level == null ? 100 : sdCard.fill_level) + ' %</span>';
   if (w.location) extra += '<span><i class="mdi mdi-map-marker"></i> ' + escapeHtml(w.location) + '</span>';
   if (w.vivino_id) extra += '<a class="card-vivino-link" href="https://www.vivino.com/w/' + encodeURIComponent(w.vivino_id) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Vivino"><i class="mdi mdi-open-in-new"></i> Vivino</a>';
 
   var imgHtml = w.image
     ? '<img src="' + INGRESS + '/uploads/' + encodeURIComponent(w.image) + '" alt="' + escapeHtml(w.name) + '" loading="lazy">'
-    : wineIcon(w.type);
+    : wineIcon(w.type, w.category);
 
-  var notesHtml = w.notes ? '<div class="card-notes">' + escapeHtml(w.notes) + '</div>' : '';
+  var cardText = w.description || w.notes;
+  var notesHtml = cardText ? '<div class="card-notes">' + escapeHtml(cardText) + '</div>' : '';
 
   var metaParts = '<span>' + (w.year || '') + '</span>';
   metaParts += '<span>' + (w.region ? escapeHtml(w.region) : '') + '</span>';
@@ -1362,8 +1509,11 @@ function renderCard(w) {
   if (w.quantity == 0) {
     ribbonHtml = '<div class="ribbon ribbon-empty">' + (T.ribbon_empty || '') + '</div>';
   } else if (w.type) {
-    var ribbonCls = w.type.toLowerCase().replace(/é/g,'e').replace(/ö/g,'oe');
-    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls + '"' + ribbonStyle(w.type) + '>' + escapeHtml(T['wine_type_' + w.type] || w.type) + '</div>';
+    var ribbonCls = ribbonSlug(w.type);
+    var _rlabel = T['wine_type_' + w.type] || w.type;
+    ribbonHtml = '<div class="ribbon ribbon-' + ribbonCls +
+      (_rlabel.length > 9 ? ' ribbon-long' : '') + '"' + ribbonStyle(w.type) + '>' +
+      escapeHtml(_rlabel) + '</div>';
   }
 
   return ribbonHtml +
@@ -1399,6 +1549,7 @@ function updateCardData(card, w) {
   card.dataset.rating = w.rating || 0;
   card.dataset.vivino_rating = w.vivino_rating || '';
   card.dataset.notes = w.notes || '';
+  card.dataset.description = w.description || '';
   card.dataset.image = w.image || '';
   card.dataset.purchased_at = w.purchased_at || '';
   card.dataset.price = w.price || '';
@@ -1406,6 +1557,12 @@ function updateCardData(card, w) {
   card.dataset.drink_until = w.drink_until || '';
   card.dataset.location = w.location || '';
   card.dataset.grape = w.grape || '';
+  var sdc = w.spirit_details || {};
+  card.dataset.category = w.category || 'wine';
+  card.dataset.cask = sdc.cask_summary || '';
+  card.dataset.bottler = sdc.bottler || '';
+  card.dataset.abv = sdc.abv == null ? '' : sdc.abv;
+  card.dataset.age_years = sdc.age_years == null ? '' : sdc.age_years;
   card.dataset.bottle_format = w.bottle_format || '0.75';
   card.dataset.vivino_id = w.vivino_id || '';
   card.classList.toggle('empty', w.quantity == 0);
@@ -1470,6 +1627,7 @@ function changeQty(el, delta) {
   fd.append('quantity', newQty);
   fd.append('rating', d.rating);
   fd.append('notes', d.notes);
+  fd.append('description', d.description || '');
   fd.append('purchased_at', d.purchased_at);
   fd.append('price', d.price);
   fd.append('drink_from', d.drink_from);
@@ -1689,7 +1847,7 @@ initImageShimmer();
 
 <nav class="bottom-tab-bar">
   <a class="tab-item active" href="{{ ingress }}/">
-    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_cellar }}</span>
+    <i class="mdi mdi-bottle-wine"></i><span>{{ t.nav_collection }}</span>
   </a>
   {% if ai_enabled %}
   <a class="tab-item" href="{{ ingress }}/chat">

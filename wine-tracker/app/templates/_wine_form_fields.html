@@ -8,8 +8,11 @@
 <div class="wine-tabs">
   <button type="button" class="wine-tab active" data-tab="basics" onclick="switchWineTab('basics')">{{ t.tab_basics }}</button>
   <button type="button" class="wine-tab" data-tab="price" onclick="switchWineTab('price')">{{ t.tab_price_storage }}</button>
-  <button type="button" class="wine-tab" data-tab="maturity" onclick="switchWineTab('maturity')">{{ t.tab_maturity_taste }}</button>
+  <button type="button" class="wine-tab" data-cat="wine" data-tab="maturity" onclick="switchWineTab('maturity')">{{ t.tab_maturity_taste }}</button>
+  <button type="button" class="wine-tab" data-cat="spirits" data-tab="whisky" onclick="switchWineTab('whisky')" hidden>{{ t.tab_whisky }}</button>
 </div>
+{# The area switch (cellar/bar) decides the category - no in-form selector. #}
+<input type="hidden" name="category" id="wine_category" value="wine">
 
 <div class="wine-tab-panel" data-panel="basics">
   <div>
@@ -18,7 +21,8 @@
   </div>
 
   <div>
-    <label>{{ t.label_winery }}</label>
+    {# label + placeholder are swapped per category (Winzer / Destillerie / Produzent) #}
+    <label id="lblWinery">{{ t.label_winery }}</label>
     <input type="text" name="winery" id="wine_winery" placeholder="{{ t.label_winery }}" list="wineryList" autocomplete="off">
     <datalist id="wineryList">
       {% for wn in used_wineries %}
@@ -28,9 +32,14 @@
   </div>
 
   <div class="row2">
-    <div>
+    <div data-cat="wine">
       <label>{{ t.label_vintage }}</label>
       <input type="number" name="year" id="wine_year" min="1900" max="2099" placeholder="2020">
+    </div>
+    {# Spirits have no vintage - distilled/bottled years live on the whisky tab #}
+    <div data-cat="spirits" hidden>
+      <label>{{ t.label_age }}</label>
+      <input type="number" name="age_years" id="wine_age_years" min="0" max="100">
     </div>
     <div>
       <label>{{ t.label_quantity }}</label>
@@ -46,11 +55,14 @@
       <select name="type" id="wine_type">
         <option value="">{{ t.type_select_default }}</option>
         {% for wt in wine_types_ref %}
-        <option value="{{ wt.key }}">{{ wt.key | wine_type }}</option>
+        <option value="{{ wt.key }}" data-cat="wine">{{ wt.key | wine_type }}</option>
+        {% endfor %}
+        {% for st in spirit_types_ref %}
+        <option value="{{ st.key }}" data-cat="spirits" hidden>{{ st.key }}</option>
         {% endfor %}
       </select>
     </div>
-    <div>
+    <div data-cat="wine">
       <label>{{ t.label_grape }}</label>
       {# Looks like a form control, behaves like a button: opens #grapesModal #}
       <button type="button" class="grape-field" onclick="openGrapesDialog()"
@@ -60,6 +72,15 @@
       </button>
       <input type="hidden" name="grapes" id="wine_grapes_json">
       <input type="hidden" name="grape" id="wine_grape">
+    </div>
+    <div data-cat="spirits" hidden>
+      <label>{{ t.label_casks }}</label>
+      <button type="button" class="grape-field" onclick="openCasksDialog()"
+              title="{{ t.casks_manage }}" aria-label="{{ t.casks_manage }}">
+        <span class="grape-field-chips" id="caskSummary"></span>
+        <i class="mdi mdi-chevron-right grape-field-arrow"></i>
+      </button>
+      <input type="hidden" name="casks" id="wine_casks_json">
     </div>
   </div>
 
@@ -92,8 +113,17 @@
     </div>
   </div>
 
+  {# Two separate fields on purpose: the description is what the AI researches,
+     the notes are the user's own and are never touched by it. #}
   <div>
-    <label>{{ t.label_notes }}</label>
+    <label>{{ t.label_description }}
+      <span class="label-hint">{{ t.hint_description }}</span></label>
+    <textarea name="description" id="wine_description" placeholder="{{ t.placeholder_description }}"></textarea>
+  </div>
+
+  <div>
+    <label>{{ t.label_notes }}
+      <span class="label-hint">{{ t.hint_notes }}</span></label>
     <textarea name="notes" id="wine_notes" placeholder="{{ t.placeholder_notes }}"></textarea>
   </div>
 </div>
@@ -103,8 +133,13 @@
     <div>
       <label>{{ t.label_bottle_format }}</label>
       <select name="bottle_format" id="wine_bottle_format">
+        <option value="0.05" data-cat="spirits" hidden>Miniatur (0.05 l)</option>
         <option value="0.1875">Piccolo (0.1875 l)</option>
+        <option value="0.2" data-cat="spirits" hidden>Probe (0.2 l)</option>
+        <option value="0.35" data-cat="spirits" hidden>Kleinflasche (0.35 l)</option>
         <option value="0.375">Demi (0.375 l)</option>
+        <option value="0.5" data-cat="spirits" hidden>Halbliter (0.5 l)</option>
+        <option value="0.7" data-cat="spirits" hidden>Spirituose (0.7 l)</option>
         <option value="0.75" selected>Standard (0.75 l)</option>
         <option value="1.5">Magnum (1.5 l)</option>
         <option value="3">Double Magnum (3 l)</option>
@@ -129,7 +164,8 @@
     </div>
   </div>
 
-  <div class="row2">
+  {# A drinking window is a wine concept - spirits do not age in the bottle #}
+  <div class="row2" data-cat="wine">
     <div>
       <label>{{ t.label_drink_from }}</label>
       <input type="number" name="drink_from" id="wine_drink_from" min="2000" max="2099" placeholder="2025">
@@ -153,7 +189,7 @@
 
 {# Enrichment fields - normally AI-filled, here editable. Values are serialised
    into the hidden maturity_data / taste_profile / food_pairings inputs. #}
-<div class="wine-tab-panel" data-panel="maturity" hidden>
+<div class="wine-tab-panel" data-cat="wine" data-panel="maturity" hidden>
   <div class="enrich-fields">
     <label class="enrich-head">{{ t.maturity_phases }}</label>
     <div class="mat-inputs">
@@ -177,4 +213,69 @@
     <label class="enrich-head">{{ t.food_pairings }}</label>
     <input type="text" id="food_pairings_input" placeholder="{{ t.food_hint }}" oninput="syncFoodFromInputs()" autocomplete="off">
   </div>
+</div>
+
+<div class="wine-tab-panel" data-cat="spirits" data-panel="whisky" hidden>
+  <div class="row2">
+    <div>
+      <label>{{ t.label_abv }}</label>
+      <input type="number" name="abv" id="wine_abv" min="0" max="100" step="0.1" placeholder="46.0">
+    </div>
+    <div>
+      <label>{{ t.label_bottler }}</label>
+      <input type="text" name="bottler" id="wine_bottler" list="wineryList" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_distilled }}</label>
+      <input type="number" name="distilled_year" id="wine_distilled_year" min="1800" max="2099">
+    </div>
+    <div>
+      <label>{{ t.label_bottled }}</label>
+      <input type="number" name="bottled_year" id="wine_bottled_year" min="1800" max="2099">
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_batch }}</label>
+      <input type="text" name="batch_number" id="wine_batch_number" placeholder="Batch 003">
+    </div>
+    <div>
+      <label>{{ t.label_cask_number }}</label>
+      <input type="text" name="cask_number" id="wine_cask_number" placeholder="#1234">
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label>{{ t.label_peat }}</label>
+      <input type="number" name="peat_ppm" id="wine_peat_ppm" min="0" max="200">
+    </div>
+    <div></div>
+  </div>
+
+  <div class="spirit-flags">
+    <label><input type="checkbox" name="cask_strength" id="wine_cask_strength" value="1"> {{ t.label_cask_strength }}</label>
+    <label><input type="checkbox" name="single_cask" id="wine_single_cask" value="1"> {{ t.label_single_cask }}</label>
+    <label><input type="checkbox" name="chill_filtered" id="wine_chill_filtered" value="1"> {{ t.label_chill_filtered }}</label>
+  </div>
+
+  <div class="enrich-fields">
+    <label class="enrich-head">{{ t.taste_profile }}</label>
+    <div class="taste-inputs">
+      <div><span>{{ t.taste_smoke }}</span><input type="number" id="taste_smoke" min="1" max="5" placeholder="1–5" oninput="syncSpiritTasteFromInputs()"></div>
+      <div><span>{{ t.taste_sweetness }}</span><input type="number" id="taste_sw_spirit" min="1" max="5" placeholder="1–5" oninput="syncSpiritTasteFromInputs()"></div>
+      <div><span>{{ t.taste_fruit }}</span><input type="number" id="taste_fruit" min="1" max="5" placeholder="1–5" oninput="syncSpiritTasteFromInputs()"></div>
+      <div><span>{{ t.taste_spice }}</span><input type="number" id="taste_spice" min="1" max="5" placeholder="1–5" oninput="syncSpiritTasteFromInputs()"></div>
+    </div>
+  </div>
+
+  <datalist id="caskList">
+    {% for cn in ref_cask_names %}
+    <option value="{{ cn }}">
+    {% endfor %}
+  </datalist>
 </div>

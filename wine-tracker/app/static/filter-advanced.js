@@ -27,11 +27,16 @@
     { key: 'grape',        group: 'text',   type: 'text',   label: 'filter_field_grape' },
     { key: 'location',     group: 'text',   type: 'text',   label: 'filter_field_location' },
     { key: 'notes',        group: 'text',   type: 'text',   label: 'filter_field_notes' },
+    { key: 'description',  group: 'text',   type: 'text',   label: 'filter_field_description' },
+    { key: 'cask',         group: 'text',   type: 'text',   label: 'label_casks' },
+    { key: 'bottler',      group: 'text',   type: 'text',   label: 'label_bottler' },
     // Numbers
     { key: 'year',         group: 'numbers', type: 'number', label: 'filter_field_year',     integer: true },
     { key: 'price',        group: 'numbers', type: 'number', label: 'filter_field_price' },
     { key: 'rating',       group: 'numbers', type: 'number', label: 'filter_field_rating',   integer: true, min: 0, max: 5 },
     { key: 'quantity',     group: 'numbers', type: 'number', label: 'filter_field_quantity', integer: true, min: 0 },
+    { key: 'abv',          group: 'numbers', type: 'number', label: 'label_abv' },
+    { key: 'age_years',    group: 'numbers', type: 'number', label: 'label_age', integer: true },
     // Choice
     { key: 'type',          group: 'choice', type: 'choice', label: 'filter_field_type' },
     { key: 'bottle_format', group: 'choice', type: 'choice', label: 'filter_field_bottle_format' },

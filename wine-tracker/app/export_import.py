@@ -31,6 +31,7 @@ SCHEMA_VERSION = 1
 WINE_COLUMNS = [
     "id",
     "name",
+    "category",
     "winery",
     "year",
     "type",
@@ -38,6 +39,7 @@ WINE_COLUMNS = [
     "quantity",
     "rating",
     "notes",
+    "description",
     "image",
     "added",
     "purchased_at",
@@ -77,6 +79,10 @@ CSV_COLUMNS = [
     "notes",
     "image",
     "vivino_id",
+    # appended so existing spreadsheets keep their column positions
+    "category",
+    "abv",
+    "description",
 ]
 
 
@@ -131,6 +137,9 @@ def _build_readme(manifest: dict) -> str:
 | `grape` | string | Grape variety / blend (auto-derived cache of `grapes`) |
 | `grapes` | array | Structured blend: list of `{{name, pct}}`; `pct` is the percentage or null |
 | `country` | string | Country |
+| `category` | string | `wine`, `whisky` or `spirit` (missing = `wine`) |
+| `spirit_details` | object | Spirits-only facts (abv, age_years, cask_summary, bottler, batch_number, opened_at, fill_level ...) |
+| `casks` | array | Maturation chain: list of `{{name, years}}`, first entry is the initial cask |
 | `quantity` | integer | Bottles currently in cellar |
 | `rating` | integer | 0 - 5 personal rating |
 | `price` | number | Weighted-average purchase price (derived from purchase lots; see purchases.json) |
@@ -140,7 +149,8 @@ def _build_readme(manifest: dict) -> str:
 | `drink_until` | integer | Latest recommended drinking year |
 | `location` | string | Storage location label |
 | `bottle_format` | number | Bottle volume in liters, e.g. `0.75`, `1.5` |
-| `notes` | string | Free-text tasting notes |
+| `notes` | string | Your own private notes - never written by the AI |
+| `description` | string | Description of the bottle (style, aroma, taste); this is what the AI fills |
 | `image` | string | Image filename (file lives in `images/`) |
 | `vivino_id` | integer | Vivino wine ID (used for deduplication on import) |
 | `maturity_data` | string | JSON blob with maturity curve data |
@@ -197,9 +207,14 @@ def build_export_zip(db, upload_dir: str, app_version: str = "") -> bytes:
 
     # Attach the structured grape blend (names + optional pct) per wine.
     import grapes as grape_model
+    import spirits as spirit_model
     for w in wines:
         w["grapes"] = [{"name": g["name"], "pct": g["pct"]}
                        for g in grape_model.list_wine_grapes(db, w["id"])]
+        w["spirit_details"] = spirit_model.get_details(db, w["id"])
+        w["casks"] = [{"name": c["name"], "years": c["years"]}
+                      for c in spirit_model.list_casks(db, w["id"])]
+        w["abv"] = w["spirit_details"].get("abv")     # for the CSV view
 
     try:
         timeline_rows = db.execute(
@@ -294,6 +309,8 @@ CSV_ALIASES = {
     "bottle_format": "bottle_format",
     "notes": "notes",
     "notizen": "notes",
+    "description": "description",
+    "beschreibung": "description",
     "image": "image",
     "vivino_id": "vivino_id",
 }
@@ -346,6 +363,12 @@ def _normalize_wine(w: dict) -> dict:
     # Preserve the structured grape blend (not a wines column) for apply_import.
     if isinstance(w.get("grapes"), list):
         out["grapes"] = w["grapes"]
+    # Same for the spirits payload.
+    if isinstance(w.get("spirit_details"), dict):
+        out["spirit_details"] = w["spirit_details"]
+    if isinstance(w.get("casks"), list):
+        out["casks"] = w["casks"]
+    out["category"] = (w.get("category") or "wine")
     return out
 
 
@@ -532,6 +555,7 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
     update_sets = ",".join(f"{c}=?" for c in insert_cols)
 
     import grapes as grape_model
+    import spirits as spirit_model
 
     inserted = updated = skipped = 0
     id_map: dict[int, int] = {}  # original_id → new_id (for timeline)
@@ -540,6 +564,10 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
     original_ids = parsed.get("original_ids") or [None] * len(wines)
 
     for wine, match, orig_id in zip(wines, matches, original_ids):
+        # `category` is NOT NULL; archives predating spirits (and hand-built
+        # payloads) simply have no value for it.
+        if not wine.get("category"):
+            wine["category"] = "wine"
         values = [wine.get(c) for c in insert_cols]
         target_id = None
         if match["matched"]:
@@ -572,6 +600,12 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
 
         # Structured grape blend: prefer the explicit list, else split the
         # legacy free-text grape string. (Rebuilds the wines.grape cache too.)
+        sd = wine.get("spirit_details")
+        if isinstance(sd, dict) and any(v is not None for v in sd.values()):
+            spirit_model.set_details(db, target_id, sd)
+        if isinstance(wine.get("casks"), list) and wine["casks"]:
+            spirit_model.set_casks(db, target_id, wine["casks"])
+
         gl = wine.get("grapes")
         if isinstance(gl, list) and gl:
             grape_model.set_wine_grapes(db, target_id, gl)

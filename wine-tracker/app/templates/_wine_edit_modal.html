@@ -10,7 +10,7 @@
     <div class="modal-header">
       <span id="wineModalTitle">{{ t.modal_add_title }}</span>
       <div class="modal-header-actions">
-        <div class="vivino-id-popover-wrap" id="vivinoIdWrap" style="display:none">
+        <div class="vivino-id-popover-wrap" data-cat="wine" id="vivinoIdWrap" style="display:none">
           <button type="button" class="btn-header-icon" id="vivinoIdTriggerBtn" onclick="toggleVivinoIdPopover()" title="{{ t.vivino_id_title }}">
             <i class="mdi mdi-code-tags"></i>
           </button>
@@ -41,7 +41,8 @@
           </div>
         </div>
         {% endif %}
-        <div class="source-option" onclick="onSourceVivino()">
+        {# Vivino is a wine catalogue - it has nothing for spirits #}
+        <div class="source-option" data-cat="wine" onclick="onSourceVivino()">
           <i class="mdi mdi-magnify"></i>
           <div class="source-text">
             <div class="source-label">{{ t.vivino_title }}</div>
@@ -144,12 +145,29 @@
             </button>
             <div class="reload-popover" id="reloadPopover" style="display:none">
               {% if ai_enabled %}
-              <button type="button" class="reload-popover-option" onclick="reloadViaAi(); closeReloadPopover();">
-                <i class="mdi mdi-robot"></i> {{ t.reload_ai_desc }}
+              {# Targeted refreshes: a price lookup should not re-research the
+                 whole bottle, and re-estimating the maturity profile should not
+                 touch the label facts. Each scope gets its own prompt. #}
+              <button type="button" class="reload-popover-option" onclick="reloadViaAi('all'); closeReloadPopover();">
+                <i class="mdi mdi-robot"></i>
+                <span><b>{{ t.scope_all }}</b><small>{{ t.scope_all_desc }}</small></span>
               </button>
+              <button type="button" class="reload-popover-option" onclick="reloadViaAi('price'); closeReloadPopover();">
+                <i class="mdi mdi-cash-multiple"></i>
+                <span><b>{{ t.scope_price }}</b><small>{{ t.scope_price_desc }}</small></span>
+              </button>
+              <button type="button" class="reload-popover-option" onclick="reloadViaAi('profile'); closeReloadPopover();">
+                <i class="mdi mdi-chart-bell-curve"></i>
+                <span><b>{{ t.scope_profile }}</b>
+                  <small data-cat="wine">{{ t.scope_profile_desc }}</small>
+                  <small data-cat="spirits">{{ t.scope_profile_desc_spirit }}</small></span>
+              </button>
+              <div class="reload-popover-sep" data-cat="wine"></div>
               {% endif %}
-              <button type="button" class="reload-popover-option" onclick="reloadViaVivino(); closeReloadPopover();">
-                <i class="mdi mdi-web"></i> {{ t.reload_vivino_desc }}
+              <button type="button" class="reload-popover-option" data-cat="wine"
+                      onclick="reloadViaVivino(); closeReloadPopover();">
+                <i class="mdi mdi-web"></i>
+                <span><b>{{ t.reload_vivino_desc }}</b></span>
               </button>
             </div>
           </div>
@@ -200,11 +218,34 @@
 <div class="modal-overlay" id="reconcileModal">
   <div class="modal">
     <div class="modal-header"><span>{{ t.rc_title }}</span><button class="modal-close" type="button" onclick="closeModal('reconcileModal')">&times;</button></div>
+    <div class="rc-note"><i class="mdi mdi-information-outline"></i><span>{{ t.rc_ai_note }}</span></div>
     <div class="modal-body" id="reconcileBody"></div>
     <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:.6rem;padding:.75rem 1.25rem 1.25rem;border-top:1px solid var(--border);">
       <button type="button" class="btn-cancel" onclick="closeModal('reconcileModal')">{{ t.btn_cancel }}</button>
       <button type="button" class="btn-submit" style="width:auto;padding:0 1.2rem;" onclick="applyReconcile()">{{ t.rc_apply }}</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════ AI PROGRESS ═══════════ -->
+{# A web-searching model takes seconds and gives no interim signal, so there is
+   nothing honest to show as a percentage. What IS honest: which task is running,
+   that it is still running, how long it has been going, and a way out. #}
+{# Deliberately NOT .modal-overlay: the generic backdrop-click and Escape
+   handlers would hide this without aborting the request, leaving a call running
+   invisibly. Closing it must go through cancelAiReload(). #}
+<div class="ai-progress-overlay" id="aiProgressModal">
+  <div class="ai-progress-box">
+    <div class="ai-progress-head">
+      <i class="mdi mdi-robot"></i>
+      <span id="aiProgressTitle"></span>
+    </div>
+    <div class="ai-progress-track"><span class="ai-progress-fill"></span></div>
+    <div class="ai-progress-meta">
+      <span id="aiProgressHint"></span>
+      <span class="ai-progress-time" id="aiProgressTime">0&nbsp;s</span>
+    </div>
+    <button type="button" class="btn-cancel ai-progress-cancel" onclick="cancelAiReload()">{{ t.btn_cancel }}</button>
   </div>
 </div>
 
@@ -298,6 +339,26 @@
   </div>
 </div>
 
+<!-- Cask chain editor (spirits). Row 0 is the initial cask, the rest finishes. -->
+<div class="modal-overlay" id="casksModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.casks_title }}</span>
+      <button class="modal-close" type="button" onclick="closeCasksDialog()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="grape-hint">{{ t.casks_hint }}</p>
+      <div id="caskRows" class="grape-rows"></div>
+      <div class="grape-rows-foot">
+        <button type="button" class="btn-cancel grape-add" onclick="caskAddRow()">{{ t.casks_add }}</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-submit" onclick="closeCasksDialog()">{{ t.grapes_done }}</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ ingress }}/static/wine-modal.js"></script>
 <script>
 // ── Wine Edit Modal JS ──────────────────────────────────────────────────────
@@ -380,30 +441,65 @@ var _aiLastFile = null;
 var _reloadMode = false;
 
 // ── AI reload confirm (per-field) ────────────────────────────────────────────
-var _AR_FIELDS = [
-  { key: 'name',        el: 'wine_name',        labelKey: 'label_name' },
-  { key: 'winery',      el: 'wine_winery',      labelKey: 'label_winery' },
-  { key: 'vintage',     el: 'wine_year',        labelKey: 'label_vintage' },
-  { key: 'wine_type',   el: 'wine_type',        labelKey: 'label_type', type: 'wine_type' },
-  { key: 'region',      el: 'wine_region',      labelKey: 'label_region' },
-  { key: 'price',       el: 'wine_ai_price',    labelKey: 'label_ai_price' },
-  { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
-  { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' },
-  { key: 'notes',       el: 'wine_notes',       labelKey: 'label_notes' }
+// Fields common to every category. The producer label differs per category, so
+// the label key is resolved at render time (see _arFieldLabel).
+var _AR_COMMON_FIELDS = [
+  { key: 'name',      el: 'wine_name',     labelKey: 'label_name' },
+  { key: 'winery',    el: 'wine_winery',   labelKey: 'label_winery', producer: true },
+  { key: 'wine_type', el: 'wine_type',     labelKey: 'label_type', type: 'wine_type' },
+  { key: 'country',   el: 'wine_country',  labelKey: 'label_country' },
+  { key: 'region',    el: 'wine_region',   labelKey: 'label_region' },
+  { key: 'price',     el: 'wine_ai_price', labelKey: 'label_ai_price' },
+  // The AI fills the description. `notes` is the user's own field and is
+  // deliberately absent here - see the DESCRIPTION_RULE in app.py.
+  { key: 'description', el: 'wine_description', labelKey: 'label_description' }
   // bottle_format is deliberately absent: the user owns the physical bottle,
   // AI/Vivino must never set or change it (default stays 0.75).
 ];
-var _AR_ENRICH = [
+var _AR_WINE_FIELDS = [
+  { key: 'vintage',     el: 'wine_year',        labelKey: 'label_vintage' },
+  { key: 'drink_from',  el: 'wine_drink_from',  labelKey: 'label_drink_from' },
+  { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' }
+];
+var _AR_SPIRIT_FIELDS = [
+  { key: 'abv',            el: 'wine_abv',            labelKey: 'label_abv' },
+  { key: 'age_years',      el: 'wine_age_years',      labelKey: 'label_age' },
+  { key: 'distilled_year', el: 'wine_distilled_year', labelKey: 'label_distilled' },
+  { key: 'bottled_year',   el: 'wine_bottled_year',   labelKey: 'label_bottled' },
+  { key: 'bottler',        el: 'wine_bottler',        labelKey: 'label_bottler' },
+  { key: 'batch_number',   el: 'wine_batch_number',   labelKey: 'label_batch' },
+  { key: 'peat_ppm',       el: 'wine_peat_ppm',       labelKey: 'label_peat' },
+  { key: 'cask_strength',  el: 'wine_cask_strength',  labelKey: 'label_cask_strength', bool: true },
+  { key: 'single_cask',    el: 'wine_single_cask',    labelKey: 'label_single_cask', bool: true }
+];
+
+// The reload dialog must offer exactly the fields the form actually shows -
+// otherwise the AI returns values (abv, casks, age) that silently go nowhere,
+// which looked like "the AI fills almost nothing".
+function _arFields() {
+  var cat = currentWineCategory();
+  return _AR_COMMON_FIELDS.concat(cat === 'wine' ? _AR_WINE_FIELDS : _AR_SPIRIT_FIELDS);
+}
+
+var _AR_WINE_ENRICH = [
   { key: 'maturity_data', el: 'wine_maturity_data', labelKey: 'ar_maturity' },
   { key: 'taste_profile', el: 'wine_taste_profile', labelKey: 'ar_taste' },
   { key: 'food_pairings', el: 'wine_food_pairings', labelKey: 'ar_pairings' }
 ];
+// Spirits share the taste_profile field but with their own dimensions; maturity
+// phases and food pairings do not apply.
+var _AR_SPIRIT_ENRICH = [
+  { key: 'taste_profile', el: 'wine_taste_profile', labelKey: 'ar_taste' }
+];
+function _arEnrichFields() {
+  return currentWineCategory() === 'wine' ? _AR_WINE_ENRICH : _AR_SPIRIT_ENRICH;
+}
 var _arPending = null;
 
 // Store original placeholders so we can hide them in edit mode
 var _placeholders = {};
 ['wine_name','wine_year','wine_region','wine_grape',
- 'wine_ai_price','wine_drink_from','wine_drink_until','wine_location','wine_notes'].forEach(function(id) {
+ 'wine_ai_price','wine_drink_from','wine_drink_until','wine_location','wine_notes','wine_description'].forEach(function(id) {
   var el = document.getElementById(id);
   if (el) _placeholders[id] = el.placeholder || '';
 });
@@ -458,13 +554,19 @@ function loadReferenceLists() {
 }
 
 // Refill region suggestions for the selected country (cascading). Guarded so we
-// only refetch when the resolved country code actually changes.
+// only refetch when the resolved country code or the category actually changes -
+// wine and spirits draw from separate region lists (Islay is not a wine region,
+// Rioja is not a whisky region).
+var _lastRegionEntity;
+
 function onCountryChange() {
   var name = (document.getElementById('wine_country').value || '').trim().toLowerCase();
   var code = _refCountryByName[name] || '';
-  if (code === _lastRegionCode) return;
+  var entity = currentWineCategory() === 'wine' ? 'regions' : 'spirit_regions';
+  if (code === _lastRegionCode && entity === _lastRegionEntity) return;
   _lastRegionCode = code;
-  var url = INGRESS + '/api/reference/regions' + (code ? '?country=' + encodeURIComponent(code) : '');
+  _lastRegionEntity = entity;
+  var url = INGRESS + '/api/reference/' + entity + (code ? '?country=' + encodeURIComponent(code) : '');
   fetch(url).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) _fillDatalist('regionList', _refValues(d.items), false);
   });
@@ -517,6 +619,27 @@ function loadTasteInputs(tp) {
   ['body', 'tannin', 'acidity', 'sweetness'].forEach(function (k) {
     var el = document.getElementById('taste_' + k); if (el) el.value = (tp && tp[k] != null ? tp[k] : '');
   });
+  loadSpiritTasteInputs(tp);
+}
+
+// Spirits reuse taste_profile with their own axes (smoke/sweetness/fruit/spice).
+var _SPIRIT_TASTE = { smoke: 'taste_smoke', sweetness: 'taste_sw_spirit',
+                      fruit: 'taste_fruit', spice: 'taste_spice' };
+
+function syncSpiritTasteFromInputs() {
+  var tp = {}, any = false;
+  Object.keys(_SPIRIT_TASTE).forEach(function (k) {
+    var v = parseInt((document.getElementById(_SPIRIT_TASTE[k]) || {}).value, 10);
+    if (!isNaN(v) && v >= 1 && v <= 5) { tp[k] = v; any = true; }
+  });
+  document.getElementById('wine_taste_profile').value = any ? JSON.stringify(tp) : '';
+}
+
+function loadSpiritTasteInputs(tp) {
+  Object.keys(_SPIRIT_TASTE).forEach(function (k) {
+    var el = document.getElementById(_SPIRIT_TASTE[k]);
+    if (el) el.value = (tp && tp[k] != null ? tp[k] : '');
+  });
 }
 function syncFoodFromInputs() {
   var s = (document.getElementById('food_pairings_input') || {}).value || '';
@@ -530,6 +653,161 @@ function refreshEnrichInputsFromHidden() {
   loadMaturityInputs(_parseJSONsafe(document.getElementById('wine_maturity_data').value));
   loadTasteInputs(_parseJSONsafe(document.getElementById('wine_taste_profile').value));
   loadFoodInputs(_parseJSONsafe(document.getElementById('wine_food_pairings').value));
+}
+
+// ── Cask rows widget (#casksModal) ───────────────────────────────────────────
+// Same shape as the grape widget, with three deliberate differences: the second
+// field is years (not percent), each row is labelled by its position (initial
+// cask vs finish), and repeated cask types are NOT merged.
+function caskRowHtml(name, years) {
+  var esc = function(s) { return (s || '').replace(/"/g, '&quot;'); };
+  return '<div class="cask-row">' +
+    '<span class="cask-role"></span>' +
+    '<input type="text" class="cask-name" list="caskList" value="' + esc(name) +
+      '" oninput="caskUpdateSummary()" autocomplete="off">' +
+    '<input type="number" class="cask-years" min="0" max="100" step="0.5" value="' +
+      (years === null || years === undefined ? '' : years) +
+      '" oninput="caskUpdateSummary()">' +
+    '<span class="cask-years-unit">' + (T.casks_years || '') + '</span>' +
+    '<button type="button" class="grape-del" title="' + (T.grapes_remove || '') +
+      '" onclick="caskDelRow(this)">&times;</button>' +
+  '</div>';
+}
+
+function caskRelabel() {
+  document.querySelectorAll('#caskRows .cask-row').forEach(function(row, i) {
+    var lbl = row.querySelector('.cask-role');
+    if (lbl) lbl.textContent = i === 0 ? (T.cask_role_first || '') : (T.cask_role_finish || '');
+  });
+}
+
+function caskAddRow(name, years) {
+  document.getElementById('caskRows').insertAdjacentHTML(
+    'beforeend', caskRowHtml(name || '', years));
+  caskRelabel();
+  caskUpdateSummary();
+}
+
+function caskDelRow(btn) {
+  var row = btn.closest('.cask-row');
+  if (row) row.remove();
+  caskRelabel();
+  caskUpdateSummary();
+}
+
+function caskClearRows() {
+  document.getElementById('caskRows').innerHTML = '';
+}
+
+function caskSetRows(list) {
+  caskClearRows();
+  (list || []).forEach(function(c) {
+    caskAddRow(c.name, (c.years === null || c.years === undefined) ? undefined : c.years);
+  });
+  caskUpdateSummary();
+}
+
+function caskCollect() {
+  var out = [];
+  document.querySelectorAll('#caskRows .cask-row').forEach(function(row) {
+    var name = row.querySelector('.cask-name').value.trim();
+    if (!name) return;
+    var yv = row.querySelector('.cask-years').value;
+    out.push({ name: name, years: yv === '' ? null : Number(yv) });
+  });
+  return out;
+}
+
+function caskSerialize() {
+  document.getElementById('wine_casks_json').value = JSON.stringify(caskCollect());
+}
+
+function caskUpdateSummary() {
+  var el = document.getElementById('caskSummary');
+  if (!el) return;
+  var esc = function(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  };
+  var list = caskCollect();
+  el.innerHTML = list.length
+    ? list.map(function(c) {
+        return '<span class="grape-chip">' + esc(c.name) +
+          (c.years == null ? '' : ' ' + c.years + ' ' + (T.casks_years || '')) + '</span>';
+      }).join('<span class="cask-arrow">→</span>')
+    : '<span class="grape-field-empty">' + esc(T.casks_empty || '') + '</span>';
+}
+
+function caskKey(list) {
+  return (list || []).map(function(c) {
+    return (c.name || '').toLowerCase() + ':' + (c.years == null ? '' : c.years);
+  }).join('|');
+}
+
+// True when an AI/Vivino cask list differs from what is currently entered.
+function casksDifferFromForm(list) {
+  if (!list || !list.length) return false;
+  return caskKey(caskCollect()) !== caskKey(list);
+}
+
+function openCasksDialog() {
+  if (!caskCollect().length) caskAddRow();
+  openModal('casksModal');
+  var first = document.querySelector('#caskRows .cask-name');
+  if (first) first.focus();
+}
+
+function closeCasksDialog() {
+  caskSetRows(caskCollect());   // drop rows left blank
+  caskSerialize();
+  closeModal('casksModal');
+}
+
+// ── Category: wine vs spirits ────────────────────────────────────────────────
+// Every element carrying data-cat belongs to exactly one side. 'whisky' and
+// 'spirit' share the same field set; only 'wine' differs.
+function setWineCategory(cat) {
+  cat = (cat === 'whisky' || cat === 'spirit') ? cat : 'wine';
+  var el = document.getElementById('wine_category');
+  if (el) el.value = cat;
+  var isWine = (cat === 'wine');
+  document.querySelectorAll('#wineModal [data-cat]').forEach(function(node) {
+    var show = (node.getAttribute('data-cat') === (isWine ? 'wine' : 'spirits'));
+    node.hidden = !show;
+    // options ignore [hidden] in some browsers - disable them as well so they
+    // can neither be picked nor submitted
+    if (node.tagName === 'OPTION') node.disabled = !show;
+  });
+  // "Winzer" is wrong for a distillery.
+  var producerLabel = isWine ? T.label_winery
+                    : (cat === 'whisky' ? T.label_distillery : T.label_producer);
+  var lbl = document.getElementById('lblWinery');
+  if (lbl) lbl.textContent = producerLabel;
+  var wineryInput = document.getElementById('wine_winery');
+  if (wineryInput) wineryInput.placeholder = producerLabel;
+
+  // A type from the other vocabulary must not survive a category change.
+  var typeEl = document.getElementById('wine_type');
+  if (typeEl) {
+    var opt = typeEl.selectedOptions && typeEl.selectedOptions[0];
+    if (opt && opt.value && opt.disabled) typeEl.value = '';
+  }
+  // A hidden tab must never stay active.
+  var active = document.querySelector('#formStep .wine-tab.active');
+  if (active && active.hidden) switchWineTab('basics');
+  if (typeof _syncModalTitleToCategory === 'function') _syncModalTitleToCategory();
+  // Wine and spirits have separate region lists - swap the suggestions.
+  onCountryChange();
+}
+
+var _syncModalTitleToCategory = null;
+
+function currentWineCategory() {
+  var el = document.getElementById('wine_category');
+  return el ? (el.value || 'wine') : 'wine';
+}
+
+function defaultCategoryForArea() {
+  return (window._area === 'bar') ? 'whisky' : 'wine';
 }
 
 // ── Grape rows widget (lives in its own #grapesModal dialog) ─────────────────
@@ -643,6 +921,18 @@ function grapesDifferFromForm(list) {
   return _grapeKey(grapeCollect()) !== _grapeKey(list);
 }
 
+// Same idea for the maturation chain. Order matters here (initial cask first,
+// then the finishes), so this is a positional comparison, not a set.
+function _caskKey(list) {
+  return (list || []).map(function(c){
+    return (c.name || '').toLowerCase() + ':' + (c.years == null || c.years === '' ? '' : c.years);
+  }).join('|');
+}
+function casksDifferFromForm(list) {
+  if (!list || !list.length) return false;
+  return _caskKey(caskCollect()) !== _caskKey(list);
+}
+
 function openWineModal(id, wine) {
   _reloadMode = false;
   var isEdit = !!id;
@@ -651,6 +941,14 @@ function openWineModal(id, wine) {
 
   // Title & button text
   document.getElementById('wineModalTitle').textContent = isEdit ? T.modal_edit_title : T.modal_add_title;
+  _syncModalTitleToCategory = function() {
+    // "Wein hinzufügen" would be wrong for a bottle of whisky.
+    if (isEdit) return;
+    var c = currentWineCategory();
+    document.getElementById('wineModalTitle').textContent =
+      c === 'wine' ? T.modal_add_title
+    : c === 'whisky' ? T.modal_add_title_whisky : T.modal_add_title_spirit;
+  };
   document.getElementById('wineSubmitBtn').textContent = isEdit ? T.btn_save_changes : T.btn_save;
 
   // Form action
@@ -675,6 +973,7 @@ function openWineModal(id, wine) {
   loadReferenceLists();
   onCountryChange();
   document.getElementById('wine_notes').value = w.notes || '';
+  document.getElementById('wine_description').value = w.description || '';
   document.getElementById('wine_ai_price').value = w.ai_price || '';
   var _mp = document.getElementById('myPriceDisplay');
   if (_mp) _mp.textContent = (w.price != null && w.price !== '') ? Number(w.price).toFixed(2) : '—';
@@ -682,7 +981,30 @@ function openWineModal(id, wine) {
   document.getElementById('wine_drink_until').value = w.drink_until || '';
   document.getElementById('wine_location').value = w.location || '';
   grapeSetRows(w.grapes || (w.grape ? grapesFromLegacy(w.grape) : []));
-  document.getElementById('wine_bottle_format').value = w.bottle_format || '0.75';
+
+  // Spirits: category drives the visible field set, details fill the whisky tab.
+  setWineCategory(isEdit ? (w.category || 'wine') : defaultCategoryForArea());
+  var sd = w.spirit_details || {};
+  var setv = function(id, v) {
+    var e = document.getElementById(id);
+    if (e) e.value = (v === null || v === undefined) ? '' : v;
+  };
+  setv('wine_abv', sd.abv);
+  setv('wine_age_years', sd.age_years);
+  setv('wine_distilled_year', sd.distilled_year);
+  setv('wine_bottled_year', sd.bottled_year);
+  setv('wine_bottler', sd.bottler);
+  setv('wine_batch_number', sd.batch_number);
+  setv('wine_cask_number', sd.cask_number);
+  setv('wine_peat_ppm', sd.peat_ppm);
+  ['cask_strength', 'single_cask', 'chill_filtered'].forEach(function(k) {
+    var e = document.getElementById('wine_' + k);
+    if (e) e.checked = !!sd[k];
+  });
+  caskSetRows(w.casks || []);
+
+  document.getElementById('wine_bottle_format').value =
+    w.bottle_format || (currentWineCategory() === 'wine' ? '0.75' : '0.7');
   document.getElementById('wine_vivino_id').value = w.vivino_id || '';
   document.getElementById('wine_maturity_data').value = w.maturity_data ? JSON.stringify(w.maturity_data) : '';
   document.getElementById('wine_taste_profile').value = w.taste_profile ? JSON.stringify(w.taste_profile) : '';
@@ -760,7 +1082,12 @@ function showSourceStep() {
     sourceStep.style.display = '';
     var h3 = sourceStep.querySelector('.source-step-header h3');
     var p = sourceStep.querySelector('.source-step-header p');
-    if (h3) h3.textContent = T.source_step_title;
+    if (h3) {
+      var c = currentWineCategory();
+      h3.textContent = c === 'wine' ? T.source_step_title
+                     : c === 'whisky' ? T.source_step_title_whisky
+                     : T.source_step_title_spirit;
+    }
     if (p) p.textContent = T.source_step_subtitle;
     var opts = sourceStep.querySelectorAll('.source-option');
     opts.forEach(function(opt) {
@@ -770,6 +1097,15 @@ function showSourceStep() {
       if (icon && icon.classList.contains('mdi-magnify') && desc) desc.textContent = T.vivino_desc;
       if (icon && icon.classList.contains('mdi-pencil') && desc) desc.textContent = T.manual_desc;
     });
+    // With Vivino gone (spirits) and no AI configured, only "manual" is left -
+    // showing a one-item chooser is just an extra click.
+    var usable = Array.prototype.filter.call(
+      sourceStep.querySelectorAll('.source-option'), function(o) { return !o.hidden; });
+    if (usable.length <= 1) {
+      sourceStep.style.display = 'none';
+      skipToManual();
+      return;
+    }
   }
   if (aiStep) aiStep.style.display = 'none';
   if (vivinoStep) vivinoStep.style.display = 'none';
@@ -1041,6 +1377,7 @@ function startAiAnalysis(file) {
 
   var fd = new FormData();
   fd.append('image', file);
+  fd.append('category', currentWineCategory());
 
   fetch(INGRESS + '/api/analyze-wine', {
     method: 'POST',
@@ -1073,17 +1410,40 @@ function populateFormFromAi(fields, imageFilename) {
   if (fields.vintage) document.getElementById('wine_year').value = fields.vintage;
   if (fields.wine_type) document.getElementById('wine_type').value = fields.wine_type;
   if (fields.region) document.getElementById('wine_region').value = fields.region;
-  if (fields.country) document.getElementById('wine_country').value = fields.country;
-  if (fields.grapes && fields.grapes.length) {
-    grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; }));
-  } else if (fields.grape) {
-    grapeSetRows(grapesFromLegacy(fields.grape));
+  if (fields.country) {
+    document.getElementById('wine_country').value = fields.country;
+    onCountryChange();
   }
   if (fields.price) document.getElementById('wine_ai_price').value = fields.price;
-  if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
-  if (fields.drink_until) document.getElementById('wine_drink_until').value = fields.drink_until;
-  if (fields.notes) document.getElementById('wine_notes').value = fields.notes;
+  if (fields.description) document.getElementById('wine_description').value = fields.description;
   // bottle_format intentionally not filled from AI - the user sets it themselves.
+
+  if (currentWineCategory() === 'wine') {
+    if (fields.grapes && fields.grapes.length) {
+      grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; }));
+    } else if (fields.grape) {
+      grapeSetRows(grapesFromLegacy(fields.grape));
+    }
+    if (fields.drink_from) document.getElementById('wine_drink_from').value = fields.drink_from;
+    if (fields.drink_until) document.getElementById('wine_drink_until').value = fields.drink_until;
+  } else {
+    _AR_SPIRIT_FIELDS.forEach(function(f) {
+      if (f.bool) return;
+      var v = fields[f.key];
+      if (v === null || v === undefined || v === '') return;
+      var el = document.getElementById(f.el);
+      if (el) el.value = v;
+    });
+    ['cask_strength', 'single_cask'].forEach(function(k) {
+      var v = fields[k];
+      if (v !== true && v !== 'true' && v !== 1 && v !== '1') return;
+      var el = document.getElementById('wine_' + k);
+      if (el) el.checked = true;
+    });
+    if (fields.casks && fields.casks.length) {
+      caskSetRows(fields.casks.map(function(c){ return { name: c.name, years: c.years }; }));
+    }
+  }
 
   // Enrichment fields - hidden inputs that persist to DB on submit
   if (fields.maturity_data) {
@@ -1121,6 +1481,8 @@ function populateFormFromAi(fields, imageFilename) {
 var _scanStage = null;
 function _afterAiStep() {
   if (_scanStage !== 'ai') return;
+  // Vivino is a wine catalogue - the chain ends here for spirits.
+  if (currentWineCategory() !== 'wine') { _scanStage = null; return; }
   _scanStage = 'vivino';
   reloadViaVivino();   // no vivino_id yet -> name search -> candidate picker
 }
@@ -1150,23 +1512,46 @@ function populateFormMerge(fields, imageFilename) {
     var el = document.getElementById(elId);
     if (el && !el.value.trim()) { el.value = val; filled++; }
   }
+  function tickIfTrue(elId, val) {
+    if (val !== true && val !== 'true' && val !== 1 && val !== '1') return;
+    var el = document.getElementById(elId);
+    if (el && !el.checked) { el.checked = true; filled++; }
+  }
   setIfEmpty('wine_name', fields.name);
   setIfEmpty('wine_winery', fields.winery);
-  setIfEmpty('wine_year', fields.vintage);
   setIfEmpty('wine_type', fields.wine_type);
+  setIfEmpty('wine_country', fields.country);
   setIfEmpty('wine_region', fields.region);
-  if (!grapeCollect().length) {
-    if (fields.grapes && fields.grapes.length) {
-      grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; })); filled++;
-    } else if (fields.grape) {
-      grapeSetRows(grapesFromLegacy(fields.grape)); filled++;
+  setIfEmpty('wine_ai_price', fields.price);
+  setIfEmpty('wine_description', fields.description);
+  // bottle_format intentionally untouched - see _AR_COMMON_FIELDS.
+
+  if (currentWineCategory() === 'wine') {
+    setIfEmpty('wine_year', fields.vintage);
+    setIfEmpty('wine_drink_from', fields.drink_from);
+    setIfEmpty('wine_drink_until', fields.drink_until);
+    if (!grapeCollect().length) {
+      if (fields.grapes && fields.grapes.length) {
+        grapeSetRows(fields.grapes.map(function(g){ return { name: g.name, pct: g.pct }; })); filled++;
+      } else if (fields.grape) {
+        grapeSetRows(grapesFromLegacy(fields.grape)); filled++;
+      }
+    }
+  } else {
+    setIfEmpty('wine_abv', fields.abv);
+    setIfEmpty('wine_age_years', fields.age_years);
+    setIfEmpty('wine_distilled_year', fields.distilled_year);
+    setIfEmpty('wine_bottled_year', fields.bottled_year);
+    setIfEmpty('wine_bottler', fields.bottler);
+    setIfEmpty('wine_batch_number', fields.batch_number);
+    setIfEmpty('wine_peat_ppm', fields.peat_ppm);
+    tickIfTrue('wine_cask_strength', fields.cask_strength);
+    tickIfTrue('wine_single_cask', fields.single_cask);
+    if (!caskCollect().length && fields.casks && fields.casks.length) {
+      caskSetRows(fields.casks.map(function(c){ return { name: c.name, years: c.years }; })); filled++;
     }
   }
-  setIfEmpty('wine_ai_price', fields.price);
-  setIfEmpty('wine_drink_from', fields.drink_from);
-  setIfEmpty('wine_drink_until', fields.drink_until);
-  setIfEmpty('wine_notes', fields.notes);
-  // bottle_format intentionally untouched - see _AR_FIELDS.
+  if (fields.country) onCountryChange();
 
   if (fields.maturity_data) {
     document.getElementById('wine_maturity_data').value = JSON.stringify(fields.maturity_data);
@@ -1262,11 +1647,59 @@ function setReloadLoading(on) {
   }
 }
 
-function reloadViaAi() {
+// ── AI progress ──────────────────────────────────────────────────────────────
+// There is no interim signal from a web-searching model, so no percentage would
+// be truthful. Show the running task, elapsed time and a way to abort instead.
+var _aiProgress = { timer: null, started: 0, ctrl: null };
+
+function _scopeLabel(scope) {
+  if (scope === 'price') return T.scope_price || 'Price';
+  if (scope === 'profile') return T.scope_profile || 'Profile';
+  return T.scope_all || 'Full refresh';
+}
+
+function showAiProgress(scope) {
+  var box = document.getElementById('aiProgressModal');
+  if (!box) return;
+  document.getElementById('aiProgressTitle').textContent = _scopeLabel(scope);
+  document.getElementById('aiProgressHint').textContent =
+    (scope === 'price' ? (T.ai_progress_hint_price || '') : (T.ai_progress_hint || ''));
+  var timeEl = document.getElementById('aiProgressTime');
+  _aiProgress.started = Date.now();
+  timeEl.textContent = '0 s';
+  box.classList.add('open');
+  clearInterval(_aiProgress.timer);
+  _aiProgress.timer = setInterval(function() {
+    var s = Math.round((Date.now() - _aiProgress.started) / 1000);
+    timeEl.textContent = s + ' s';
+    // Say so once it is running unusually long, rather than looking stuck.
+    if (s === 25) {
+      document.getElementById('aiProgressHint').textContent = T.ai_progress_slow || '';
+    }
+  }, 500);
+}
+
+function hideAiProgress() {
+  clearInterval(_aiProgress.timer);
+  _aiProgress.timer = null;
+  _aiProgress.ctrl = null;
+  var box = document.getElementById('aiProgressModal');
+  if (box) box.classList.remove('open');
+}
+
+function cancelAiReload() {
+  if (_aiProgress.ctrl) { try { _aiProgress.ctrl.abort(); } catch (e) {} }
+  _scanStage = null;          // an aborted scan must not chain on to Vivino
+  hideAiProgress();
+  setReloadLoading(false);
+}
+
+function reloadViaAi(scope) {
+  scope = (scope === 'price' || scope === 'profile') ? scope : 'all';
   // Only the label scan analyses a photo. A manual reload must ignore the
   // stored image: for imported wines that is the Vivino catalog shot, whose
   // label often carries a different vintage and would overwrite the year.
-  var imageFilename = (_scanStage === 'ai')
+  var imageFilename = (_scanStage === 'ai' && scope === 'all')
     ? document.getElementById('aiImageField').value : '';
 
   var context = {};
@@ -1279,35 +1712,59 @@ function reloadViaAi() {
   v = document.getElementById('wine_type').value;           if (v) context.type = v;
   v = document.getElementById('wine_region').value.trim();  if (v) context.region = v;
   v = document.getElementById('wine_country').value.trim(); if (v) context.country = v;
-  v = grapeCollect().map(function(g){ return g.name; }).join(', '); if (v) context.grape = v;
+  // Without the category the server falls back to the wine prompt and starts
+  // looking for a wine that does not exist.
+  context.category = currentWineCategory();
+  if (context.category === 'wine') {
+    v = grapeCollect().map(function(g){ return g.name; }).join(', '); if (v) context.grape = v;
+  } else {
+    v = caskCollect().map(function(c){ return c.name; }).join(' -> '); if (v) context.casks = v;
+    v = (document.getElementById('wine_abv') || {}).value;        if (v) context.abv = v;
+    v = (document.getElementById('wine_age_years') || {}).value;  if (v) context.age_years = v;
+    v = (document.getElementById('wine_bottler') || {}).value;    if (v) context.bottler = v;
+  }
 
   if (!imageFilename && Object.keys(context).length === 0) {
     showReloadToast(T.ai_no_data || 'Kein Bild und kein Weinname vorhanden', false);
     return;
   }
+  // A scoped lookup needs to know which bottle it is about; the name alone
+  // carries that. Without it the model would price an unknown product.
+  if (scope !== 'all' && !context.name) {
+    showReloadToast(T.ai_no_data || '', false);
+    return;
+  }
 
   setReloadLoading(true);
+  showAiProgress(scope);
+  _aiProgress.ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
   fetch(INGRESS + '/api/reanalyze-wine', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       image_filename: imageFilename || null,
-      wine_context: context
-    })
+      wine_context: context,
+      scope: scope
+    }),
+    signal: _aiProgress.ctrl ? _aiProgress.ctrl.signal : undefined
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
+    hideAiProgress();
     setReloadLoading(false);
     if (data.ok && data.fields) {
-      openAiReload(data.fields);
+      openAiReload(data.fields, scope);
     } else {
       showReloadToast(T.ai_error, false);
+      _afterAiStep();
     }
   })
-  .catch(function() {
+  .catch(function(err) {
+    var aborted = err && err.name === 'AbortError';
+    hideAiProgress();
     setReloadLoading(false);
-    showReloadToast(T.ai_error, false);
+    if (!aborted) { showReloadToast(T.ai_error, false); _afterAiStep(); }
   });
 }
 
@@ -1567,9 +2024,18 @@ function vrConfirm() {
 
 // ── AI reload: per-field confirmation before applying ────────────────────────
 function _arDisplay(f, val) {
+  if (f.bool) return (val === '1' || val === true) ? (T.val_yes || 'Yes') : (T.val_no || 'No');
   if (val === '' || val === null || val === undefined) return '—';
   if (f.type === 'wine_type') return T['wine_type_' + val] || val;
   return String(val);
+}
+
+// "Winzer" vs "Destillerie" - the producer row follows the category.
+function _arFieldLabel(f) {
+  if (f.producer && currentWineCategory() !== 'wine') {
+    return T.label_distillery || T.label_producer || T.label_winery;
+  }
+  return T[f.labelKey] || f.el;
 }
 
 // Same value, written differently (case, extra spaces) is NOT a change.
@@ -1580,14 +2046,26 @@ function _sameValue(a, b) {
 
 function arComputeChanges(fields) {
   var changes = [];
-  _AR_FIELDS.forEach(function(f) {
+  _arFields().forEach(function(f) {
     var raw = fields[f.key];
     if (raw === null || raw === undefined) return;
+    var el = document.getElementById(f.el);
+    if (!el) return;
+    // Checkboxes: only ever offer turning a flag ON. The AI states a flag when
+    // a source confirms it, but says nothing when it simply found no mention -
+    // treating that silence as "false" would clear what the user ticked.
+    if (f.bool) {
+      if (raw !== true && raw !== 'true' && raw !== 1 && raw !== '1') return;
+      if (el.checked) return;
+      changes.push({ f: f, cur: '', nv: '1' });
+      return;
+    }
     var nv = String(raw).trim();
     if (!nv) return;
-    var el = document.getElementById(f.el);
-    var cur = el ? (el.value || '').trim() : '';
+    var cur = (el.value || '').trim();
     if (_sameValue(nv, cur)) return;              // unchanged -> skip
+    // Numeric fields: 46 and 46.0 are the same value written differently.
+    if (el.type === 'number' && cur !== '' && Number(nv) === Number(cur)) return;
     changes.push({ f: f, cur: cur, nv: nv });
   });
   // Personal rating: only when the AI supplies one and the slider is still unset.
@@ -1619,8 +2097,11 @@ function _arEnrichSummary(key, value) {
     return n ? n + ' ' + (T.maturity_phases || 'phases') : '—';
   }
   if (key === 'taste_profile') {
-    var dims = [['body','taste_body'],['tannin','taste_tannin'],
-                ['acidity','taste_acidity'],['sweetness','taste_sweetness']];
+    var dims = currentWineCategory() === 'wine'
+      ? [['body','taste_body'],['tannin','taste_tannin'],
+         ['acidity','taste_acidity'],['sweetness','taste_sweetness']]
+      : [['smoke','taste_smoke'],['sweetness','taste_sweetness'],
+         ['fruit','taste_fruit'],['spice','taste_spice']];
     var parts = [];
     dims.forEach(function(d) {
       var v = value ? value[d[0]] : undefined;
@@ -1633,7 +2114,7 @@ function _arEnrichSummary(key, value) {
 
 function arComputeEnrich(fields) {
   var out = [];
-  _AR_ENRICH.forEach(function(e) {
+  _arEnrichFields().forEach(function(e) {
     var val = fields[e.key];
     if (val === null || val === undefined) return;
     if (Array.isArray(val) && val.length === 0) return;
@@ -1650,24 +2131,35 @@ function arComputeEnrich(fields) {
   return out;
 }
 
-function renderAiReload(fields, changes, enrich, grapesChanged) {
+function renderAiReload(fields, changes, enrich, grapesChanged, casksChanged, scope) {
   var esc = function(s) { return (s == null ? '' : String(s)).replace(/</g, '&lt;'); };
-  var idParts = [];
-  ['name','vintage','wine_type','region','grape'].forEach(function(k) {
-    var v = fields[k];
-    if (!v) return;
-    if (k === 'wine_type') v = T['wine_type_' + v] || v;
-    idParts.push(esc(v));
-  });
-  document.getElementById('aiIdentified').innerHTML =
-    '<span class="ar-id-label">' + (T.ar_identified || '') + '</span>' +
-    (idParts.length ? idParts.join(' · ') : '—');
+  var head = document.getElementById('aiIdentified');
+  if (scope && scope !== 'all') {
+    // A scoped call never returns identification fields - naming the task that
+    // ran is the useful header here.
+    head.innerHTML = '<span class="ar-id-label">' + (T.ar_scope_label || '') + '</span>' +
+      esc(_scopeLabel(scope));
+  } else {
+    var idParts = [];
+    var idKeys = currentWineCategory() === 'wine'
+      ? ['name','vintage','wine_type','region','grape']
+      : ['name','age_years','wine_type','region'];
+    idKeys.forEach(function(k) {
+      var v = fields[k];
+      if (!v) return;
+      if (k === 'wine_type') v = T['wine_type_' + v] || v;
+      if (k === 'age_years') v = v + ' ' + (T.casks_years || 'y');
+      idParts.push(esc(v));
+    });
+    head.innerHTML = '<span class="ar-id-label">' + (T.ar_identified || '') + '</span>' +
+      (idParts.length ? idParts.join(' · ') : '—');
+  }
 
   var rows = '';
   changes.forEach(function(c, i) {
     rows += '<tr>' +
       '<td class="ar-check"><input type="checkbox" id="arChk_' + i + '" checked></td>' +
-      '<td class="vr-field">' + (T[c.f.labelKey] || c.f.el) + '</td>' +
+      '<td class="vr-field">' + esc(_arFieldLabel(c.f)) + '</td>' +
       '<td class="vr-old">' + esc(_arDisplay(c.f, c.cur)) + '</td>' +
       '<td class="vr-arrow">→</td>' +
       '<td class="vr-new">' + esc(_arDisplay(c.f, c.nv)) + '</td>' +
@@ -1694,6 +2186,20 @@ function renderAiReload(fields, changes, enrich, grapesChanged) {
       '<td class="vr-old">' + esc(fmt(grapeCollect())) + '</td>' +
       '<td class="vr-arrow">→</td>' +
       '<td class="vr-new">' + esc(fmt(fields.grapes)) + '</td>' +
+    '</tr>';
+  }
+  if (casksChanged) {
+    var fmtC = function(list) {
+      return (list || []).map(function(c) {
+        return c.name + (c.years == null || c.years === '' ? '' : ' ' + c.years + ' ' + (T.casks_years || 'y'));
+      }).join(' → ') || '—';
+    };
+    rows += '<tr>' +
+      '<td class="ar-check"><input type="checkbox" id="arCasksChk" checked></td>' +
+      '<td class="vr-field">' + (T.label_casks || 'Casks') + '</td>' +
+      '<td class="vr-old">' + esc(fmtC(caskCollect())) + '</td>' +
+      '<td class="vr-arrow">→</td>' +
+      '<td class="vr-new">' + esc(fmtC(fields.casks)) + '</td>' +
     '</tr>';
   }
   document.getElementById('aiChanges').innerHTML = rows;
@@ -1787,20 +2293,23 @@ function galUpload(inputEl) {
     .finally(function() { inputEl.value = ''; });
 }
 
-function openAiReload(fields) {
+function openAiReload(fields, scope) {
+  scope = scope || 'all';
   var changes = arComputeChanges(fields);
   var enrich = arComputeEnrich(fields);
   var rationale = (fields.ai_rationale || '').trim();
-  // Grapes are a list, not a single field - they get their own confirm row.
-  var grapesChanged = grapesDifferFromForm(fields.grapes);
-  if (changes.length === 0 && enrich.length === 0 && !grapesChanged && !rationale) {
+  // Grapes and casks are lists, not single fields - each gets its own row.
+  var isWine = currentWineCategory() === 'wine';
+  var grapesChanged = isWine && grapesDifferFromForm(fields.grapes);
+  var casksChanged = !isWine && casksDifferFromForm(fields.casks);
+  if (changes.length === 0 && enrich.length === 0 && !grapesChanged && !casksChanged && !rationale) {
     showReloadToast(T.ar_no_changes || T.reload_nothing, false);
     _afterAiStep();
     return;
   }
   _arPending = { fields: fields, changes: changes, enrich: enrich, rationale: rationale,
-                 grapesChanged: grapesChanged };
-  renderAiReload(fields, changes, enrich, grapesChanged);
+                 grapesChanged: grapesChanged, casksChanged: casksChanged, scope: scope };
+  renderAiReload(fields, changes, enrich, grapesChanged, casksChanged, scope);
   document.getElementById('aiReloadModal').classList.add('open');
 }
 
@@ -1822,7 +2331,11 @@ function applyAiReload() {
       return;
     }
     var el = document.getElementById(c.f.el);
-    if (el) el.value = c.nv;
+    if (!el) return;
+    if (c.f.bool) { el.checked = true; return; }
+    el.value = c.nv;
+    // The region suggestions depend on the country - refill them when it changes.
+    if (c.f.key === 'country' && typeof onCountryChange === 'function') onCountryChange();
   });
   enrich.forEach(function(en, j) {
     var chk = document.getElementById('arEnr_' + j);
@@ -1830,11 +2343,17 @@ function applyAiReload() {
     var el = document.getElementById(en.e.el);
     if (el) el.value = JSON.stringify(en.val);
   });
-  refreshEnrichInputsFromHidden();
+  refreshEnrichInputsFromHidden();   // covers the spirit taste axes too
   var gChk = document.getElementById('arGrapesChk');
   if (_arPending.grapesChanged && (!gChk || gChk.checked)) {
     grapeSetRows((_arPending.fields.grapes || []).map(function(g) {
       return { name: g.name, pct: g.pct };
+    }));
+  }
+  var cChk = document.getElementById('arCasksChk');
+  if (_arPending.casksChanged && (!cChk || cChk.checked)) {
+    caskSetRows((_arPending.fields.casks || []).map(function(c) {
+      return { name: c.name, years: c.years };
     }));
   }
   if (_arPending.rationale) {
@@ -1879,39 +2398,92 @@ function _doWineSubmit(form) {
 // ── Save-time reference reconciliation (TP3b) ────────────────────────────────
 var _rcPending = null;
 
+// The check can involve an AI round-trip for genuinely unknown values, which
+// takes seconds. Without feedback the dialog just sat there looking frozen, so
+// the save button says what it is doing and blocks a second click.
+function setReconcileLoading(on) {
+  var btn = document.getElementById('wineSubmitBtn');
+  if (!btn) return;
+  if (on) {
+    btn._label = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('btn-busy');
+    btn.innerHTML = '<span class="btn-spinner"></span>' +
+      (T.rc_checking || 'Referenzdaten werden geprüft …');
+  } else {
+    btn.disabled = false;
+    btn.classList.remove('btn-busy');
+    if (btn._label) btn.innerHTML = btn._label;
+  }
+}
+
 function reconcileThenSubmit(form) {
   grapeSerialize();  // flush the grape rows into the hidden grapes/grape fields
-  var grapeNames = grapeCollect().map(function(g){ return g.name; });
+  caskSerialize();   // same for the cask chain
+  // Whisky has no grapes, and its region must be reconciled against the spirit
+  // region list - the server picks the list from the category.
+  var cat = currentWineCategory();
+  var grapeNames = cat === 'wine' ? grapeCollect().map(function(g){ return g.name; }) : [];
   var payload = {
+    category: cat,
     grapes: grapeNames,
     region: (document.getElementById('wine_region').value || '').trim(),
     country: (document.getElementById('wine_country').value || '').trim()
   };
   if (!grapeNames.length && !payload.region) { _doWineSubmit(form); return; }
+
+  // Give up rather than make the user wait forever - the server has its own
+  // ceiling, this covers a stalled connection on the way there.
+  var done = false;
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var giveUp = setTimeout(function() {
+    if (done) return;
+    done = true;
+    if (ctrl) ctrl.abort();
+    setReconcileLoading(false);
+    _doWineSubmit(form);
+  }, 15000);
+  var finish = function(fn) {
+    if (done) return;
+    done = true;
+    clearTimeout(giveUp);
+    setReconcileLoading(false);
+    fn();
+  };
+
+  setReconcileLoading(true);
   fetch(INGRESS + '/api/reference/reconcile', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (!d.ok || !d.items || !d.items.length) { _doWineSubmit(form); return; }
-    _rcPending = { form: form, items: d.items };
-    renderReconcile(d.items);
-    openModal('reconcileModal');
+    finish(function() {
+      if (!d.ok || !d.items || !d.items.length) { _doWineSubmit(form); return; }
+      _rcPending = { form: form, items: d.items };
+      renderReconcile(d.items);
+      openModal('reconcileModal');
+    });
   })
-  .catch(function() { _doWineSubmit(form); });  // reconcile must never block saving
+  .catch(function() { finish(function() { _doWineSubmit(form); }); });  // never block saving
 }
 
 function renderReconcile(items) {
   var esc = function(s) { return (s || '').replace(/</g, '&lt;'); };
-  var entLabel = function(e) { return e === 'grape' ? (T.label_grape || 'Grape') : (T.label_region || 'Region'); };
+  var entLabel = function(e) { return e === 'grape' ? (T.label_grape || 'Grape') : (T.label_region || 'Region'); };   // both region entities show as "Region"
   document.getElementById('reconcileBody').innerHTML = items.map(function(it, i) {
     var opts = '';
     it.suggestions.forEach(function(s) {
-      var isAi = it.ai_pick && it.ai_pick === s.name;
+      var picked = it.ai_pick && it.ai_pick === s.name;
+      // A decisive spelling match is not an AI suggestion - say which it was.
+      var badge = '';
+      if (picked) {
+        badge = ' <span class="rc-ai' + (it.pick_source === 'fuzzy' ? ' rc-fuzzy' : '') + '">' +
+          (it.pick_source === 'fuzzy' ? (T.rc_similar || 'Similar spelling') : (T.rc_ai || 'AI')) +
+          '</span>';
+      }
       opts += '<label class="rc-opt"><input type="radio" name="rc_' + i + '" value="known:' + s.id + '"' +
-        (isAi ? ' checked' : '') + '> ' + esc(s.name) +
-        (isAi ? ' <span class="rc-ai">' + (T.rc_ai || 'AI') + '</span>' : '') + '</label>';
+        (picked ? ' checked' : '') + '> ' + esc(s.name) + badge + '</label>';
     });
     opts += '<label class="rc-opt"><input type="radio" name="rc_' + i + '" value="new"> ' +
       (T.rc_create_new || 'Add new') + ' „' + esc(it.value) + '“</label>';
