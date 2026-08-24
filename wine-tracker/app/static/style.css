@@ -627,21 +627,35 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 }
 .view-table .card { display: none; }
 
+.wine-table-scroll { grid-column: 1 / -1; overflow-x: auto; }
 .wine-table {
-  width: 100%; border-collapse: collapse;
-  background: var(--surface); border: none;
-  border-radius: 0; overflow: hidden;
-  font-size: .85rem; table-layout: fixed;
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--surface); font-size: .85rem;
+  table-layout: auto;   /* per-column min-width decides, not fixed pixels */
 }
 .wine-table td.wine-table-type,
-.wine-table th.wine-table-type { width: 40px; text-align: center !important; overflow: visible; text-overflow: clip; padding: .55rem .25rem; }
+.wine-table th.wine-table-type { text-align: center !important; overflow: visible; text-overflow: clip; padding: .55rem .25rem; }
 .wine-table-right { text-align: right !important; }
-/* Fixed-width columns (px - constant at any viewport) */
-.wine-table-col-year { width: 90px; }
-.wine-table-col-region { width: 180px; }
-.wine-table-col-grape { width: 160px; }
-.wine-table-col-price { width: 110px; }
-.wine-table-col-qty { width: 70px; }
+/* Type and name stay readable while the rest scrolls under them. They need an
+   opaque background: a transparent sticky cell shows the row moving through it.
+
+   The name's sticky offset must equal the type column's actual width. With
+   table-layout: auto a plain `width` is only a hint the browser may widen, which
+   would leave a gap or an overlap - so the width is pinned with min+max and both
+   values come from one variable that cannot disagree with itself. */
+.wine-table { --col-type-w: 40px; }
+.wine-table th.col-type, .wine-table td.col-type {
+  position: sticky; left: 0; z-index: 2; background: var(--surface);
+  min-width: var(--col-type-w); max-width: var(--col-type-w); width: var(--col-type-w);
+}
+.wine-table th.col-name, .wine-table td.col-name {
+  position: sticky; left: var(--col-type-w); z-index: 2; background: var(--surface);
+  min-width: 160px;
+}
+.wine-table-row:hover td.col-type,
+.wine-table-row:hover td.col-name {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
 .wine-table thead {
   background: var(--bg); border-bottom: 2px solid var(--border);
 }
@@ -693,24 +707,6 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
     justify-content: flex-start; flex-wrap: wrap;
   }
   .view-list .card-name { max-width: none; }
-}
-
-/* ── Table: responsive column hiding ──────────────────────────────────────── */
-@media (max-width: 900px) {
-  .wine-table .col-grape,
-  .wine-table .col-price { display: none; }
-}
-@media (max-width: 700px) {
-  .wine-table .col-grape,
-  .wine-table .col-price,
-  .wine-table .col-region { display: none; }
-}
-@media (max-width: 500px) {
-  .wine-table .col-grape,
-  .wine-table .col-price,
-  .wine-table .col-region,
-  .wine-table .col-year { display: none; }
-  .wine-table-type .mdi { display: none; }
 }
 
 /* ── Table: column picker toolbar and dialog ──────────────────────────────── */

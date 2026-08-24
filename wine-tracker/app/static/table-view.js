@@ -118,10 +118,12 @@
       + escapeHtml(T.table_columns || 'Columns') + '</button>';
     grid.appendChild(bar);
 
+    var scroll = document.createElement('div');
+    scroll.className = 'wine-table-scroll';
+
     var table = document.createElement('table');
     table.id = 'wineTable';
     table.className = 'wine-table';
-    table.style.gridColumn = '1 / -1';
 
     // Header
     var thead = '<thead><tr>'
@@ -157,7 +159,8 @@
     tbody += '</tbody>';
     table.innerHTML = thead + tbody;
 
-    grid.appendChild(table);
+    scroll.appendChild(table);
+    grid.appendChild(scroll);
 
     // Sort click handlers - persist in localStorage
     var savedSortCol = localStorage.getItem('wineTableSortCol') || '';
@@ -214,7 +217,10 @@
 
   function remove() {
     var tbl = document.getElementById('wineTable');
-    if (tbl) tbl.remove();
+    if (tbl) {
+      var scroll = tbl.closest('.wine-table-scroll');
+      if (scroll) { scroll.remove(); } else { tbl.remove(); }
+    }
     var toolbar = document.getElementById('wineTableToolbar');
     if (toolbar) toolbar.remove();
   }
