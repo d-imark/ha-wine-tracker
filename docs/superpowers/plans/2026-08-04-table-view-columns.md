@@ -32,9 +32,13 @@ The table reads `card.dataset`. Three values it needs are missing today.
 - Test: `wine-tracker/tests/test_routes.py`
 
 **Interfaces:**
+- Produces `effective_price(row)` in `app.py` - the single definition of the
+  fallback rule; returns the own price if non-empty, else the AI price, else `""`
+- Produces `wine_json()["price_effective"]` and a `price_effective` template
+  variable (dict keyed by wine id)
 - Produces dataset attributes:
   - `data-ai_price` - the AI/market price
-  - `data-price_effective` - `price` if non-empty, else `ai_price`, else `''`
+  - `data-price_effective` - the computed value, never recomputed client-side
   - `data-grapes` - JSON array of `{name, pct}`, which is what `grapeLead()` expects
 
 - [ ] **Step 1: Write the failing test**
@@ -85,46 +89,99 @@ Run: `cd wine-tracker && ../.venv/Scripts/python.exe -m pytest tests/test_routes
 
 Expected: FAIL - `data-price_effective` is not in the markup.
 
-- [ ] **Step 3: Add the attributes to the card markup**
+- [ ] **Step 3: Compute the effective price in ONE place**
+
+The fallback rule must not be written twice. Put it in `app.py` as a helper and
+feed both renderers from it - the server-rendered card list and `wine_json()`,
+which is what the JS card updater consumes after a save.
+
+Add near the other small helpers in `wine-tracker/app/app.py`:
+
+```python
+def effective_price(row):
+    """The price to show: the user's own, else the AI's estimate, else empty.
+
+    One definition, used by the card list and by wine_json(), so the table, the
+    sort and the advanced filter can all read a ready-made value.
+    """
+    return (row["price"] if row["price"] not in (None, "") else row["ai_price"]) or ""
+```
+
+In `wine_json()`, after `d = dict(row)`:
+
+```python
+    d["price_effective"] = effective_price(row)
+```
+
+In the index route, the cards come from `SELECT * FROM wines`, which yields
+`sqlite3.Row` objects the template cannot extend. Pass a lookup alongside them:
+
+```python
+    price_effective = {w["id"]: effective_price(w) for w in wines}
+```
+
+and hand `price_effective=price_effective` to `render_template`.
+
+- [ ] **Step 4: Read the computed value in both renderers**
 
 In `wine-tracker/app/templates/index.html`, in the `<div class="card ...">`
 attribute block, directly after the existing `data-price="{{ w['price'] or '' }}"`:
 
 ```jinja
        data-ai_price="{{ w['ai_price'] or '' }}"
-       {# own price first, AI price as fallback - stored rather than computed so
-          the sort and the advanced filter keep working via dataset lookups #}
-       data-price_effective="{{ w['price'] or w['ai_price'] or '' }}"
+       data-price_effective="{{ price_effective[w['id']] }}"
        data-grapes="{{ (w['grapes'] or []) | tojson | forceescape }}"
 ```
-
-- [ ] **Step 4: Mirror it in the JS card updater**
 
 In `updateCardData(card, w)`, after `card.dataset.price = w.price || '';`:
 
 ```javascript
   card.dataset.ai_price = w.ai_price || '';
-  // Must stay in sync with the Jinja expression in the card markup.
-  card.dataset.price_effective = w.price || w.ai_price || '';
+  // Computed server-side by effective_price() - never recompute the rule here.
+  card.dataset.price_effective = w.price_effective || '';
   card.dataset.grapes = JSON.stringify(w.grapes || []);
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 5: Add a unit test for the helper**
+
+Append to `wine-tracker/tests/test_helpers.py`:
+
+```python
+class TestEffectivePrice:
+    """One definition of the fallback rule, used by both renderers."""
+
+    @pytest.mark.parametrize("own,ai,expected", [
+        (60.0, 65.0, 60.0),
+        (None, 42.0, 42.0),
+        ("",   42.0, 42.0),
+        (60.0, None, 60.0),
+        (None, None, ""),
+        (0.0,  42.0, 42.0),   # a zero own price is not a price
+    ])
+    def test_rule(self, own, ai, expected):
+        assert wine_app.effective_price({"price": own, "ai_price": ai}) == expected
+```
+
+Run: `cd wine-tracker && ../.venv/Scripts/python.exe -m pytest tests/test_helpers.py -q -k EffectivePrice`
+
+Expected: PASS, 6 cases.
+
+- [ ] **Step 6: Run the route test to verify it passes**
 
 Run: `cd wine-tracker && ../.venv/Scripts/python.exe -m pytest tests/test_routes.py -q -k CardDatasetPrice`
 
 Expected: PASS, 4 tests.
 
-- [ ] **Step 6: Check nothing else broke**
+- [ ] **Step 7: Check nothing else broke**
 
 Run: `cd wine-tracker && ../.venv/Scripts/python.exe -m pytest tests/test_routes.py tests/test_api.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add wine-tracker/app/templates/index.html wine-tracker/tests/test_routes.py
+git add wine-tracker/app/app.py wine-tracker/app/templates/index.html         wine-tracker/tests/test_routes.py wine-tracker/tests/test_helpers.py
 git commit -m "Expose ai_price, effective price and structured grapes on the card dataset"
 ```
 
