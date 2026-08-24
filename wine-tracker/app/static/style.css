@@ -235,8 +235,13 @@ html.light .nav-menu-item:hover { background: rgba(0,0,0,.04); }
   background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; height: 34px; box-sizing: border-box;
 }
+.search-icon-btn {
+  background: none; border: none; padding: 0 0 0 .65rem;
+  display: flex; align-items: center; flex-shrink: 0;
+  cursor: default;            /* not a control on desktop - the field is open */
+}
 .search-icon {
-  padding-left: .65rem; color: var(--muted); font-size: .9rem;
+  color: var(--muted); font-size: .9rem;
   pointer-events: none; flex-shrink: 0; display: flex; align-items: center;
 }
 .search-wrap input {
@@ -303,10 +308,43 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 @media (max-width: 600px) {
   header { padding: 0 .75rem; gap: .5rem; }
   .nav-links { display: none; }
-  .search-wrap { width: 120px; height: 30px; }
-  .search-wrap input { font-size: .8rem; }
+  /* The search collapses to just the magnifier: the header has no room for a
+     permanent input next to the area switch, the badge and three buttons.
+     Tapping the icon expands it (toggleSearch() adds .open). */
+  /* Collapsed, it must be indistinguishable from the filter, columns and
+     settings buttons beside it - same box, same border, same icon size. */
+  .search-wrap {
+    width: 30px; height: 30px; padding: 0;
+    border: 1px solid var(--border); background: none;
+    border-radius: 8px; box-sizing: border-box;
+    transition: all .2s;
+  }
+  .search-wrap .search-icon-btn {
+    width: 100%; height: 100%; padding: 0;
+    justify-content: center; cursor: pointer;
+    color: var(--muted); font-size: 1.1rem;
+  }
+  .search-wrap .search-icon { font-size: inherit; }
+  .search-wrap:not(.open):hover { border-color: var(--text); }
+  .search-wrap:not(.open):hover .search-icon-btn { color: var(--text); }
+  .search-wrap input { display: none; }
+  .search-wrap .search-clear { display: none !important; }
+
+  .search-wrap.open {
+    flex: 1 1 auto; width: auto; min-width: 0;
+    border-color: var(--border); background: var(--bg);
+  }
+  .search-wrap.open .search-icon-btn { font-size: .9rem; padding-left: .5rem; width: auto; }
+  .search-wrap.open input { display: block; font-size: .8rem; padding-right: 1.8rem; }
+  .search-wrap.open input:not(:placeholder-shown) + .search-clear { display: block !important; }
+  /* Give the open field the badge's space rather than squeezing the buttons.
+     The badge precedes the field in the DOM, so a sibling selector cannot reach
+     it - :has() on the header can. */
+  header:has(.search-wrap.open) #bottleCountBadge { display: none; }
+
   .filter-btn { height: 30px; width: 30px; }
   .theme-toggle { height: 30px; width: 30px; }
+
   .chat-header-actions .chat-header-btn { height: 30px; width: 30px; }
   .nav-hamburger { display: none; }
 
@@ -652,6 +690,16 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
   position: sticky; left: var(--col-type-w); z-index: 2;
   min-width: 160px;
 }
+.wine-table .cell-clip {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The winery sits above the name in the same cell - smaller and quieter, so the
+   name still reads as the primary line. */
+.wine-table .cell-sub {
+  font-size: .72rem; font-weight: 400; color: var(--muted);
+  line-height: 1.2; margin-bottom: .05rem;
+}
+.wine-table td.wine-table-name { padding-top: .4rem; padding-bottom: .4rem; }
 .wine-table td.col-type, .wine-table td.col-name { background: var(--surface); }
 .wine-table th.col-type, .wine-table th.col-name { background: var(--bg); }
 .wine-table-row:hover td.col-type,
@@ -715,13 +763,6 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 }
 
 /* ── Table: column picker toolbar and dialog ──────────────────────────────── */
-.wine-table-toolbar { display: flex; justify-content: flex-end; padding: 0 0 .5rem; }
-.wine-table-colbtn {
-  display: inline-flex; align-items: center; gap: .35rem;
-  background: none; border: 1px solid var(--border); color: var(--muted);
-  border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer;
-}
-.wine-table-colbtn:hover { color: var(--text); border-color: var(--text); }
 .colpick-group { margin-bottom: .9rem; }
 .colpick-group-label {
   font-size: .7rem; font-weight: 700; text-transform: uppercase;
@@ -3090,8 +3131,30 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   /* Icon-only switch - the labels would push the header into a sideways scroll */
   .area-btn .area-lbl { display: none; }
   .area-btn { padding: 6px 9px; }
-  /* let the search give way rather than push the header into a scroll */
-  .search-wrap { width: 100px; min-width: 60px; flex: 0 1 100px; }
+  /* The search used to be shrunk here so it would not push the header into a
+     sideways scroll. It now collapses to an icon instead (see the collapsed
+     rules further up), which does that job properly - and this rule, being
+     later in the file, silently won over them. */
+
+  /* On a phone the name gets at most a third of the width, so there is room to
+     actually read the data columns beside it.
+
+     Two subtleties, both learned the hard way: the cap has to sit on the inner
+     span because max-width is ignored on table cells under table-layout: auto;
+     and this block has to come AFTER the .col-name sticky rules, or their
+     min-width: 160px wins on equal specificity and the cell never shrinks. */
+  .wine-table th.col-name, .wine-table td.col-name { min-width: 0; }
+  /* Wide enough to read at rest, narrower once the table is scrolled sideways -
+     at that point the user is after the data columns, not the name.
+     The padding is subtracted so the vw figure is the whole column's width, not
+     just its text (30vw on the text alone came out at 41% of the screen). */
+  .wine-table td.col-name .cell-clip {
+    max-width: calc(45vw - 24px);
+    transition: max-width .18s ease;
+  }
+  .wine-table-scroll.scrolled .wine-table td.col-name .cell-clip {
+    max-width: calc(28vw - 24px);
+  }
   .fill-bar { display: none; }
   .fill-range { width: 130px; }
 }

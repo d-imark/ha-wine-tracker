@@ -29,14 +29,20 @@
     { key: 'bottle_format',   group: 'general', label: 'label_bottle_format', numeric: true, minWidth: 100 },
     { key: 'purchased_at',    group: 'general', label: 'label_purchased_at',                 minWidth: 120 }
   ];
+  // The winery is a catalogue entry like any other - so the picker and the stored
+  // selection need no special case - but render() pulls it out and draws it as a
+  // small line above the name instead of a column. It costs no extra width that
+  // way and stays pinned together with the name.
+  var WINERY_KEY = 'winery';
   var GROUP_ORDER = ['wine', 'spirits', 'price', 'general'];
   var GROUP_LABEL = { wine: 'colgrp_wine', spirits: 'colgrp_spirits',
                       price: 'colgrp_price', general: 'colgrp_general' };
 
   var DEFAULTS = {
-    cellar: ['year', 'region', 'grape', 'price_effective', 'quantity'],
-    bar:    ['age_years', 'abv', 'cask', 'price_effective', 'quantity']
+    cellar: ['winery', 'year', 'region', 'grape', 'price_effective', 'quantity'],
+    bar:    ['winery', 'age_years', 'abv', 'cask', 'price_effective', 'quantity']
   };
+
 
   function areaKey() {
     return (window._area === 'bar') ? 'bar' : 'cellar';
@@ -97,6 +103,24 @@
     return escapeHtml(d[col.key] || '');
   }
 
+  // The name column holds two values, so its header holds two sort targets - laid
+  // out exactly like the cells below it (winery small on top, name beneath).
+  // The <th> itself must NOT be sortable in that case, or a click on a span would
+  // bubble up and sort twice.
+  function nameHeaderHtml(showWinery) {
+    var arrow = ' <i class="mdi mdi-swap-vertical"></i>';
+    var nameLabel = escapeHtml(T.table_col_name || 'Name');
+    if (!showWinery) {
+      return '<th class="wine-table-sortable wine-table-col-name col-name" data-sort="name">'
+        + nameLabel + arrow + '</th>';
+    }
+    return '<th class="wine-table-col-name col-name">'
+      + '<span class="cell-clip cell-sub wine-table-sortable" data-sort="winery">'
+      + escapeHtml(T.label_winery || 'Winery') + arrow + '</span>'
+      + '<span class="cell-clip wine-table-sortable" data-sort="name">'
+      + nameLabel + arrow + '</span></th>';
+  }
+
   function isNumericKey(key) {
     if (key === 'type' || key === 'name') return false;
     var match = COLUMNS.filter(function (c) { return c.key === key; })[0];
@@ -109,17 +133,11 @@
     var cards = Array.from(grid.querySelectorAll('.card'));
     if (!cards.length) return;
 
-    var cols = chosenColumns();
-
-    var bar = document.createElement('div');
-    bar.id = 'wineTableToolbar';
-    bar.className = 'wine-table-toolbar';
-    bar.style.gridColumn = '1 / -1';
-    bar.innerHTML = '<button type="button" class="wine-table-colbtn" '
-      + 'onclick="TableView.openPicker()">'
-      + '<i class="mdi mdi-view-column-outline"></i> '
-      + escapeHtml(T.table_columns || 'Columns') + '</button>';
-    grid.appendChild(bar);
+    var chosen = chosenColumns();
+    // The winery is rendered as a line above the name instead of a column of its
+    // own, so it is taken out of the set the cell loops walk.
+    var showWinery = chosen.some(function (c) { return c.key === WINERY_KEY; });
+    var cols = chosen.filter(function (c) { return c.key !== WINERY_KEY; });
 
     var scroll = document.createElement('div');
     scroll.className = 'wine-table-scroll';
@@ -131,7 +149,7 @@
     // Header
     var thead = '<thead><tr>'
       + '<th class="wine-table-sortable wine-table-type col-type" data-sort="type"><i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-col-name col-name" data-sort="name">' + escapeHtml(T.table_col_name || 'Name') + ' <i class="mdi mdi-swap-vertical"></i></th>';
+      + nameHeaderHtml(showWinery);
     cols.forEach(function (col) {
       thead += '<th class="wine-table-sortable col-' + col.key
         + (col.numeric ? ' wine-table-right' : '')
@@ -151,7 +169,13 @@
       var typeDot = d.type ? '<span class="type-dot type-dot-' + escapeHtml(typeCls) + '"></span>' : '';
       tbody += '<tr class="wine-table-row' + (parseInt(d.quantity) === 0 ? ' empty' : '') + '" data-card-id="' + d.id + '" onclick="viewWineById(\'' + d.id + '\')"' + hidden + '>'
         + '<td class="wine-table-type col-type">' + typeDot + '</td>'
-        + '<td class="wine-table-name col-name">' + escapeHtml(d.name) + '</td>';
+        // The name is wrapped so its width can be capped: max-width does not
+        // apply to table cells under table-layout: auto, but it does to a block
+        // inside one. See .cell-clip in style.css.
+        + '<td class="wine-table-name col-name">'
+        + (showWinery && d.winery
+            ? '<span class="cell-clip cell-sub">' + escapeHtml(d.winery) + '</span>' : '')
+        + '<span class="cell-clip">' + escapeHtml(d.name) + '</span></td>';
       cols.forEach(function (col) {
         tbody += '<td class="col-' + col.key
           + (col.numeric ? ' wine-table-right' : '') + '">'
@@ -163,7 +187,21 @@
     table.innerHTML = thead + tbody;
 
     scroll.appendChild(table);
+    // Give the name room while the table sits at its start, and hand that room
+    // to the data columns once the user scrolls sideways. Toggled on a threshold
+    // rather than continuously: the width change reflows the table, and doing
+    // that on every scroll event would judder.
+    scroll.addEventListener('scroll', function () {
+      var on = scroll.scrollLeft > 4;
+      if (on !== scroll.classList.contains('scrolled')) {
+        scroll.classList.toggle('scrolled', on);
+      }
+    }, { passive: true });
+
     grid.appendChild(scroll);
+    // Only now that a table exists is the picker meaningful. render() returns
+    // early when there are no cards, leaving remove()'s hidden state in place.
+    syncHeaderButton(true);
 
     // Sort click handlers - persist in localStorage
     var savedSortCol = '';
@@ -225,13 +263,12 @@
   }
 
   function remove() {
+    syncHeaderButton(false);
     var tbl = document.getElementById('wineTable');
     if (tbl) {
       var scroll = tbl.closest('.wine-table-scroll');
       if (scroll) { scroll.remove(); } else { tbl.remove(); }
     }
-    var toolbar = document.getElementById('wineTableToolbar');
-    if (toolbar) toolbar.remove();
   }
 
   function openPicker() {
@@ -259,6 +296,13 @@
       if (cb.checked) keys.push(cb.value);
     });
     setChosenColumns(keys);
+  }
+
+  // The picker's entry point sits in the page header next to the filter button,
+  // so it has to appear and disappear with the table view itself.
+  function syncHeaderButton(on) {
+    var btn = document.getElementById('colPickerBtn');
+    if (btn) btn.hidden = !on;
   }
 
   window.TableView = {

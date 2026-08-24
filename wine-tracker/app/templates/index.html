@@ -47,8 +47,14 @@
     <span><span id="bottleCountNum">{{ wines|sum(attribute='quantity') }}</span> {{ t.bottles_abbr }}</span>
     <span><span id="wineCountNum">{{ wines|length }}</span> {{ t.stats_pill_wines }}</span>
   </div>
-  <div class="search-wrap">
-    <i class="mdi mdi-magnify search-icon"></i>
+  {# On a phone this collapses to just the magnifier; tapping it expands the
+     field (see toggleSearch()). On desktop it is always open. #}
+  <div class="search-wrap" id="searchWrap">
+    <button type="button" class="search-icon-btn" onclick="toggleSearch()"
+            title="{{ t.search_placeholder }}" aria-label="{{ t.search_placeholder }}"
+            aria-expanded="false" aria-controls="searchInput">
+      <i class="mdi mdi-magnify search-icon"></i>
+    </button>
     <input type="text" id="searchInput" placeholder="{{ t.search_placeholder }}" autocomplete="off" oninput="debouncedFilter()">
     <button type="button" class="search-clear" onclick="clearSearch()">×</button>
   </div>
@@ -99,6 +105,10 @@
     </div>
   </div>
   {% endif %}
+  {# Only meaningful in the table view, so table-view.js shows and hides it. #}
+  <button class="filter-btn" id="colPickerBtn" hidden
+          onclick="TableView.openPicker()" title="{{ t.table_columns }}"
+          aria-label="{{ t.table_columns }}"><i class="mdi mdi-view-column-outline"></i></button>
   <button class="theme-toggle" onclick="openModal('settingsModal')" title="{{ t.settings_title }}"><i class="mdi mdi-cog"></i></button>
 </header>
 
@@ -591,6 +601,40 @@ function clearSearch() {
   document.getElementById('searchInput').value = '';
   applyFilters();
 }
+
+// ── Collapsible search (phone only) ──────────────────────────────────────────
+// On narrow screens the field is a magnifier until tapped; the header has no
+// room for a permanent input next to the area switch, the badge and the buttons.
+// The CSS decides whether collapsing applies at all, so this only has to toggle
+// the class and keep focus and aria in step.
+function searchIsCollapsible() {
+  // Same 600px breakpoint the stylesheet uses for the collapsed state.
+  return window.matchMedia('(max-width: 600px)').matches;
+}
+
+function toggleSearch() {
+  var wrap = document.getElementById('searchWrap');
+  if (!wrap || !searchIsCollapsible()) return;
+  var input = document.getElementById('searchInput');
+  var open = wrap.classList.toggle('open');
+  var btn = wrap.querySelector('.search-icon-btn');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) { input.focus(); return; }
+  // Collapsing must not silently keep filtering by a query nobody can see.
+  if (input.value) { input.value = ''; applyFilters(); }
+}
+
+// Tapping outside collapses it again, but only while the query is empty -
+// otherwise the user loses a search they are still reading results for.
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('searchWrap');
+  if (!wrap || !wrap.classList.contains('open')) return;
+  if (wrap.contains(e.target)) return;
+  if (document.getElementById('searchInput').value) return;
+  wrap.classList.remove('open');
+  var btn = wrap.querySelector('.search-icon-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+});
 
 function toggleFilterDropdown() {
   var dd = document.getElementById('filterDropdown');
