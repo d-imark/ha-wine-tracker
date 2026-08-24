@@ -7,12 +7,116 @@
 
   var T = window.T || {};
 
+  // Catalogue order IS display order. Every key is a card.dataset key.
+  var COLUMNS = [
+    { key: 'year',            group: 'wine',    label: 'table_col_year',      numeric: true, minWidth: 80 },
+    { key: 'region',          group: 'wine',    label: 'table_col_region',                   minWidth: 150 },
+    { key: 'country',         group: 'wine',    label: 'label_country',                      minWidth: 130 },
+    { key: 'grape',           group: 'wine',    label: 'table_col_grape',                    minWidth: 150 },
+    { key: 'winery',          group: 'wine',    label: 'label_winery',                       minWidth: 150 },
+    { key: 'drink_until',     group: 'wine',    label: 'label_drink_until',   numeric: true, minWidth: 100 },
+    { key: 'age_years',       group: 'spirits', label: 'label_age',           numeric: true, minWidth: 90 },
+    { key: 'abv',             group: 'spirits', label: 'label_abv',           numeric: true, minWidth: 90 },
+    { key: 'cask',            group: 'spirits', label: 'label_casks',                        minWidth: 170 },
+    { key: 'bottler',         group: 'spirits', label: 'label_bottler',                      minWidth: 150 },
+    { key: 'price',           group: 'price',   label: 'table_col_price_own', numeric: true, minWidth: 110 },
+    { key: 'ai_price',        group: 'price',   label: 'label_ai_price',      numeric: true, minWidth: 110 },
+    { key: 'price_effective', group: 'price',   label: 'table_col_price_eff', numeric: true, minWidth: 110 },
+    { key: 'quantity',        group: 'general', label: 'table_col_quantity',  numeric: true, minWidth: 70 },
+    { key: 'rating',          group: 'general', label: 'label_rating',        numeric: true, minWidth: 90 },
+    { key: 'vivino_rating',   group: 'general', label: 'vivino_rating_label', numeric: true, minWidth: 90 },
+    { key: 'location',        group: 'general', label: 'label_location',                     minWidth: 130 },
+    { key: 'bottle_format',   group: 'general', label: 'label_bottle_format', numeric: true, minWidth: 100 },
+    { key: 'purchased_at',    group: 'general', label: 'label_purchased_at',                 minWidth: 120 }
+  ];
+  var GROUP_ORDER = ['wine', 'spirits', 'price', 'general'];
+  var GROUP_LABEL = { wine: 'colgrp_wine', spirits: 'colgrp_spirits',
+                      price: 'colgrp_price', general: 'colgrp_general' };
+
+  var DEFAULTS = {
+    cellar: ['year', 'region', 'grape', 'price_effective', 'quantity'],
+    bar:    ['age_years', 'abv', 'cask', 'price_effective', 'quantity']
+  };
+
+  function areaKey() {
+    return (window._area === 'bar') ? 'bar' : 'cellar';
+  }
+
+  function chosenColumns() {
+    var area = areaKey();
+    var stored = null;
+    try { stored = JSON.parse(localStorage.getItem('wineTableCols.' + area)); } catch (e) {}
+    if (!Array.isArray(stored)) stored = DEFAULTS[area];
+    var want = {};
+    stored.forEach(function (k) { want[k] = true; });
+    // Filtering the catalogue (rather than mapping the stored list) keeps
+    // catalogue order and silently drops keys that no longer exist, so removing
+    // a column later cannot break someone's stored selection.
+    return COLUMNS.filter(function (c) { return want[c.key]; });
+  }
+
+  function setChosenColumns(keys) {
+    try {
+      localStorage.setItem('wineTableCols.' + areaKey(), JSON.stringify(keys));
+    } catch (e) {}
+    render();
+  }
+
+  function resetColumns() {
+    try { localStorage.removeItem('wineTableCols.' + areaKey()); } catch (e) {}
+    render();
+    openPicker();   // re-render the checkboxes to match
+  }
+
+  function drinkIcon(d) {
+    if (!d.drink_until) return '';
+    var yr = new Date().getFullYear();
+    var until = parseInt(d.drink_until, 10);
+    if (until < yr) return ' <i class="mdi mdi-alert" style="color:#e74c3c;font-size:.75rem"></i>';
+    if (until === yr) return ' <i class="mdi mdi-alert" style="color:#e67e22;font-size:.75rem"></i>';
+    return ' <i class="mdi mdi-check-circle" style="color:#27ae60;font-size:.75rem"></i>';
+  }
+
+  // Returns an escaped HTML string so the caller never has to guess whether to escape.
+  function cellHtml(d, col) {
+    if (col.key === 'grape') {
+      var list = [];
+      try { list = JSON.parse(d.grapes || '[]'); } catch (e) {}
+      return escapeHtml(grapeLead(list) || d.grape || '');
+    }
+    if (col.key === 'drink_until') {
+      return escapeHtml(d.drink_until || '') + drinkIcon(d);
+    }
+    if (col.group === 'price') {
+      var v = d[col.key];
+      return v ? escapeHtml(CURRENCY + ' ' + Number(v).toFixed(2)) : '';
+    }
+    return escapeHtml(d[col.key] || '');
+  }
+
+  function isNumericKey(key) {
+    if (key === 'type' || key === 'name') return false;
+    var match = COLUMNS.filter(function (c) { return c.key === key; })[0];
+    return !!(match && match.numeric);
+  }
+
   function render() {
-    var existing = document.getElementById('wineTable');
-    if (existing) existing.remove();
+    remove();
     var grid = document.getElementById('wineGrid');
     var cards = Array.from(grid.querySelectorAll('.card'));
     if (!cards.length) return;
+
+    var cols = chosenColumns();
+
+    var bar = document.createElement('div');
+    bar.id = 'wineTableToolbar';
+    bar.className = 'wine-table-toolbar';
+    bar.style.gridColumn = '1 / -1';
+    bar.innerHTML = '<button type="button" class="wine-table-colbtn" '
+      + 'onclick="TableView.openPicker()">'
+      + '<i class="mdi mdi-view-column-outline"></i> '
+      + escapeHtml(T.table_columns || 'Columns') + '</button>';
+    grid.appendChild(bar);
 
     var table = document.createElement('table');
     table.id = 'wineTable';
@@ -22,42 +126,33 @@
     // Header
     var thead = '<thead><tr>'
       + '<th class="wine-table-sortable wine-table-type col-type" data-sort="type"><i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-col-name col-name" data-sort="name">' + (T.table_col_name || 'Name') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-col-year col-year" data-sort="year">' + (T.table_col_year || 'Year') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-col-region col-region" data-sort="region">' + (T.table_col_region || 'Region') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-col-grape col-grape" data-sort="grape">' + (T.table_col_grape || 'Grape') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-right wine-table-col-price col-price" data-sort="price">' + (T.table_col_price || 'Price') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '<th class="wine-table-sortable wine-table-right wine-table-col-qty col-qty" data-sort="quantity">' + (T.table_col_quantity || 'Qty') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-      + '</tr></thead>';
+      + '<th class="wine-table-sortable wine-table-col-name col-name" data-sort="name">' + escapeHtml(T.table_col_name || 'Name') + ' <i class="mdi mdi-swap-vertical"></i></th>';
+    cols.forEach(function (col) {
+      thead += '<th class="wine-table-sortable col-' + col.key
+        + (col.numeric ? ' wine-table-right' : '')
+        + '" data-sort="' + col.key
+        + '" style="min-width:' + col.minWidth + 'px">'
+        + escapeHtml(T[col.label] || col.key)
+        + ' <i class="mdi mdi-swap-vertical"></i></th>';
+    });
+    thead += '</tr></thead>';
 
     // Body
     var tbody = '<tbody>';
-    cards.forEach(function(card) {
+    cards.forEach(function (card) {
       var d = card.dataset;
       var hidden = card.style.display === 'none' ? ' style="display:none"' : '';
       var typeCls = d.type ? d.type.toLowerCase().replace(/é/g,'e').replace(/ö/g,'oe') : '';
-      var typeLabel = d.type ? (T['wine_type_' + d.type] || d.type) : '';
       var typeDot = d.type ? '<span class="type-dot type-dot-' + escapeHtml(typeCls) + '"></span>' : '';
-      var priceStr = d.price ? CURRENCY + ' ' + Number(d.price).toFixed(2) : '';
-      var grapesList = [];
-      try { grapesList = JSON.parse(d.grapes || '[]'); } catch (e) { grapesList = []; }
-      var drinkIcon = '';
-      if (d.drink_until) {
-        var yr = new Date().getFullYear();
-        var until = parseInt(d.drink_until);
-        if (until < yr) drinkIcon = ' <i class="mdi mdi-alert" style="color:#e74c3c;font-size:.75rem" title="Past drink window"></i>';
-        else if (until === yr) drinkIcon = ' <i class="mdi mdi-alert" style="color:#e67e22;font-size:.75rem" title="Last year to drink"></i>';
-        else drinkIcon = ' <i class="mdi mdi-check-circle" style="color:#27ae60;font-size:.75rem" title="In drink window"></i>';
-      }
       tbody += '<tr class="wine-table-row' + (parseInt(d.quantity) === 0 ? ' empty' : '') + '" data-card-id="' + d.id + '" onclick="viewWineById(\'' + d.id + '\')"' + hidden + '>'
         + '<td class="wine-table-type col-type">' + typeDot + '</td>'
-        + '<td class="wine-table-name col-name">' + escapeHtml(d.name) + '</td>'
-        + '<td class="col-year">' + escapeHtml(d.year || '') + drinkIcon + '</td>'
-        + '<td class="col-region">' + escapeHtml(d.region || '') + '</td>'
-        + '<td class="col-grape">' + escapeHtml(grapeLead(grapesList) || d.grape || '') + '</td>'
-        + '<td class="wine-table-right col-price">' + escapeHtml(priceStr) + '</td>'
-        + '<td class="wine-table-right col-qty">' + (d.quantity || '0') + '</td>'
-        + '</tr>';
+        + '<td class="wine-table-name col-name">' + escapeHtml(d.name) + '</td>';
+      cols.forEach(function (col) {
+        tbody += '<td class="col-' + col.key
+          + (col.numeric ? ' wine-table-right' : '') + '">'
+          + cellHtml(d, col) + '</td>';
+      });
+      tbody += '</tr>';
     });
     tbody += '</tbody>';
     table.innerHTML = thead + tbody;
@@ -75,13 +170,14 @@
       localStorage.setItem('wineTableSortCol', key);
       localStorage.setItem('wineTableSortAsc', String(asc));
       var rows = Array.from(table.querySelectorAll('tbody tr'));
+      var numeric = isNumericKey(key);
       rows.sort(function(a, b) {
         var aCard = document.querySelector('.card[data-id="' + a.dataset.cardId + '"]');
         var bCard = document.querySelector('.card[data-id="' + b.dataset.cardId + '"]');
         if (!aCard || !bCard) return 0;
         var aVal = aCard.dataset[key] || '';
         var bVal = bCard.dataset[key] || '';
-        if (key === 'year' || key === 'price' || key === 'quantity') {
+        if (numeric) {
           aVal = parseFloat(aVal) || 0;
           bVal = parseFloat(bVal) || 0;
           return asc ? aVal - bVal : bVal - aVal;
@@ -119,10 +215,42 @@
   function remove() {
     var tbl = document.getElementById('wineTable');
     if (tbl) tbl.remove();
+    var toolbar = document.getElementById('wineTableToolbar');
+    if (toolbar) toolbar.remove();
+  }
+
+  function openPicker() {
+    var chosen = {};
+    chosenColumns().forEach(function (c) { chosen[c.key] = true; });
+    var html = '';
+    GROUP_ORDER.forEach(function (g) {
+      html += '<div class="colpick-group"><div class="colpick-group-label">'
+        + escapeHtml(T[GROUP_LABEL[g]] || g) + '</div>';
+      COLUMNS.filter(function (c) { return c.group === g; }).forEach(function (c) {
+        html += '<label class="colpick-opt"><input type="checkbox" value="' + c.key + '"'
+          + (chosen[c.key] ? ' checked' : '')
+          + ' onchange="TableView.togglePicked()"> '
+          + escapeHtml(T[c.label] || c.key) + '</label>';
+      });
+      html += '</div>';
+    });
+    document.getElementById('colPickerBody').innerHTML = html;
+    openModal('colPickerModal');
+  }
+
+  function togglePicked() {
+    var keys = [];
+    document.querySelectorAll('#colPickerBody input[type=checkbox]').forEach(function (cb) {
+      if (cb.checked) keys.push(cb.value);
+    });
+    setChosenColumns(keys);
   }
 
   window.TableView = {
     render: render,
     remove: remove,
+    openPicker: openPicker,
+    togglePicked: togglePicked,
+    resetColumns: resetColumns,
   };
 })();

@@ -713,6 +713,25 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
   .wine-table-type .mdi { display: none; }
 }
 
+/* ── Table: column picker toolbar and dialog ──────────────────────────────── */
+.wine-table-toolbar { display: flex; justify-content: flex-end; padding: 0 0 .5rem; }
+.wine-table-colbtn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer;
+}
+.wine-table-colbtn:hover { color: var(--text); border-color: var(--text); }
+.colpick-group { margin-bottom: .9rem; }
+.colpick-group-label {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); margin-bottom: .3rem;
+}
+.colpick-opt {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .3rem .2rem; font-size: .88rem; cursor: pointer;
+}
+.colpick-opt:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
 /* ── Index: Empty State ────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center; padding: 4rem 2rem; color: var(--muted);

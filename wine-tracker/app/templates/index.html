@@ -258,6 +258,22 @@
 </div>
 
 
+<!-- ═══════════════ TABLE COLUMN PICKER MODAL ═══════════════ -->
+<div class="modal-overlay" id="colPickerModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.table_columns }}</span>
+      <button class="modal-close" type="button" onclick="closeModal('colPickerModal')">&times;</button>
+    </div>
+    <div class="modal-body" id="colPickerBody"></div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between;gap:.6rem;padding:.75rem 1.25rem 1.25rem;border-top:1px solid var(--border);">
+      <button type="button" class="btn-cancel" onclick="TableView.resetColumns()">{{ t.table_columns_reset }}</button>
+      <button type="button" class="btn-submit" style="width:auto;padding:0 1.2rem;" onclick="closeModal('colPickerModal')">{{ t.btn_close }}</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══════════════ WINE VIEW MODAL ═══════════════ -->
 {% include '_wine_view_modal.html' %}
 {% include '_wine_view_extras.html' %}
