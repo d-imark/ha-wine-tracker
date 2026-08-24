@@ -150,7 +150,8 @@ class TestIndex:
         resp = client.get("/")
         html = resp.data.decode()
         assert 'setViewMode' in html
-        assert 'renderTableView' in html
+        assert 'TableView.render' in html
+        assert 'static/table-view.js' in html
         assert 'wineViewMode' in html
 
     def test_wine_grid_has_view_class(self, client):
