@@ -1738,7 +1738,14 @@ initImageShimmer();
   }
 })();
 
+</script>
+<script src="{{ ingress }}/static/table-view.js"></script>
+<script src="{{ ingress }}/static/filter-advanced.js"></script>
+<script>
 // ── Restore saved view mode on page load ──────────────────────────────────────
+// Must run after table-view.js has loaded (TableView.render() is called below
+// when the saved mode is 'table'), so this block lives after that <script src>
+// rather than in the big inline block above it.
 (function() {
   var saved = localStorage.getItem('wineViewMode') || 'cards';
   // Always sync the settings modal radio buttons to the persisted mode
@@ -1749,10 +1756,7 @@ initImageShimmer();
     setViewMode(saved);
   }
 })();
-
 </script>
-<script src="{{ ingress }}/static/table-view.js"></script>
-<script src="{{ ingress }}/static/filter-advanced.js"></script>
 
 {% include '_chat_panel.html' %}
 {% if not auth_readonly %}<button class="fab" onclick="openWineModal()" title="{{ t.btn_add_wine }}"><i class="mdi mdi-plus"></i></button>{% endif %}
