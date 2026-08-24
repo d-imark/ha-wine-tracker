@@ -119,6 +119,9 @@
        data-notes="{{ w['notes'] or '' }}" data-description="{{ w['description'] or '' }}"
        data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
+       data-ai_price="{{ w['ai_price'] or '' }}"
+       data-price_effective="{{ price_effective[w['id']] }}"
+       data-grapes="{{ (w['grapes'] or []) | tojson | forceescape }}"
        data-drink_from="{{ w['drink_from'] or '' }}" data-drink_until="{{ w['drink_until'] or '' }}"
        data-location="{{ w['location'] or '' }}"
        data-grape="{{ w['grape'] or '' }}"
@@ -1553,6 +1556,10 @@ function updateCardData(card, w) {
   card.dataset.image = w.image || '';
   card.dataset.purchased_at = w.purchased_at || '';
   card.dataset.price = w.price || '';
+  card.dataset.ai_price = w.ai_price || '';
+  // Computed server-side by effective_price() - never recompute the rule here.
+  card.dataset.price_effective = w.price_effective || '';
+  card.dataset.grapes = JSON.stringify(w.grapes || []);
   card.dataset.drink_from = w.drink_from || '';
   card.dataset.drink_until = w.drink_until || '';
   card.dataset.location = w.location || '';

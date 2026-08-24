@@ -1740,3 +1740,45 @@ class TestNotesToDescriptionMigration:
         row = db.execute("SELECT notes, description FROM wines WHERE name='Beides'").fetchone()
         assert row["description"] == "Schon da"
         assert row["notes"] == "Notiz"      # left alone, nothing to move into
+
+
+class TestCardDatasetPriceFields:
+    """The table view reads card.dataset, so the price trio must live there."""
+
+    @staticmethod
+    def _card(html, name):
+        return [chunk for chunk in html.split('<div class="card') if name in chunk][0]
+
+    def test_own_price_wins(self, client, db):
+        # /add no longer takes a "price" field directly - the own price is
+        # cached from purchase lots (see purchases.recompute_wine_price), so
+        # it is set here the same way a purchase lot would set it.
+        client.post("/add", data={"name": "Beide Preise", "quantity": "1",
+                                  "ai_price": "65"}, headers=AJAX)
+        db.execute("UPDATE wines SET price=60 WHERE name='Beide Preise'")
+        db.commit()
+        card = self._card(client.get("/").data.decode(), "Beide Preise")
+        assert 'data-price_effective="60' in card
+        assert 'data-ai_price="65' in card
+
+    def test_ai_price_fills_in(self, client, db):
+        client.post("/add", data={"name": "Nur KI", "quantity": "1",
+                                  "ai_price": "42"}, headers=AJAX)
+        card = self._card(client.get("/").data.decode(), "Nur KI")
+        assert 'data-price_effective="42' in card
+
+    def test_empty_when_neither(self, client, db):
+        client.post("/add", data={"name": "Kein Preis", "quantity": "1"}, headers=AJAX)
+        card = self._card(client.get("/").data.decode(), "Kein Preis")
+        assert 'data-price_effective=""' in card
+
+    def test_structured_grapes_are_exposed(self, client, db):
+        import json as J
+        client.post("/add", data={
+            "name": "Cuvee Dataset", "quantity": "1",
+            "grapes": J.dumps([{"name": "Merlot", "pct": 70},
+                               {"name": "Syrah", "pct": 30}]),
+        }, headers=AJAX)
+        card = self._card(client.get("/").data.decode(), "Cuvee Dataset")
+        assert "data-grapes=" in card
+        assert "Merlot" in card and "Syrah" in card

@@ -817,3 +817,18 @@ class TestSpiritAiSchema:
         assert coords and round(coords[0], 1) == 55.8
         # the fallback finds it even when the category is not passed
         assert wine_app.resolve_map_coords(db, "Islay", None) == coords
+
+
+class TestEffectivePrice:
+    """One definition of the fallback rule, used by both renderers."""
+
+    @pytest.mark.parametrize("own,ai,expected", [
+        (60.0, 65.0, 60.0),
+        (None, 42.0, 42.0),
+        ("",   42.0, 42.0),
+        (60.0, None, 60.0),
+        (None, None, ""),
+        (0.0,  42.0, 42.0),   # a zero own price is not a price
+    ])
+    def test_rule(self, own, ai, expected):
+        assert wine_app.effective_price({"price": own, "ai_price": ai}) == expected

@@ -983,6 +983,18 @@ def migrate_country_from_region(db):
             db.execute("UPDATE wines SET country=? WHERE id=?", (country, w["id"]))
 
 
+def effective_price(row):
+    """The price to show: the user's own, else the AI's estimate, else empty.
+
+    One definition, used by the card list and by wine_json(), so the table, the
+    sort and the advanced filter can all read a ready-made value. A zero own
+    price is treated as "no price" (a bottle's price is never actually 0), so
+    it also falls back to the AI estimate.
+    """
+    price = row["price"]
+    return (price if price else row["ai_price"]) or ""
+
+
 def is_ajax():
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -994,6 +1006,7 @@ def wine_json(wine_id):
     if not row:
         return None
     d = dict(row)
+    d["price_effective"] = effective_price(row)
     # Parse JSON text columns into real objects
     for key in ("maturity_data", "taste_profile", "food_pairings"):
         raw = d.get(key)
@@ -1180,6 +1193,8 @@ def index():
         ).fetchall()
     ]
 
+    price_effective = {w["id"]: effective_price(w) for w in wines}
+
     return render_template(
         "index.html",
         wines=wines,
@@ -1189,6 +1204,7 @@ def index():
         show_empty=show_empty,
         stats=stats,
         area=area or "cellar",
+        price_effective=price_effective,
     )
 
 
