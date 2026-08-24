@@ -154,6 +154,20 @@ class TestIndex:
         assert 'static/table-view.js' in html
         assert 'wineViewMode' in html
 
+    def test_table_view_js_loads_before_view_mode_restore(self, client):
+        """Regression guard: the saved-view-mode restore block calls
+        TableView.render() (via setViewMode) when the saved mode is 'table',
+        so it must run after static/table-view.js has loaded. If the script
+        tag is ever moved back below the restore block, every user whose
+        saved view mode is 'table' hits a ReferenceError and sees a blank
+        grid."""
+        resp = client.get("/")
+        html = resp.data.decode()
+        # "localStorage.getItem('wineViewMode')" also appears earlier, in the
+        # unrelated initial `currentViewMode` assignment, so anchor on the
+        # restore block's own call to setViewMode(saved) instead.
+        assert html.index("static/table-view.js") < html.index("setViewMode(saved)")
+
     def test_wine_grid_has_view_class(self, client):
         """Wine grid container should have view-cards class and id."""
         resp = client.get("/")

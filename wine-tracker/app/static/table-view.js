@@ -87,6 +87,9 @@
     if (col.key === 'drink_until') {
       return escapeHtml(d.drink_until || '') + drinkIcon(d);
     }
+    if (col.key === 'year') {
+      return escapeHtml(d.year || '') + drinkIcon(d);
+    }
     if (col.group === 'price') {
       var v = d[col.key];
       return v ? escapeHtml(CURRENCY + ' ' + Number(v).toFixed(2)) : '';
@@ -163,15 +166,21 @@
     grid.appendChild(scroll);
 
     // Sort click handlers - persist in localStorage
-    var savedSortCol = localStorage.getItem('wineTableSortCol') || '';
-    var savedSortAsc = localStorage.getItem('wineTableSortAsc') === 'true';
+    var savedSortCol = '';
+    var savedSortAsc = false;
+    try {
+      savedSortCol = localStorage.getItem('wineTableSortCol') || '';
+      savedSortAsc = localStorage.getItem('wineTableSortAsc') === 'true';
+    } catch (e) {}
     var sortDir = {};
     if (savedSortCol) sortDir[savedSortCol] = savedSortAsc;
 
     function sortTableBy(key, asc) {
       sortDir[key] = asc;
-      localStorage.setItem('wineTableSortCol', key);
-      localStorage.setItem('wineTableSortAsc', String(asc));
+      try {
+        localStorage.setItem('wineTableSortCol', key);
+        localStorage.setItem('wineTableSortAsc', String(asc));
+      } catch (e) {}
       var rows = Array.from(table.querySelectorAll('tbody tr'));
       var numeric = isNumericKey(key);
       rows.sort(function(a, b) {

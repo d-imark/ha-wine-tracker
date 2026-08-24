@@ -645,19 +645,24 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
    values come from one variable that cannot disagree with itself. */
 .wine-table { --col-type-w: 40px; }
 .wine-table th.col-type, .wine-table td.col-type {
-  position: sticky; left: 0; z-index: 2; background: var(--surface);
+  position: sticky; left: 0; z-index: 2;
   min-width: var(--col-type-w); max-width: var(--col-type-w); width: var(--col-type-w);
 }
 .wine-table th.col-name, .wine-table td.col-name {
-  position: sticky; left: var(--col-type-w); z-index: 2; background: var(--surface);
+  position: sticky; left: var(--col-type-w); z-index: 2;
   min-width: 160px;
 }
+.wine-table td.col-type, .wine-table td.col-name { background: var(--surface); }
+.wine-table th.col-type, .wine-table th.col-name { background: var(--bg); }
 .wine-table-row:hover td.col-type,
 .wine-table-row:hover td.col-name {
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 .wine-table thead {
-  background: var(--bg); border-bottom: 2px solid var(--border);
+  background: var(--bg);
+}
+.wine-table thead th {
+  border-bottom: 2px solid var(--border);
 }
 .wine-table th {
   padding: .6rem .75rem; text-align: left; font-weight: 600;

@@ -534,7 +534,6 @@ TRANSLATIONS = {
     "table_col_year": "Jahrgang",
     "table_col_region": "Region",
     "table_col_grape": "Rebsorte",
-    "table_col_price": "Preis",
     "table_col_quantity": "Anzahl",
 },
 
@@ -1056,7 +1055,6 @@ TRANSLATIONS = {
     "table_col_year": "Year",
     "table_col_region": "Region",
     "table_col_grape": "Grape",
-    "table_col_price": "Price",
     "table_col_quantity": "Qty",
 },
 
@@ -1578,7 +1576,6 @@ TRANSLATIONS = {
     "table_col_year": "Millésime",
     "table_col_region": "Région",
     "table_col_grape": "Cépage",
-    "table_col_price": "Prix",
     "table_col_quantity": "Qté",
 },
 
@@ -2100,7 +2097,6 @@ TRANSLATIONS = {
     "table_col_year": "Annata",
     "table_col_region": "Regione",
     "table_col_grape": "Vitigno",
-    "table_col_price": "Prezzo",
     "table_col_quantity": "Qtà",
 },
 
@@ -2622,7 +2618,6 @@ TRANSLATIONS = {
     "table_col_year": "Añada",
     "table_col_region": "Región",
     "table_col_grape": "Uva",
-    "table_col_price": "Precio",
     "table_col_quantity": "Cant.",
 },
 
@@ -3144,7 +3139,6 @@ TRANSLATIONS = {
     "table_col_year": "Safra",
     "table_col_region": "Regi\u00e3o",
     "table_col_grape": "Casta",
-    "table_col_price": "Pre\u00e7o",
     "table_col_quantity": "Qtd.",
 },
 
@@ -3666,7 +3660,6 @@ TRANSLATIONS = {
     "table_col_year": "Jaar",
     "table_col_region": "Regio",
     "table_col_grape": "Druif",
-    "table_col_price": "Prijs",
     "table_col_quantity": "Aantal",
 },
 
