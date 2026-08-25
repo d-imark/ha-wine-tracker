@@ -168,7 +168,7 @@ def _ssl_verify():
         return True
 
 
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.16.0"
 
 HA_OPTIONS = load_options()
 
@@ -983,6 +983,27 @@ def migrate_country_from_region(db):
             db.execute("UPDATE wines SET country=? WHERE id=?", (country, w["id"]))
 
 
+def effective_price(row):
+    """The price to show: the user's own, else the AI's estimate, else empty.
+
+    One definition, used by the card list and by wine_json(), so the table, the
+    sort and the advanced filter can all read a ready-made value. A zero own
+    price is treated as "no price" (a bottle's price is never actually 0), so
+    it also falls back to the AI estimate.
+    """
+    price = row["price"]
+    return (price if price else row["ai_price"]) or ""
+
+
+# The same rule as SQL, for aggregates that cannot go row by row (the estimated
+# total value in the statistics). Kept adjacent to effective_price() on purpose:
+# these two must always say the same thing, and the only way to keep that true is
+# to have them sit where a change to one shows the other.
+#   NULLIF(x, 0) turns a zero price into NULL, matching the helper's rule that a
+#   zero own price counts as "no price".
+EFFECTIVE_PRICE_SQL = "COALESCE(NULLIF(price, 0), NULLIF(ai_price, 0))"
+
+
 def is_ajax():
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -994,6 +1015,7 @@ def wine_json(wine_id):
     if not row:
         return None
     d = dict(row)
+    d["price_effective"] = effective_price(row)
     # Parse JSON text columns into real objects
     for key in ("maturity_data", "taste_profile", "food_pairings"):
         raw = d.get(key)
@@ -1180,6 +1202,8 @@ def index():
         ).fetchall()
     ]
 
+    price_effective = {w["id"]: effective_price(w) for w in wines}
+
     return render_template(
         "index.html",
         wines=wines,
@@ -1189,6 +1213,7 @@ def index():
         show_empty=show_empty,
         stats=stats,
         area=area or "cellar",
+        price_effective=price_effective,
     )
 
 
@@ -1673,12 +1698,27 @@ def stats_page():
         f"SELECT SUM(quantity * COALESCE(bottle_format, 0.75)) as liters FROM wines WHERE {A}"
     ).fetchone()["liters"] or 0
 
-    # Total value
+    # Total value - the user's own prices only, i.e. what they actually spent.
     value = q(
         "SELECT SUM(quantity * price) as total_value, AVG(price) as avg_price, "
-        f"MIN(price) as min_price, MAX(price) as max_price FROM wines WHERE {A} "
-        "AND price IS NOT NULL AND price > 0"
+        f"MIN(price) as min_price, MAX(price) as max_price, COUNT(*) as bottles "
+        f"FROM wines WHERE {A} AND price IS NOT NULL AND price > 0"
     ).fetchone()
+
+    # Second figure: the same sum but with the AI estimate filling in wherever no
+    # own price exists (EFFECTIVE_PRICE_SQL - the same rule the table's price
+    # column uses). Reported separately, never folded into the figure above, so
+    # measured spending and estimate stay tellable apart.
+    value_est = q(
+        f"SELECT SUM(quantity * {EFFECTIVE_PRICE_SQL}) as total_value, "
+        f"AVG({EFFECTIVE_PRICE_SQL}) as avg_price, "
+        f"COUNT(*) as bottles FROM wines WHERE {A} "
+        f"AND {EFFECTIVE_PRICE_SQL} IS NOT NULL"
+    ).fetchone()
+
+    # How many bottles each figure actually covers - a total over 3 of 86 bottles
+    # means something very different from one over 80, and the card should say so.
+    total_bottles_in_area = q(f"SELECT COUNT(*) FROM wines WHERE {A}").fetchone()[0]
 
     # Most expensive bottle
     most_expensive = q(
@@ -1690,6 +1730,19 @@ def stats_page():
     cheapest = q(
         f"SELECT id, name, year, type, price FROM wines WHERE {A} "
         "AND price IS NOT NULL AND price > 0 ORDER BY price ASC LIMIT 1"
+    ).fetchone()
+
+    # The same two extremes under the effective-price rule, so the price overview
+    # can be switched between measured and estimated without a round trip.
+    most_expensive_est = q(
+        f"SELECT id, name, year, type, {EFFECTIVE_PRICE_SQL} AS price FROM wines "
+        f"WHERE {A} AND {EFFECTIVE_PRICE_SQL} IS NOT NULL "
+        f"ORDER BY {EFFECTIVE_PRICE_SQL} DESC LIMIT 1"
+    ).fetchone()
+    cheapest_est = q(
+        f"SELECT id, name, year, type, {EFFECTIVE_PRICE_SQL} AS price FROM wines "
+        f"WHERE {A} AND {EFFECTIVE_PRICE_SQL} IS NOT NULL "
+        f"ORDER BY {EFFECTIVE_PRICE_SQL} ASC LIMIT 1"
     ).fetchone()
 
     # Best rated bottles
@@ -1869,8 +1922,12 @@ def stats_page():
         top_regions=top_regions,
         map_points=map_points,
         value=value,
+        value_est=value_est,
+        total_bottles_in_area=total_bottles_in_area,
         most_expensive=dict(most_expensive) if most_expensive else None,
         cheapest=dict(cheapest) if cheapest else None,
+        most_expensive_est=dict(most_expensive_est) if most_expensive_est else None,
+        cheapest_est=dict(cheapest_est) if cheapest_est else None,
         best_rated=best_rated,
         avg_age=avg_age["avg_age"] if avg_age else None,
         oldest=dict(oldest) if oldest else None,
@@ -3139,11 +3196,24 @@ def _wine_json_rules(lang="en", currency=None, category="wine", scope="all"):
             f"the price came from in ai_rationale.")
     else:
         where = ""
+    # A dedicated price lookup may fall back to another vintage of the SAME wine
+    # when the requested one is nowhere on sale - otherwise a small producer's
+    # release yields nothing at all. Deliberately NOT offered on a full refresh:
+    # there the model is also reading the vintage, and a price from another year
+    # would invite it to "correct" the bottle's own. The scoped reply is stripped
+    # to price + ai_rationale anyway, so the vintage cannot be touched either way.
+    vintage_fallback = ("" if scope != "price" else
+        " If, and only if, no price exists for the requested vintage anywhere, use the"
+        " nearest other vintage OF THE SAME WINE FROM THE SAME PRODUCER and state in"
+        " ai_rationale that no price was found for the requested vintage and which"
+        " vintage the figure comes from. Never substitute a different wine or a"
+        " different producer, and never report the substitute as if it were the"
+        " requested vintage.")
     price_rule = (
         f"- price: the retail bottle price as a plain number in {currency}, without any "
-        f"currency symbol.{where} If your sources quote another currency, CONVERT the amount "
-        f"to {currency} at current exchange rates and name the original currency and amount "
-        f"in ai_rationale. Return null if you have no price.")
+        f"currency symbol.{where}{vintage_fallback} If your sources quote another currency, "
+        f"CONVERT the amount to {currency} at current exchange rates and name the original "
+        f"currency and amount in ai_rationale. Return null if you have no price at all.")
     description_rule = (
         f'- description: 2-3 sentences about the bottle itself - style, aroma, taste, '
         f'what makes it distinctive. Written in {lang_name}. This is the shop-style '
@@ -3251,8 +3321,8 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context, scope=
                  if market else "Search current online shops and price comparison sites. ")
         prompt = (
             f"Find the current retail price of this exact {subject}:\n{ctx}\n\n"
-            f"{where}Use the price for this specific bottling and vintage, not a different "
-            f"year or a similarly named product. Return ONLY valid JSON:\n{schema}\n{rules}")
+            f"{where}Look for this specific bottling and vintage first. Only if that vintage is "
+            f"nowhere on sale, fall back to the nearest other vintage of the same wine from the same producer, and say so in ai_rationale. Never use a similarly named product or another producer. Return ONLY valid JSON:\n{schema}\n{rules}")
     elif scope == "profile":
         what = ("taste profile" if category in ("whisky", "spirit")
                 else "drinking window, maturity phases, taste profile and food pairings")

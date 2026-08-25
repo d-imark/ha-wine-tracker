@@ -235,8 +235,13 @@ html.light .nav-menu-item:hover { background: rgba(0,0,0,.04); }
   background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; height: 34px; box-sizing: border-box;
 }
+.search-icon-btn {
+  background: none; border: none; padding: 0 0 0 .65rem;
+  display: flex; align-items: center; flex-shrink: 0;
+  cursor: default;            /* not a control on desktop - the field is open */
+}
 .search-icon {
-  padding-left: .65rem; color: var(--muted); font-size: .9rem;
+  color: var(--muted); font-size: .9rem;
   pointer-events: none; flex-shrink: 0; display: flex; align-items: center;
 }
 .search-wrap input {
@@ -303,10 +308,43 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 @media (max-width: 600px) {
   header { padding: 0 .75rem; gap: .5rem; }
   .nav-links { display: none; }
-  .search-wrap { width: 120px; height: 30px; }
-  .search-wrap input { font-size: .8rem; }
+  /* The search collapses to just the magnifier: the header has no room for a
+     permanent input next to the area switch, the badge and three buttons.
+     Tapping the icon expands it (toggleSearch() adds .open). */
+  /* Collapsed, it must be indistinguishable from the filter, columns and
+     settings buttons beside it - same box, same border, same icon size. */
+  .search-wrap {
+    width: 30px; height: 30px; padding: 0;
+    border: 1px solid var(--border); background: none;
+    border-radius: 8px; box-sizing: border-box;
+    transition: all .2s;
+  }
+  .search-wrap .search-icon-btn {
+    width: 100%; height: 100%; padding: 0;
+    justify-content: center; cursor: pointer;
+    color: var(--muted); font-size: 1.1rem;
+  }
+  .search-wrap .search-icon { font-size: inherit; }
+  .search-wrap:not(.open):hover { border-color: var(--text); }
+  .search-wrap:not(.open):hover .search-icon-btn { color: var(--text); }
+  .search-wrap input { display: none; }
+  .search-wrap .search-clear { display: none !important; }
+
+  .search-wrap.open {
+    flex: 1 1 auto; width: auto; min-width: 0;
+    border-color: var(--border); background: var(--bg);
+  }
+  .search-wrap.open .search-icon-btn { font-size: .9rem; padding-left: .5rem; width: auto; }
+  .search-wrap.open input { display: block; font-size: .8rem; padding-right: 1.8rem; }
+  .search-wrap.open input:not(:placeholder-shown) + .search-clear { display: block !important; }
+  /* Give the open field the badge's space rather than squeezing the buttons.
+     The badge precedes the field in the DOM, so a sibling selector cannot reach
+     it - :has() on the header can. */
+  header:has(.search-wrap.open) #bottleCountBadge { display: none; }
+
   .filter-btn { height: 30px; width: 30px; }
   .theme-toggle { height: 30px; width: 30px; }
+
   .chat-header-actions .chat-header-btn { height: 30px; width: 30px; }
   .nav-hamburger { display: none; }
 
@@ -627,23 +665,52 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
 }
 .view-table .card { display: none; }
 
+.wine-table-scroll { grid-column: 1 / -1; overflow-x: auto; }
 .wine-table {
-  width: 100%; border-collapse: collapse;
-  background: var(--surface); border: none;
-  border-radius: 0; overflow: hidden;
-  font-size: .85rem; table-layout: fixed;
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--surface); font-size: .85rem;
+  table-layout: auto;   /* per-column min-width decides, not fixed pixels */
 }
 .wine-table td.wine-table-type,
-.wine-table th.wine-table-type { width: 40px; text-align: center !important; overflow: visible; text-overflow: clip; padding: .55rem .25rem; }
+.wine-table th.wine-table-type { text-align: center !important; overflow: visible; text-overflow: clip; padding: .55rem .25rem; }
 .wine-table-right { text-align: right !important; }
-/* Fixed-width columns (px - constant at any viewport) */
-.wine-table-col-year { width: 90px; }
-.wine-table-col-region { width: 180px; }
-.wine-table-col-grape { width: 160px; }
-.wine-table-col-price { width: 110px; }
-.wine-table-col-qty { width: 70px; }
+/* Type and name stay readable while the rest scrolls under them. They need an
+   opaque background: a transparent sticky cell shows the row moving through it.
+
+   The name's sticky offset must equal the type column's actual width. With
+   table-layout: auto a plain `width` is only a hint the browser may widen, which
+   would leave a gap or an overlap - so the width is pinned with min+max and both
+   values come from one variable that cannot disagree with itself. */
+.wine-table { --col-type-w: 40px; }
+.wine-table th.col-type, .wine-table td.col-type {
+  position: sticky; left: 0; z-index: 2;
+  min-width: var(--col-type-w); max-width: var(--col-type-w); width: var(--col-type-w);
+}
+.wine-table th.col-name, .wine-table td.col-name {
+  position: sticky; left: var(--col-type-w); z-index: 2;
+  min-width: 160px;
+}
+.wine-table .cell-clip {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The winery sits above the name in the same cell - smaller and quieter, so the
+   name still reads as the primary line. */
+.wine-table .cell-sub {
+  font-size: .72rem; font-weight: 400; color: var(--muted);
+  line-height: 1.2; margin-bottom: .05rem;
+}
+.wine-table td.wine-table-name { padding-top: .4rem; padding-bottom: .4rem; }
+.wine-table td.col-type, .wine-table td.col-name { background: var(--surface); }
+.wine-table th.col-type, .wine-table th.col-name { background: var(--bg); }
+.wine-table-row:hover td.col-type,
+.wine-table-row:hover td.col-name {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
 .wine-table thead {
-  background: var(--bg); border-bottom: 2px solid var(--border);
+  background: var(--bg);
+}
+.wine-table thead th {
+  border-bottom: 2px solid var(--border);
 }
 .wine-table th {
   padding: .6rem .75rem; text-align: left; font-weight: 600;
@@ -695,23 +762,17 @@ html.light .filter-option:hover { background: rgba(0,0,0,.05); }
   .view-list .card-name { max-width: none; }
 }
 
-/* ── Table: responsive column hiding ──────────────────────────────────────── */
-@media (max-width: 900px) {
-  .wine-table .col-grape,
-  .wine-table .col-price { display: none; }
+/* ── Table: column picker toolbar and dialog ──────────────────────────────── */
+.colpick-group { margin-bottom: .9rem; }
+.colpick-group-label {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); margin-bottom: .3rem;
 }
-@media (max-width: 700px) {
-  .wine-table .col-grape,
-  .wine-table .col-price,
-  .wine-table .col-region { display: none; }
+.colpick-opt {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .3rem .2rem; font-size: .88rem; cursor: pointer;
 }
-@media (max-width: 500px) {
-  .wine-table .col-grape,
-  .wine-table .col-price,
-  .wine-table .col-region,
-  .wine-table .col-year { display: none; }
-  .wine-table-type .mdi { display: none; }
-}
+.colpick-opt:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
 /* ── Index: Empty State ────────────────────────────────────────────────────── */
 .empty-state {
@@ -916,6 +977,14 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   transition: background .2s;
 }
 .btn-submit:hover { background: var(--accent2); }
+
+/* Replaces the "pick what to apply" hint when the AI found nothing - an empty
+   change table beside an Apply button reads as a broken dialog. */
+.ar-nothing {
+  font-size: .85rem; color: var(--muted); line-height: 1.45;
+  padding: .5rem .75rem; margin: 0 0 .5rem;
+  border-left: 2px solid var(--border); background: rgba(127,127,127,.06);
+}
 
 /* Explains why the reconcile dialog appeared and where the AI suggestion in it
    comes from. */
@@ -1574,6 +1643,28 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 .highlight-card .label {
   font-size: .8rem; color: var(--muted); margin-top: .25rem;
+}
+/* Says which prices a figure is built from, and over how many bottles - a total
+   over 3 of 86 bottles means something very different from one over 80. */
+/* Switches the price overview between recorded prices and the estimate. Lives in
+   the card heading, right-aligned, so it reads as scoped to that card. */
+.price-basis-switch {
+  display: inline-flex; margin-left: auto; gap: 2px;
+  border: 1px solid var(--border); border-radius: 7px; padding: 2px;
+}
+.price-basis-switch .pb-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: .68rem; font-weight: 600;
+  padding: .15rem .45rem; border-radius: 5px; transition: all .15s;
+}
+.price-basis-switch .pb-btn:hover { color: var(--text); }
+.price-basis-switch .pb-btn.active { background: var(--accent); color: #fff; }
+.price-basis-note {
+  font-size: .72rem; color: var(--muted); opacity: .8; padding: 0 0 .5rem;
+}
+
+.highlight-card .sublabel {
+  font-size: .68rem; color: var(--muted); opacity: .75; margin-top: .15rem;
 }
 
 /* ── Stats: Stat Cards ─────────────────────────────────────────────────────── */
@@ -3070,8 +3161,30 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
   /* Icon-only switch - the labels would push the header into a sideways scroll */
   .area-btn .area-lbl { display: none; }
   .area-btn { padding: 6px 9px; }
-  /* let the search give way rather than push the header into a scroll */
-  .search-wrap { width: 100px; min-width: 60px; flex: 0 1 100px; }
+  /* The search used to be shrunk here so it would not push the header into a
+     sideways scroll. It now collapses to an icon instead (see the collapsed
+     rules further up), which does that job properly - and this rule, being
+     later in the file, silently won over them. */
+
+  /* On a phone the name gets at most a third of the width, so there is room to
+     actually read the data columns beside it.
+
+     Two subtleties, both learned the hard way: the cap has to sit on the inner
+     span because max-width is ignored on table cells under table-layout: auto;
+     and this block has to come AFTER the .col-name sticky rules, or their
+     min-width: 160px wins on equal specificity and the cell never shrinks. */
+  .wine-table th.col-name, .wine-table td.col-name { min-width: 0; }
+  /* Wide enough to read at rest, narrower once the table is scrolled sideways -
+     at that point the user is after the data columns, not the name.
+     The padding is subtracted so the vw figure is the whole column's width, not
+     just its text (30vw on the text alone came out at 41% of the screen). */
+  .wine-table td.col-name .cell-clip {
+    max-width: calc(45vw - 24px);
+    transition: max-width .18s ease;
+  }
+  .wine-table-scroll.scrolled .wine-table td.col-name .cell-clip {
+    max-width: calc(28vw - 24px);
+  }
   .fill-bar { display: none; }
   .fill-range { width: 130px; }
 }

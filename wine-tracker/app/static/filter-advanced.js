@@ -33,6 +33,8 @@
     // Numbers
     { key: 'year',         group: 'numbers', type: 'number', label: 'filter_field_year',     integer: true },
     { key: 'price',        group: 'numbers', type: 'number', label: 'filter_field_price' },
+    { key: 'ai_price',        group: 'numbers', type: 'number', label: 'label_ai_price' },
+    { key: 'price_effective', group: 'numbers', type: 'number', label: 'table_col_price_eff' },
     { key: 'rating',       group: 'numbers', type: 'number', label: 'filter_field_rating',   integer: true, min: 0, max: 5 },
     { key: 'quantity',     group: 'numbers', type: 'number', label: 'filter_field_quantity', integer: true, min: 0 },
     { key: 'abv',          group: 'numbers', type: 'number', label: 'label_abv' },

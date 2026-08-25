@@ -47,8 +47,14 @@
     <span><span id="bottleCountNum">{{ wines|sum(attribute='quantity') }}</span> {{ t.bottles_abbr }}</span>
     <span><span id="wineCountNum">{{ wines|length }}</span> {{ t.stats_pill_wines }}</span>
   </div>
-  <div class="search-wrap">
-    <i class="mdi mdi-magnify search-icon"></i>
+  {# On a phone this collapses to just the magnifier; tapping it expands the
+     field (see toggleSearch()). On desktop it is always open. #}
+  <div class="search-wrap" id="searchWrap">
+    <button type="button" class="search-icon-btn" onclick="toggleSearch()"
+            title="{{ t.search_placeholder }}" aria-label="{{ t.search_placeholder }}"
+            aria-expanded="false" aria-controls="searchInput">
+      <i class="mdi mdi-magnify search-icon"></i>
+    </button>
     <input type="text" id="searchInput" placeholder="{{ t.search_placeholder }}" autocomplete="off" oninput="debouncedFilter()">
     <button type="button" class="search-clear" onclick="clearSearch()">×</button>
   </div>
@@ -99,6 +105,10 @@
     </div>
   </div>
   {% endif %}
+  {# Only meaningful in the table view, so table-view.js shows and hides it. #}
+  <button class="filter-btn" id="colPickerBtn" hidden
+          onclick="TableView.openPicker()" title="{{ t.table_columns }}"
+          aria-label="{{ t.table_columns }}"><i class="mdi mdi-view-column-outline"></i></button>
   <button class="theme-toggle" onclick="openModal('settingsModal')" title="{{ t.settings_title }}"><i class="mdi mdi-cog"></i></button>
 </header>
 
@@ -119,6 +129,9 @@
        data-notes="{{ w['notes'] or '' }}" data-description="{{ w['description'] or '' }}"
        data-image="{{ w['image'] or '' }}"
        data-purchased_at="{{ w['purchased_at'] or '' }}" data-price="{{ w['price'] or '' }}"
+       data-ai_price="{{ w['ai_price'] or '' }}"
+       data-price_effective="{{ price_effective[w['id']] }}"
+       data-grapes="{{ (w['grapes'] or []) | tojson | forceescape }}"
        data-drink_from="{{ w['drink_from'] or '' }}" data-drink_until="{{ w['drink_until'] or '' }}"
        data-location="{{ w['location'] or '' }}"
        data-grape="{{ w['grape'] or '' }}"
@@ -255,6 +268,22 @@
 </div>
 
 
+<!-- ═══════════════ TABLE COLUMN PICKER MODAL ═══════════════ -->
+<div class="modal-overlay" id="colPickerModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>{{ t.table_columns }}</span>
+      <button class="modal-close" type="button" onclick="closeModal('colPickerModal')">&times;</button>
+    </div>
+    <div class="modal-body" id="colPickerBody"></div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between;gap:.6rem;padding:.75rem 1.25rem 1.25rem;border-top:1px solid var(--border);">
+      <button type="button" class="btn-cancel" onclick="TableView.resetColumns()">{{ t.table_columns_reset }}</button>
+      <button type="button" class="btn-submit" style="width:auto;padding:0 1.2rem;" onclick="closeModal('colPickerModal')">{{ t.btn_close }}</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══════════════ WINE VIEW MODAL ═══════════════ -->
 {% include '_wine_view_modal.html' %}
 {% include '_wine_view_extras.html' %}
@@ -332,122 +361,10 @@ function setViewMode(mode) {
   });
   // Render or remove the table view
   if (mode === 'table') {
-    renderTableView();
+    TableView.render();
   } else {
-    removeTableView();
+    TableView.remove();
   }
-}
-
-function renderTableView() {
-  var existing = document.getElementById('wineTable');
-  if (existing) existing.remove();
-  var grid = document.getElementById('wineGrid');
-  var cards = Array.from(grid.querySelectorAll('.card'));
-  if (!cards.length) return;
-
-  var table = document.createElement('table');
-  table.id = 'wineTable';
-  table.className = 'wine-table';
-  table.style.gridColumn = '1 / -1';
-
-  // Header
-  var thead = '<thead><tr>'
-    + '<th class="wine-table-sortable wine-table-type col-type" data-sort="type"><i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-col-name col-name" data-sort="name">' + (T.table_col_name || 'Name') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-col-year col-year" data-sort="year">' + (T.table_col_year || 'Year') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-col-region col-region" data-sort="region">' + (T.table_col_region || 'Region') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-col-grape col-grape" data-sort="grape">' + (T.table_col_grape || 'Grape') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-right wine-table-col-price col-price" data-sort="price">' + (T.table_col_price || 'Price') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '<th class="wine-table-sortable wine-table-right wine-table-col-qty col-qty" data-sort="quantity">' + (T.table_col_quantity || 'Qty') + ' <i class="mdi mdi-swap-vertical"></i></th>'
-    + '</tr></thead>';
-
-  // Body
-  var tbody = '<tbody>';
-  cards.forEach(function(card) {
-    var d = card.dataset;
-    var hidden = card.style.display === 'none' ? ' style="display:none"' : '';
-    var typeCls = d.type ? d.type.toLowerCase().replace(/é/g,'e').replace(/ö/g,'oe') : '';
-    var typeLabel = d.type ? (T['wine_type_' + d.type] || d.type) : '';
-    var typeDot = d.type ? '<span class="type-dot type-dot-' + escapeHtml(typeCls) + '"></span>' : '';
-    var priceStr = d.price ? CURRENCY + ' ' + Number(d.price).toFixed(2) : '';
-    var drinkIcon = '';
-    if (d.drink_until) {
-      var yr = new Date().getFullYear();
-      var until = parseInt(d.drink_until);
-      if (until < yr) drinkIcon = ' <i class="mdi mdi-alert" style="color:#e74c3c;font-size:.75rem" title="Past drink window"></i>';
-      else if (until === yr) drinkIcon = ' <i class="mdi mdi-alert" style="color:#e67e22;font-size:.75rem" title="Last year to drink"></i>';
-      else drinkIcon = ' <i class="mdi mdi-check-circle" style="color:#27ae60;font-size:.75rem" title="In drink window"></i>';
-    }
-    tbody += '<tr class="wine-table-row' + (parseInt(d.quantity) === 0 ? ' empty' : '') + '" data-card-id="' + d.id + '" onclick="viewWineById(\'' + d.id + '\')"' + hidden + '>'
-      + '<td class="wine-table-type col-type">' + typeDot + '</td>'
-      + '<td class="wine-table-name col-name">' + escapeHtml(d.name) + '</td>'
-      + '<td class="col-year">' + escapeHtml(d.year || '') + drinkIcon + '</td>'
-      + '<td class="col-region">' + escapeHtml(d.region || '') + '</td>'
-      + '<td class="col-grape">' + escapeHtml(grapeLead(d.grapes) || d.grape || '') + '</td>'
-      + '<td class="wine-table-right col-price">' + escapeHtml(priceStr) + '</td>'
-      + '<td class="wine-table-right col-qty">' + (d.quantity || '0') + '</td>'
-      + '</tr>';
-  });
-  tbody += '</tbody>';
-  table.innerHTML = thead + tbody;
-
-  grid.appendChild(table);
-
-  // Sort click handlers - persist in localStorage
-  var savedSortCol = localStorage.getItem('wineTableSortCol') || '';
-  var savedSortAsc = localStorage.getItem('wineTableSortAsc') === 'true';
-  var sortDir = {};
-  if (savedSortCol) sortDir[savedSortCol] = savedSortAsc;
-
-  function sortTableBy(key, asc) {
-    sortDir[key] = asc;
-    localStorage.setItem('wineTableSortCol', key);
-    localStorage.setItem('wineTableSortAsc', String(asc));
-    var rows = Array.from(table.querySelectorAll('tbody tr'));
-    rows.sort(function(a, b) {
-      var aCard = document.querySelector('.card[data-id="' + a.dataset.cardId + '"]');
-      var bCard = document.querySelector('.card[data-id="' + b.dataset.cardId + '"]');
-      if (!aCard || !bCard) return 0;
-      var aVal = aCard.dataset[key] || '';
-      var bVal = bCard.dataset[key] || '';
-      if (key === 'year' || key === 'price' || key === 'quantity') {
-        aVal = parseFloat(aVal) || 0;
-        bVal = parseFloat(bVal) || 0;
-        return asc ? aVal - bVal : bVal - aVal;
-      }
-      return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    });
-    var tbodyEl = table.querySelector('tbody');
-    rows.forEach(function(r) { tbodyEl.appendChild(r); });
-    // Update sort icons
-    table.querySelectorAll('.wine-table-sortable .mdi').forEach(function(icon) {
-      icon.className = 'mdi mdi-swap-vertical';
-      icon.style.opacity = '.5';
-    });
-    var activeTh = table.querySelector('[data-sort="' + key + '"] .mdi');
-    if (activeTh) {
-      activeTh.className = 'mdi ' + (asc ? 'mdi-chevron-up' : 'mdi-chevron-down');
-      activeTh.style.opacity = '1';
-    }
-  }
-
-  table.querySelectorAll('.wine-table-sortable').forEach(function(th) {
-    th.addEventListener('click', function() {
-      var key = th.dataset.sort;
-      var asc = !(sortDir[key] || false);
-      sortTableBy(key, asc);
-    });
-  });
-
-  // Apply saved sort on load
-  if (savedSortCol) {
-    sortTableBy(savedSortCol, savedSortAsc);
-  }
-}
-
-function removeTableView() {
-  var tbl = document.getElementById('wineTable');
-  if (tbl) tbl.remove();
 }
 
 function viewWineById(id) {
@@ -684,6 +601,40 @@ function clearSearch() {
   document.getElementById('searchInput').value = '';
   applyFilters();
 }
+
+// ── Collapsible search (phone only) ──────────────────────────────────────────
+// On narrow screens the field is a magnifier until tapped; the header has no
+// room for a permanent input next to the area switch, the badge and the buttons.
+// The CSS decides whether collapsing applies at all, so this only has to toggle
+// the class and keep focus and aria in step.
+function searchIsCollapsible() {
+  // Same 600px breakpoint the stylesheet uses for the collapsed state.
+  return window.matchMedia('(max-width: 600px)').matches;
+}
+
+function toggleSearch() {
+  var wrap = document.getElementById('searchWrap');
+  if (!wrap || !searchIsCollapsible()) return;
+  var input = document.getElementById('searchInput');
+  var open = wrap.classList.toggle('open');
+  var btn = wrap.querySelector('.search-icon-btn');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) { input.focus(); return; }
+  // Collapsing must not silently keep filtering by a query nobody can see.
+  if (input.value) { input.value = ''; applyFilters(); }
+}
+
+// Tapping outside collapses it again, but only while the query is empty -
+// otherwise the user loses a search they are still reading results for.
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('searchWrap');
+  if (!wrap || !wrap.classList.contains('open')) return;
+  if (wrap.contains(e.target)) return;
+  if (document.getElementById('searchInput').value) return;
+  wrap.classList.remove('open');
+  var btn = wrap.querySelector('.search-icon-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+});
 
 function toggleFilterDropdown() {
   var dd = document.getElementById('filterDropdown');
@@ -1553,6 +1504,10 @@ function updateCardData(card, w) {
   card.dataset.image = w.image || '';
   card.dataset.purchased_at = w.purchased_at || '';
   card.dataset.price = w.price || '';
+  card.dataset.ai_price = w.ai_price || '';
+  // Computed server-side by effective_price() - never recompute the rule here.
+  card.dataset.price_effective = w.price_effective || '';
+  card.dataset.grapes = JSON.stringify(w.grapes || []);
   card.dataset.drink_from = w.drink_from || '';
   card.dataset.drink_until = w.drink_until || '';
   card.dataset.location = w.location || '';
@@ -1607,7 +1562,7 @@ window._onWineSaved = function(data) {
   refreshRegionList();
   applyFilters();
   sortGrid();
-  if (currentViewMode === 'table') renderTableView();
+  if (currentViewMode === 'table') TableView.render();
   highlightCard(card);
 };
 
@@ -1688,7 +1643,7 @@ document.getElementById('dupForm').addEventListener('submit', function(e) {
     closeModal('dupModal');
     applyFilters();
     sortGrid();
-    if (currentViewMode === 'table') renderTableView();
+    if (currentViewMode === 'table') TableView.render();
     highlightCard(card);
   });
 });
@@ -1709,7 +1664,7 @@ document.getElementById('deleteForm').addEventListener('submit', function(e) {
     if (!data.ok) return;
     var card = document.querySelector('.card[data-id="' + id + '"]');
     if (card) card.remove();
-    if (currentViewMode === 'table') renderTableView();
+    if (currentViewMode === 'table') TableView.render();
     refreshLocationList();
     refreshPurchasedAtList();
     refreshRegionList();
@@ -1827,7 +1782,14 @@ initImageShimmer();
   }
 })();
 
+</script>
+<script src="{{ ingress }}/static/table-view.js"></script>
+<script src="{{ ingress }}/static/filter-advanced.js"></script>
+<script>
 // ── Restore saved view mode on page load ──────────────────────────────────────
+// Must run after table-view.js has loaded (TableView.render() is called below
+// when the saved mode is 'table'), so this block lives after that <script src>
+// rather than in the big inline block above it.
 (function() {
   var saved = localStorage.getItem('wineViewMode') || 'cards';
   // Always sync the settings modal radio buttons to the persisted mode
@@ -1838,9 +1800,7 @@ initImageShimmer();
     setViewMode(saved);
   }
 })();
-
 </script>
-<script src="{{ ingress }}/static/filter-advanced.js"></script>
 
 {% include '_chat_panel.html' %}
 {% if not auth_readonly %}<button class="fab" onclick="openWineModal()" title="{{ t.btn_add_wine }}"><i class="mdi mdi-plus"></i></button>{% endif %}
