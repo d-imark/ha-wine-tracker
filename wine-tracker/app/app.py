@@ -995,6 +995,15 @@ def effective_price(row):
     return (price if price else row["ai_price"]) or ""
 
 
+# The same rule as SQL, for aggregates that cannot go row by row (the estimated
+# total value in the statistics). Kept adjacent to effective_price() on purpose:
+# these two must always say the same thing, and the only way to keep that true is
+# to have them sit where a change to one shows the other.
+#   NULLIF(x, 0) turns a zero price into NULL, matching the helper's rule that a
+#   zero own price counts as "no price".
+EFFECTIVE_PRICE_SQL = "COALESCE(NULLIF(price, 0), NULLIF(ai_price, 0))"
+
+
 def is_ajax():
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -1689,12 +1698,26 @@ def stats_page():
         f"SELECT SUM(quantity * COALESCE(bottle_format, 0.75)) as liters FROM wines WHERE {A}"
     ).fetchone()["liters"] or 0
 
-    # Total value
+    # Total value - the user's own prices only, i.e. what they actually spent.
     value = q(
         "SELECT SUM(quantity * price) as total_value, AVG(price) as avg_price, "
-        f"MIN(price) as min_price, MAX(price) as max_price FROM wines WHERE {A} "
-        "AND price IS NOT NULL AND price > 0"
+        f"MIN(price) as min_price, MAX(price) as max_price, COUNT(*) as bottles "
+        f"FROM wines WHERE {A} AND price IS NOT NULL AND price > 0"
     ).fetchone()
+
+    # Second figure: the same sum but with the AI estimate filling in wherever no
+    # own price exists (EFFECTIVE_PRICE_SQL - the same rule the table's price
+    # column uses). Reported separately, never folded into the figure above, so
+    # measured spending and estimate stay tellable apart.
+    value_est = q(
+        f"SELECT SUM(quantity * {EFFECTIVE_PRICE_SQL}) as total_value, "
+        f"COUNT(*) as bottles FROM wines WHERE {A} "
+        f"AND {EFFECTIVE_PRICE_SQL} IS NOT NULL"
+    ).fetchone()
+
+    # How many bottles each figure actually covers - a total over 3 of 86 bottles
+    # means something very different from one over 80, and the card should say so.
+    total_bottles_in_area = q(f"SELECT COUNT(*) FROM wines WHERE {A}").fetchone()[0]
 
     # Most expensive bottle
     most_expensive = q(
@@ -1885,6 +1908,8 @@ def stats_page():
         top_regions=top_regions,
         map_points=map_points,
         value=value,
+        value_est=value_est,
+        total_bottles_in_area=total_bottles_in_area,
         most_expensive=dict(most_expensive) if most_expensive else None,
         cheapest=dict(cheapest) if cheapest else None,
         best_rated=best_rated,

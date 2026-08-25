@@ -104,6 +104,21 @@
     <div class="emoji"><i class="mdi mdi-cash-multiple"></i></div>
     <div class="big-number">{{ "%.0f"|format(value['total_value']) }}</div>
     <div class="label">{{ currency }} {{ t.stat_total_value }}</div>
+    <div class="sublabel">{{ t.stat_value_own_hint }}
+      ({{ value['bottles'] }}/{{ total_bottles_in_area }})</div>
+  </div>
+  {% endif %}
+
+  {# Second figure, only worth a card when the estimate actually adds something
+     the measured one does not - otherwise it just repeats the number beside it. #}
+  {% if value_est and value_est['total_value']
+        and value_est['bottles'] > (value['bottles'] if value else 0) %}
+  <div class="highlight-card">
+    <div class="emoji"><i class="mdi mdi-robot-outline"></i></div>
+    <div class="big-number">{{ "%.0f"|format(value_est['total_value']) }}</div>
+    <div class="label">{{ currency }} {{ t.stat_total_value_est }}</div>
+    <div class="sublabel">{{ t.stat_value_est_hint }}
+      ({{ value_est['bottles'] }}/{{ total_bottles_in_area }})</div>
   </div>
   {% endif %}
 

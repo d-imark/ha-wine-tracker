@@ -1636,6 +1636,11 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .highlight-card .label {
   font-size: .8rem; color: var(--muted); margin-top: .25rem;
 }
+/* Says which prices a figure is built from, and over how many bottles - a total
+   over 3 of 86 bottles means something very different from one over 80. */
+.highlight-card .sublabel {
+  font-size: .68rem; color: var(--muted); opacity: .75; margin-top: .15rem;
+}
 
 /* ── Stats: Stat Cards ─────────────────────────────────────────────────────── */
 .stat-grid {

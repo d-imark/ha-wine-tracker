@@ -832,3 +832,53 @@ class TestEffectivePrice:
     ])
     def test_rule(self, own, ai, expected):
         assert wine_app.effective_price({"price": own, "ai_price": ai}) == expected
+
+
+class TestEffectivePriceSqlMatchesHelper:
+    """The rule exists twice - once per row in Python, once as SQL for the
+    aggregate. They must agree for every combination, or the table and the
+    statistics would quietly disagree about the same bottle."""
+
+    CASES = [
+        (60.0, 65.0), (None, 42.0), (0.0, 42.0), (60.0, None),
+        (None, None), (0.0, 0.0), (60.0, 0.0), (0.0, None),
+    ]
+
+    def test_sql_and_helper_agree(self, db):
+        import app as wine_app
+
+        db.execute("DELETE FROM wines")
+        for i, (own, ai) in enumerate(self.CASES):
+            db.execute("INSERT INTO wines (id, name, quantity, price, ai_price, category) "
+                       "VALUES (?,?,1,?,?, 'wine')", (900 + i, "Case %d" % i, own, ai))
+        db.commit()
+
+        rows = db.execute(
+            "SELECT id, price, ai_price, %s AS eff FROM wines ORDER BY id"
+            % wine_app.EFFECTIVE_PRICE_SQL).fetchall()
+        assert len(rows) == len(self.CASES)
+
+        for row in rows:
+            from_helper = wine_app.effective_price(row)
+            from_sql = row["eff"]
+            # the helper returns "" where the SQL returns NULL - same meaning
+            normalised = from_sql if from_sql is not None else ""
+            assert normalised == from_helper, (
+                "own=%r ai=%r -> SQL %r vs helper %r"
+                % (row["price"], row["ai_price"], from_sql, from_helper))
+
+    def test_sum_skips_bottles_without_any_price(self, db):
+        import app as wine_app
+
+        db.execute("DELETE FROM wines")
+        db.execute("INSERT INTO wines (name, quantity, price, ai_price, category) "
+                   "VALUES ('Own', 2, 10.0, 99.0, 'wine')")
+        db.execute("INSERT INTO wines (name, quantity, price, ai_price, category) "
+                   "VALUES ('AI only', 3, NULL, 5.0, 'wine')")
+        db.execute("INSERT INTO wines (name, quantity, price, ai_price, category) "
+                   "VALUES ('Neither', 4, NULL, NULL, 'wine')")
+        db.commit()
+
+        total = db.execute("SELECT SUM(quantity * %s) FROM wines"
+                           % wine_app.EFFECTIVE_PRICE_SQL).fetchone()[0]
+        assert total == 2 * 10.0 + 3 * 5.0        # the priceless bottle contributes nothing
