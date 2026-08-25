@@ -3196,11 +3196,24 @@ def _wine_json_rules(lang="en", currency=None, category="wine", scope="all"):
             f"the price came from in ai_rationale.")
     else:
         where = ""
+    # A dedicated price lookup may fall back to another vintage of the SAME wine
+    # when the requested one is nowhere on sale - otherwise a small producer's
+    # release yields nothing at all. Deliberately NOT offered on a full refresh:
+    # there the model is also reading the vintage, and a price from another year
+    # would invite it to "correct" the bottle's own. The scoped reply is stripped
+    # to price + ai_rationale anyway, so the vintage cannot be touched either way.
+    vintage_fallback = ("" if scope != "price" else
+        " If, and only if, no price exists for the requested vintage anywhere, use the"
+        " nearest other vintage OF THE SAME WINE FROM THE SAME PRODUCER and state in"
+        " ai_rationale that no price was found for the requested vintage and which"
+        " vintage the figure comes from. Never substitute a different wine or a"
+        " different producer, and never report the substitute as if it were the"
+        " requested vintage.")
     price_rule = (
         f"- price: the retail bottle price as a plain number in {currency}, without any "
-        f"currency symbol.{where} If your sources quote another currency, CONVERT the amount "
-        f"to {currency} at current exchange rates and name the original currency and amount "
-        f"in ai_rationale. Return null if you have no price.")
+        f"currency symbol.{where}{vintage_fallback} If your sources quote another currency, "
+        f"CONVERT the amount to {currency} at current exchange rates and name the original "
+        f"currency and amount in ai_rationale. Return null if you have no price at all.")
     description_rule = (
         f'- description: 2-3 sentences about the bottle itself - style, aroma, taste, '
         f'what makes it distinctive. Written in {lang_name}. This is the shop-style '
@@ -3308,8 +3321,8 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context, scope=
                  if market else "Search current online shops and price comparison sites. ")
         prompt = (
             f"Find the current retail price of this exact {subject}:\n{ctx}\n\n"
-            f"{where}Use the price for this specific bottling and vintage, not a different "
-            f"year or a similarly named product. Return ONLY valid JSON:\n{schema}\n{rules}")
+            f"{where}Look for this specific bottling and vintage first. Only if that vintage is "
+            f"nowhere on sale, fall back to the nearest other vintage of the same wine from the same producer, and say so in ai_rationale. Never use a similarly named product or another producer. Return ONLY valid JSON:\n{schema}\n{rules}")
     elif scope == "profile":
         what = ("taste profile" if category in ("whisky", "spirit")
                 else "drinking window, maturity phases, taste profile and food pairings")

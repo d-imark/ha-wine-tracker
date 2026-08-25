@@ -882,3 +882,70 @@ class TestEffectivePriceSqlMatchesHelper:
         total = db.execute("SELECT SUM(quantity * %s) FROM wines"
                            % wine_app.EFFECTIVE_PRICE_SQL).fetchone()[0]
         assert total == 2 * 10.0 + 3 * 5.0        # the priceless bottle contributes nothing
+
+
+class TestPriceVintageFallback:
+    """A price lookup may fall back to another vintage of the same wine; a full
+    refresh must not, because there the model is also reading the vintage."""
+
+    NEEDLE = "no price exists for the requested vintage"
+
+    def test_price_scope_offers_the_fallback(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "price")
+        assert self.NEEDLE in rules
+        assert "SAME WINE FROM THE SAME PRODUCER" in rules
+        # it must demand the substitution be disclosed
+        assert "which vintage the figure comes from" in rules
+
+    def test_full_refresh_does_not(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "all")
+        assert "- price:" in rules
+        assert self.NEEDLE not in rules
+
+    def test_profile_scope_has_no_price_rule_at_all(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "wine", "profile")
+        assert "- price:" not in rules
+        assert self.NEEDLE not in rules
+
+    def test_spirits_get_it_too(self):
+        rules = wine_app._wine_json_rules("de", "CHF", "whisky", "price")
+        assert self.NEEDLE in rules
+
+    def test_the_prompt_asks_for_the_exact_vintage_first(self, monkeypatch):
+        captured = {}
+
+        def grab(i, m, prompt, o):
+            captured["p"] = prompt
+            return '{"price": 21.5}'
+
+        monkeypatch.setattr(wine_app, "_call_openai", grab)
+        monkeypatch.setattr(wine_app, "LANG", "de")
+        opts = {"ai_provider": "openai", "openai_api_key": "k", "currency": "CHF",
+                "openai_web_search": False}
+        wine_app._analyze_wine_from_context(
+            opts, None, None,
+            {"name": "Clair de Noir", "winery": "Maurice Schueller",
+             "year": "2023", "category": "wine"}, "price")
+        task = captured["p"].split("Rules:")[0]
+        assert "this specific bottling and vintage first" in task
+        assert "Only if that vintage is nowhere on sale" in task
+        assert "same producer" in task
+
+    def test_a_price_scope_reply_can_never_change_the_vintage(self, client, monkeypatch):
+        """The structural guarantee behind the fallback: even a model that
+        volunteers a vintage cannot move the bottle's own year."""
+        import json as J
+
+        monkeypatch.setattr(wine_app, "_is_ai_configured", lambda o: True)
+        monkeypatch.setattr(wine_app, "load_options",
+                            lambda: {"ai_provider": "openai", "openai_api_key": "k",
+                                     "currency": "CHF", "openai_web_search": False})
+        monkeypatch.setattr(wine_app, "_analyze_wine_from_context",
+                            lambda *a, **k: {"price": 21.5, "vintage": 2021,
+                                             "ai_rationale": "Preis vom Jahrgang 2021."})
+        resp = client.post("/api/reanalyze-wine", data=J.dumps({
+            "wine_context": {"name": "Clair de Noir", "category": "wine"},
+            "scope": "price"}), content_type="application/json")
+        fields = J.loads(resp.data)["fields"]
+        assert set(fields) == {"price", "ai_rationale"}
+        assert "vintage" not in fields
