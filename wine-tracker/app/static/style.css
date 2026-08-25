@@ -978,6 +978,14 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 .btn-submit:hover { background: var(--accent2); }
 
+/* Replaces the "pick what to apply" hint when the AI found nothing - an empty
+   change table beside an Apply button reads as a broken dialog. */
+.ar-nothing {
+  font-size: .85rem; color: var(--muted); line-height: 1.45;
+  padding: .5rem .75rem; margin: 0 0 .5rem;
+  border-left: 2px solid var(--border); background: rgba(127,127,127,.06);
+}
+
 /* Explains why the reconcile dialog appeared and where the AI suggestion in it
    comes from. */
 .rc-note {

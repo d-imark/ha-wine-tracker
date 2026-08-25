@@ -262,7 +262,10 @@
         <p class="ar-rationale-text" id="aiRationaleText"></p>
         <label class="ar-rationale-save"><input type="checkbox" id="arRationaleSave" checked> {{ t.ar_rationale_save }}</label>
       </div>
-      <p class="vr-hint">{{ t.ar_hint }}</p>
+      <p class="vr-hint" id="aiChangesHint">{{ t.ar_hint }}</p>
+      {# Shown instead of the hint when the AI found nothing to change: an empty
+         change table next to an "Apply" button reads as a broken dialog. #}
+      <p class="ar-nothing" id="aiNothingFound" hidden>{{ t.ar_nothing_found }}</p>
       <table class="vr-changes-table ar-changes-table"><tbody id="aiChanges"></tbody></table>
     </div>
     <div class="modal-footer vr-footer">
@@ -2203,6 +2206,22 @@ function renderAiReload(fields, changes, enrich, grapesChanged, casksChanged, sc
     '</tr>';
   }
   document.getElementById('aiChanges').innerHTML = rows;
+
+  // With nothing to apply, say so plainly and stop offering a choice. The
+  // rationale still matters - it is the answer to "why is there no price?".
+  var nothing = !rows;
+  var hintEl = document.getElementById('aiChangesHint');
+  var noneEl = document.getElementById('aiNothingFound');
+  if (hintEl) hintEl.hidden = nothing;
+  if (noneEl) noneEl.hidden = !nothing;
+  var applyBtn = document.querySelector('#aiReloadModal .btn-submit');
+  if (applyBtn) {
+    // Only the rationale is left to keep, so the button says that instead.
+    applyBtn.textContent = nothing
+      ? (T.ar_keep_reason || T.btn_save || '')
+      : (T.ar_apply || '');
+    applyBtn.hidden = nothing && !(fields.ai_rationale || '').trim();
+  }
 
   var rationale = (fields.ai_rationale || '').trim();
   var rblock = document.getElementById('aiRationaleBlock');
