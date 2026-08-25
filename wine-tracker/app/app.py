@@ -1711,6 +1711,7 @@ def stats_page():
     # measured spending and estimate stay tellable apart.
     value_est = q(
         f"SELECT SUM(quantity * {EFFECTIVE_PRICE_SQL}) as total_value, "
+        f"AVG({EFFECTIVE_PRICE_SQL}) as avg_price, "
         f"COUNT(*) as bottles FROM wines WHERE {A} "
         f"AND {EFFECTIVE_PRICE_SQL} IS NOT NULL"
     ).fetchone()
@@ -1729,6 +1730,19 @@ def stats_page():
     cheapest = q(
         f"SELECT id, name, year, type, price FROM wines WHERE {A} "
         "AND price IS NOT NULL AND price > 0 ORDER BY price ASC LIMIT 1"
+    ).fetchone()
+
+    # The same two extremes under the effective-price rule, so the price overview
+    # can be switched between measured and estimated without a round trip.
+    most_expensive_est = q(
+        f"SELECT id, name, year, type, {EFFECTIVE_PRICE_SQL} AS price FROM wines "
+        f"WHERE {A} AND {EFFECTIVE_PRICE_SQL} IS NOT NULL "
+        f"ORDER BY {EFFECTIVE_PRICE_SQL} DESC LIMIT 1"
+    ).fetchone()
+    cheapest_est = q(
+        f"SELECT id, name, year, type, {EFFECTIVE_PRICE_SQL} AS price FROM wines "
+        f"WHERE {A} AND {EFFECTIVE_PRICE_SQL} IS NOT NULL "
+        f"ORDER BY {EFFECTIVE_PRICE_SQL} ASC LIMIT 1"
     ).fetchone()
 
     # Best rated bottles
@@ -1912,6 +1926,8 @@ def stats_page():
         total_bottles_in_area=total_bottles_in_area,
         most_expensive=dict(most_expensive) if most_expensive else None,
         cheapest=dict(cheapest) if cheapest else None,
+        most_expensive_est=dict(most_expensive_est) if most_expensive_est else None,
+        cheapest_est=dict(cheapest_est) if cheapest_est else None,
         best_rated=best_rated,
         avg_age=avg_age["avg_age"] if avg_age else None,
         oldest=dict(oldest) if oldest else None,

@@ -303,44 +303,76 @@
   </div>
   {% endif %}
 
-  {% if most_expensive or cheapest %}
-  <div class="stat-card">
-    <h2><i class="mdi mdi-cash"></i> {{ t.stat_price_overview }}</h2>
-    <div class="stat-body">
-      <div class="wine-list">
-        {% if most_expensive %}
-        <a href="#" onclick="editWine({{ most_expensive['id'] }}); return false;" class="wine-list-item wine-list-link">
-          {% if most_expensive['type'] %}<span class="type-corner type-{{ most_expensive['type']|lower|replace('é','e')|replace('ö','oe') }}"></span>{% endif %}
-          <div class="rank"><i class="mdi mdi-trending-up"></i></div>
-          <div class="wine-info">
-            <div class="wine-name">{{ most_expensive['name'] }}</div>
-            <div class="wine-detail">{{ L('stat_most_expensive') }}{% if most_expensive['year'] %} · {{ most_expensive['year'] }}{% endif %}</div>
-          </div>
-          <div class="wine-price">{{ currency }} {{ "%.2f"|format(most_expensive['price']) }}</div>
-        </a>
-        {% endif %}
-        {% if cheapest %}
-        <a href="#" onclick="editWine({{ cheapest['id'] }}); return false;" class="wine-list-item wine-list-link">
-          {% if cheapest['type'] %}<span class="type-corner type-{{ cheapest['type']|lower|replace('é','e')|replace('ö','oe') }}"></span>{% endif %}
-          <div class="rank"><i class="mdi mdi-trending-down"></i></div>
-          <div class="wine-info">
-            <div class="wine-name">{{ cheapest['name'] }}</div>
-            <div class="wine-detail">{{ L('stat_cheapest') }}{% if cheapest['year'] %} · {{ cheapest['year'] }}{% endif %}</div>
-          </div>
-          <div class="wine-price">{{ currency }} {{ "%.2f"|format(cheapest['price']) }}</div>
-        </a>
-        {% endif %}
-        {% if value and value['avg_price'] %}
-        <div class="wine-list-item">
-          <div class="rank">Ø</div>
-          <div class="wine-info">
-            <div class="wine-name">{{ t.stat_avg_price_label }}</div>
-            <div class="wine-detail">{{ L('stat_across_all') }}</div>
-          </div>
-          <div class="wine-price">{{ currency }} {{ "%.2f"|format(value['avg_price']) }}</div>
-        </div>
-        {% endif %}
+  {# One list, rendered twice: once from the recorded prices, once with the AI
+     estimate filling in. A macro rather than copied markup, so the two can never
+     drift apart. #}
+  {%- macro price_list(top, low, avg, kind) -%}
+  <div class="wine-list" data-price-basis="{{ kind }}"
+       {% if kind == 'est' %}hidden{% endif %}>
+    {% if top %}
+    <a href="#" onclick="editWine({{ top['id'] }}); return false;" class="wine-list-item wine-list-link">
+      {% if top['type'] %}<span class="type-corner type-{{ top['type']|lower|replace('é','e')|replace('ö','oe') }}"></span>{% endif %}
+      <div class="rank"><i class="mdi mdi-trending-up"></i></div>
+      <div class="wine-info">
+        <div class="wine-name">{{ top['name'] }}</div>
+        <div class="wine-detail">{{ L('stat_most_expensive') }}{% if top['year'] %} · {{ top['year'] }}{% endif %}</div>
       </div>
+      <div class="wine-price">{{ currency }} {{ "%.2f"|format(top['price']) }}</div>
+    </a>
+    {% endif %}
+    {% if low %}
+    <a href="#" onclick="editWine({{ low['id'] }}); return false;" class="wine-list-item wine-list-link">
+      {% if low['type'] %}<span class="type-corner type-{{ low['type']|lower|replace('é','e')|replace('ö','oe') }}"></span>{% endif %}
+      <div class="rank"><i class="mdi mdi-trending-down"></i></div>
+      <div class="wine-info">
+        <div class="wine-name">{{ low['name'] }}</div>
+        <div class="wine-detail">{{ L('stat_cheapest') }}{% if low['year'] %} · {{ low['year'] }}{% endif %}</div>
+      </div>
+      <div class="wine-price">{{ currency }} {{ "%.2f"|format(low['price']) }}</div>
+    </a>
+    {% endif %}
+    {% if avg %}
+    <div class="wine-list-item">
+      <div class="rank">Ø</div>
+      <div class="wine-info">
+        <div class="wine-name">{{ t.stat_avg_price_label }}</div>
+        <div class="wine-detail">{{ L('stat_across_all') }}</div>
+      </div>
+      <div class="wine-price">{{ currency }} {{ "%.2f"|format(avg) }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {%- endmacro -%}
+
+  {# The switch only earns its place when the two bases actually differ, i.e.
+     when at least one bottle falls back to the AI estimate. #}
+  {% set own_n = value['bottles'] if value else 0 %}
+  {% set est_n = value_est['bottles'] if value_est else 0 %}
+  {% set show_switch = own_n > 0 and est_n > own_n %}
+
+  {% if most_expensive or cheapest or most_expensive_est or cheapest_est %}
+  <div class="stat-card">
+    <h2><i class="mdi mdi-cash"></i> {{ t.stat_price_overview }}
+      {% if show_switch %}
+      <span class="price-basis-switch" id="priceBasisSwitch">
+        <button type="button" class="pb-btn active" data-basis="own"
+                onclick="setPriceBasis('own')">{{ t.stat_basis_own }}</button>
+        <button type="button" class="pb-btn" data-basis="est"
+                onclick="setPriceBasis('est')">{{ t.stat_basis_est }}</button>
+      </span>
+      {% endif %}
+    </h2>
+    <div class="stat-body">
+      {% if show_switch %}
+        {{ price_list(most_expensive, cheapest, value['avg_price'], 'own') }}
+        {{ price_list(most_expensive_est, cheapest_est, value_est['avg_price'], 'est') }}
+      {% elif own_n > 0 %}
+        {{ price_list(most_expensive, cheapest, value['avg_price'], 'own') }}
+      {% else %}
+        {# nothing recorded, so the estimate is all there is - and it says so #}
+        <div class="price-basis-note">{{ t.stat_value_est_hint }} ({{ est_n }}/{{ total_bottles_in_area }})</div>
+        {{ price_list(most_expensive_est, cheapest_est, value_est['avg_price'], 'est-only') }}
+      {% endif %}
     </div>
   </div>
   {% endif %}
@@ -485,6 +517,29 @@ var WINE_DATA = {
 var WINE_TYPE_NAMES = {{ type_translations | tojson }};
 var TOOLTIP_MORE = {{ t.stat_tooltip_more | tojson }};
 var INGRESS = '{{ ingress }}';
+
+// ── Price basis switch ───────────────────────────────────────────────────────
+// Both lists are already in the page, so switching is instant and needs no
+// round trip. The choice is remembered because it expresses how the user wants
+// to read their cellar, not a one-off look.
+function setPriceBasis(basis) {
+  try { localStorage.setItem('statsPriceBasis', basis); } catch (e) {}
+  document.querySelectorAll('[data-price-basis]').forEach(function (el) {
+    var k = el.getAttribute('data-price-basis');
+    if (k === 'est-only') return;           // nothing to switch against
+    el.hidden = (k !== basis);
+  });
+  document.querySelectorAll('#priceBasisSwitch .pb-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.basis === basis);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (!document.getElementById('priceBasisSwitch')) return;
+  var saved = null;
+  try { saved = localStorage.getItem('statsPriceBasis'); } catch (e) {}
+  if (saved === 'est') setPriceBasis('est');
+});
 var T = {{ t | tojson }};
 var CURRENCY = '{{ currency }}';
 var AUTH_READONLY = {{ auth_readonly | tojson }};
