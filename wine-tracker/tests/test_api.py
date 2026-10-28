@@ -2314,3 +2314,69 @@ def test_wine_label_scan_asks_for_alcohol(mock_opts, mock_call, client):
     assert '"alcohol_pct"' in prompt and "do NOT guess" in prompt
     assert wine_app._ALCOHOL_RULE in prompt     # same reading rule as the other prompts
     assert json.loads(resp.data)["fields"]["alcohol_pct"] == 12.5
+
+
+
+# ── AI settings: model lists ──────────────────────────────────────────────────
+
+class TestAiModelList:
+    """Tests for GET /api/ai-settings/models (provider model dropdowns)."""
+
+    def _mock_json(self, payload):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = payload
+        return resp
+
+    @patch("requests.get")
+    def test_anthropic_models_with_stored_key(self, mock_get, client):
+        """Returns model ids from the Anthropic models endpoint."""
+        client.post("/api/ai-settings", json={"anthropic_api_key": "sk-test"})
+        mock_get.return_value = self._mock_json(
+            {"data": [{"id": "claude-opus-4-8"}, {"id": "claude-haiku-4-5"}]}
+        )
+        resp = client.get("/api/ai-settings/models?provider=anthropic")
+        assert resp.status_code == 200
+        assert resp.get_json()["models"] == ["claude-opus-4-8", "claude-haiku-4-5"]
+        headers = mock_get.call_args.kwargs["headers"]
+        assert headers["x-api-key"] == "sk-test"
+
+    @patch("requests.get")
+    def test_openai_models_filtered(self, mock_get, client):
+        """Non-chat models like embeddings and whisper are filtered out."""
+        client.post("/api/ai-settings", json={"openai_api_key": "sk-test"})
+        mock_get.return_value = self._mock_json(
+            {"data": [{"id": "gpt-5.5"}, {"id": "whisper-1"}, {"id": "text-embedding-3-small"}, {"id": "o3"}]}
+        )
+        resp = client.get("/api/ai-settings/models?provider=openai")
+        assert resp.get_json()["models"] == ["gpt-5.5", "o3"]
+
+    @patch("requests.get")
+    def test_openrouter_needs_no_key(self, mock_get, client):
+        """OpenRouter's public model list works without a stored key."""
+        mock_get.return_value = self._mock_json({"data": [{"id": "anthropic/claude-opus-4.8"}]})
+        resp = client.get("/api/ai-settings/models?provider=openrouter")
+        assert resp.get_json()["models"] == ["anthropic/claude-opus-4.8"]
+
+    def test_missing_key_returns_not_configured(self, client):
+        """Providers that need a key return 400 without one."""
+        resp = client.get("/api/ai-settings/models?provider=anthropic")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "not_configured"
+
+    def test_unknown_provider_rejected(self, client):
+        resp = client.get("/api/ai-settings/models?provider=skynet")
+        assert resp.status_code == 400
+
+    def test_minimax_returns_empty_list(self, client):
+        """MiniMax has no public model list - empty list keeps the field free text."""
+        resp = client.get("/api/ai-settings/models?provider=minimax")
+        assert resp.status_code == 200
+        assert resp.get_json()["models"] == []
+
+    @patch("requests.get")
+    def test_upstream_error_returns_502(self, mock_get, client):
+        client.post("/api/ai-settings", json={"mistral_api_key": "sk-test"})
+        mock_get.side_effect = RuntimeError("boom")
+        resp = client.get("/api/ai-settings/models?provider=mistral")
+        assert resp.status_code == 502

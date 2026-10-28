@@ -994,3 +994,46 @@ class TestAlcoholPromptRule:
     def test_rule_keeps_a_known_value(self):
         for name, p in self._prompts().items():
             assert "known information already gives an alcohol content" in p, name
+
+
+# ── chat_opts() / in-app AI settings in load_options() ───────────────────────
+
+class TestChatOpts:
+    def test_chat_model_overrides_provider_model(self):
+        opts = {"ai_provider": "openai", "openai_model": "gpt-mini", "chat_model": "gpt-big"}
+        out = wine_app.chat_opts(opts)
+        assert out["openai_model"] == "gpt-big"
+        assert opts["openai_model"] == "gpt-mini"
+
+    def test_without_chat_model_opts_unchanged(self):
+        opts = {"ai_provider": "openai", "openai_model": "gpt-mini", "chat_model": ""}
+        assert wine_app.chat_opts(opts) is opts
+
+    def test_unknown_provider_unchanged(self):
+        opts = {"ai_provider": "none", "chat_model": "gpt-big"}
+        assert wine_app.chat_opts(opts) == opts
+
+
+class TestAppSettingsOverlay:
+    def _store(self, key, value):
+        import sqlite3
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        conn.execute("INSERT INTO app_settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+        conn.close()
+
+    def test_app_none_beats_options_key(self, app, tmp_path, monkeypatch):
+        """Switching AI off in the app must stick even with a key in options.json."""
+        opts_file = tmp_path / "options.json"
+        opts_file.write_text('{"anthropic_api_key": "sk-x"}')
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", str(opts_file))
+        self._store("ai_provider", "none")
+        assert wine_app.load_options()["ai_provider"] == "none"
+
+    def test_app_value_beats_env_and_options(self, app, tmp_path, monkeypatch):
+        opts_file = tmp_path / "options.json"
+        opts_file.write_text('{"openai_model": "from-options"}')
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", str(opts_file))
+        monkeypatch.setenv("OPENAI_MODEL", "from-env")
+        self._store("openai_model", "from-app")
+        assert wine_app.load_options()["openai_model"] == "from-app"

@@ -460,3 +460,12 @@ class TestAlcoholMigration:
         assert _alcohol("Lagavulin") == 46.3
         assert _alcohol("Kaputt") is None
         assert client.get("/?area=bar").status_code == 200
+
+
+class TestAppSettingsTable:
+    def test_app_settings_table_created(self, app, db):
+        """init_db() should create the app_settings table."""
+        row = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
+        ).fetchone()
+        assert row is not None
