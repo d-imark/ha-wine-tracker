@@ -1815,7 +1815,8 @@ def test_stats_drink_window_chart_with_outliers(client):
     html = resp.data.decode()
     chart = html.split('class="dw-chart"', 1)[1].split('class="dw-legend"', 1)[0]
     assert chart.count('class="dw-bar-col') == 5          # older, cur..cur+2, later
-    labels = [part.split("</div>", 1)[0].strip()
+    import html as _html
+    labels = [_html.unescape(part.split("</div>", 1)[0].strip())
               for part in chart.split('class="dw-bar-label">')[1:]]
-    assert labels[0] == "älter" and labels[-1] == "später"
+    assert labels[0] == f"< {cur - 3}" and labels[-1] == f"{cur + 15}+"
     assert str(cur - 14) not in chart and str(cur + 30) not in chart

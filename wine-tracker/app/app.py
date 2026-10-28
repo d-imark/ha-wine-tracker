@@ -1652,10 +1652,11 @@ DW_YEARS_AHEAD = 15
 def _drink_window_chart(wines, current_year):
     """Bottles per year, stacked by type, for current-3 .. current+15.
 
-    A window that ended before the first year lands in one "older" bar, one
-    that starts after the last year in one "later" bar - so no bottle drops
-    out. Returns (chart, type_order, names_by_bar) where chart items carry
-    `year` (int, or "older"/"later") and `counts` {type: bottles}.
+    Every bottle whose window reaches before the first year also counts in an
+    "older" bar, every one reaching past the last year in a "later" bar - so
+    the edge bars show all of them, and no bottle drops out. Returns (chart,
+    type_order, names_by_bar); chart items carry `year` (int, or "older" /
+    "later"), `counts` {type: bottles} and, for the edge bars, a `label`.
     """
     first, last = current_year - DW_YEARS_BACK, current_year + DW_YEARS_AHEAD
     by_year = defaultdict(lambda: defaultdict(int))
@@ -1670,12 +1671,11 @@ def _drink_window_chart(wines, current_year):
         t = w["type"] or "Anderes"
         types.add(t)
         entry = {"n": w["name"], "y": w.get("year"), "q": w["quantity"], "id": w["id"]}
-        if until < first:
-            bars = ["older"]
-        elif frm > last:
-            bars = ["later"]
-        else:
-            bars = range(max(frm, first), min(until, last) + 1)
+        bars = list(range(max(frm, first), min(until, last) + 1))
+        if frm < first:
+            bars.append("older")
+        if until > last:
+            bars.append("later")
         for bar in bars:
             by_year[bar][t] += w["quantity"]
             names[bar][t].append(entry)
@@ -1683,12 +1683,14 @@ def _drink_window_chart(wines, current_year):
     years = [b for b in by_year if isinstance(b, int)]
     chart = []
     if "older" in by_year:
-        chart.append({"year": "older", "counts": dict(by_year["older"])})
+        chart.append({"year": "older", "label": f"< {first}",
+                      "counts": dict(by_year["older"])})
     if years:
         chart += [{"year": yr, "counts": dict(by_year[yr])}
                   for yr in range(min(years), max(years) + 1)]
     if "later" in by_year:
-        chart.append({"year": "later", "counts": dict(by_year["later"])})
+        chart.append({"year": "later", "label": f"{last}+",
+                      "counts": dict(by_year["later"])})
     names_by_bar = {str(bar): dict(per_type) for bar, per_type in names.items()}
     return chart, sorted(types), names_by_bar
 

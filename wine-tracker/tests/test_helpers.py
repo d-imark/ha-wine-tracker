@@ -954,8 +954,9 @@ class TestPriceVintageFallback:
 # ── stats: drink window chart ─────────────────────────────────────────────────
 
 class TestDrinkWindowChart:
-    """Years from current-3 to current+15; everything outside goes into one
-    bar on either side instead of stretching the axis."""
+    """Years from current-3 to current+15, plus one bar on either side for
+    every bottle whose window reaches past the edge - so the edge bars show
+    all of them, not only the ones entirely outside."""
     CUR = 2026
 
     def _w(self, wid, frm, until, qty=1, t="Rotwein"):
@@ -965,23 +966,34 @@ class TestDrinkWindowChart:
     def _chart(self, wines):
         return wine_app._drink_window_chart(wines, self.CUR)
 
-    def test_axis_is_clamped_to_minus_3_plus_15(self):
+    def test_long_window_fills_the_axis_and_both_edges(self):
         chart, _, _ = self._chart([self._w(1, 2012, 2055, qty=2)])
-        years = [c["year"] for c in chart]
-        assert years == list(range(2023, 2042))
+        assert [c["year"] for c in chart] == ["older"] + list(range(2023, 2042)) + ["later"]
         assert all(c["counts"] == {"Rotwein": 2} for c in chart)
 
-    def test_window_ended_before_the_axis_goes_to_older(self):
-        chart, _, names = self._chart([self._w(1, 2010, 2018), self._w(2, 2025, 2027)])
-        assert chart[0]["year"] == "older" and chart[0]["counts"] == {"Rotwein": 1}
-        assert [c["year"] for c in chart[1:]] == [2025, 2026, 2027]
-        assert names["older"]["Rotwein"][0]["id"] == 1
+    def test_edge_bars_are_labelled_with_the_cut_years(self):
+        chart, _, _ = self._chart([self._w(1, 2012, 2055)])
+        assert chart[0]["label"] == "< 2023" and chart[-1]["label"] == "2041+"
 
-    def test_window_starting_after_the_axis_goes_to_later(self):
-        chart, _, names = self._chart([self._w(1, 2045, 2060, qty=3), self._w(2, 2026, 2028)])
+    def test_window_reaching_back_counts_in_older_too(self):
+        chart, _, names = self._chart([self._w(1, 2012, 2030), self._w(2, 2025, 2027)])
+        assert chart[0]["year"] == "older" and chart[0]["counts"] == {"Rotwein": 1}
+        assert names["older"]["Rotwein"][0]["id"] == 1
+        assert [c["year"] for c in chart[1:]] == list(range(2023, 2031))
+
+    def test_window_entirely_before_is_only_in_older(self):
+        chart, _, _ = self._chart([self._w(1, 2010, 2018), self._w(2, 2025, 2027)])
+        assert [c["year"] for c in chart] == ["older", 2025, 2026, 2027]
+
+    def test_window_reaching_ahead_counts_in_later_too(self):
+        chart, _, names = self._chart([self._w(1, 2030, 2055, qty=3), self._w(2, 2026, 2028)])
         assert chart[-1]["year"] == "later" and chart[-1]["counts"] == {"Rotwein": 3}
-        assert [c["year"] for c in chart[:-1]] == [2026, 2027, 2028]
         assert names["later"]["Rotwein"][0]["id"] == 1
+        assert [c["year"] for c in chart[:-1]] == list(range(2026, 2042))
+
+    def test_window_entirely_after_is_only_in_later(self):
+        chart, _, _ = self._chart([self._w(1, 2045, 2060), self._w(2, 2026, 2028)])
+        assert [c["year"] for c in chart] == [2026, 2027, 2028, "later"]
 
     def test_compact_when_everything_is_close(self):
         chart, order, _ = self._chart([self._w(1, 2026, 2029, t="Weisswein")])
