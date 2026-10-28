@@ -257,6 +257,7 @@ function openViewModal(id, wine) {
     var fmt = BOTTLE_FORMATS[parseFloat(w.bottle_format)] || w.bottle_format + ' l';
     details += viewRow('mdi-ruler', T.label_bottle_format || 'Format', fmt);
   }
+  if (w.alcohol_pct != null && w.alcohol_pct !== '') details += viewRow('mdi-percent-outline', T.label_alcohol_pct || 'Alcohol', w.alcohol_pct + ' % vol');
   if (w.grapes && w.grapes.length) details += viewGrapeRow(w.grapes);
   else if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
   if (w.purchased_at) details += viewRow('mdi-cart', T.label_purchased_at || 'Purchased at', w.purchased_at);

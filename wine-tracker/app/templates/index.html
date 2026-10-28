@@ -138,7 +138,7 @@
        data-category="{{ w['category'] or 'wine' }}"
        data-cask="{{ (w['spirit_details'] and w['spirit_details']['cask_summary']) or '' }}"
        data-bottler="{{ (w['spirit_details'] and w['spirit_details']['bottler']) or '' }}"
-       data-abv="{{ (w['spirit_details'] and w['spirit_details']['abv']) or '' }}"
+       data-alcohol_pct="{{ w['alcohol_pct'] if w['alcohol_pct'] is not none else '' }}"
        data-age_years="{{ (w['spirit_details'] and w['spirit_details']['age_years']) or '' }}"
        data-vivino_id="{{ w['vivino_id'] or '' }}"
        data-bottle_format="{{ '%g'|format(w['bottle_format'] or 0.75) }}">
@@ -181,7 +181,7 @@
         {% if w['drink_from'] or w['drink_until'] %}<span class="drink-window"><i class="mdi mdi-calendar-range"></i> {{ w['drink_from'] or '?' }}-{{ w['drink_until'] or '?' }}</span>{% endif %}
         {% if w['grapes'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grapes'][0].name }}{% if w['grapes']|length > 1 %} +{{ w['grapes']|length - 1 }}{% endif %}</span>{% elif w['grape'] %}<span><i class="mdi mdi-fruit-grapes"></i> {{ w['grape'] }}</span>{% endif %}
         {% if w['spirit_details'] and w['spirit_details']['cask_summary'] %}<span><i class="mdi mdi-barrel"></i> {{ w['spirit_details']['cask_summary'] }}</span>{% endif %}
-        {% if w['spirit_details'] and w['spirit_details']['abv'] is not none %}<span>{{ w['spirit_details']['abv'] }} %</span>{% endif %}
+        {% if (w['category'] or 'wine') != 'wine' and w['alcohol_pct'] is not none %}<span>{{ '%g'|format(w['alcohol_pct']) }} %</span>{% endif %}
         {% if w['spirit_details'] and w['spirit_details']['opened_at'] %}<span class="card-open"><i class="mdi mdi-bottle-tonic"></i> {{ (w['spirit_details']['fill_level'] or 100)|round|int }} %</span>{% endif %}
         {% if w['location'] %}<span><i class="mdi mdi-map-marker"></i> {{ w['location'] }}</span>{% endif %}
         {% if w['vivino_id'] %}<a class="card-vivino-link" href="https://www.vivino.com/w/{{ w['vivino_id'] }}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Vivino"><i class="mdi mdi-open-in-new"></i> Vivino</a>{% endif %}
@@ -1084,6 +1084,9 @@ function openViewModal(id, wine) {
     details += viewRow('mdi-ruler', T.label_bottle_format || 'Format', fmt);
   }
 
+  // Alcohol content - wine and spirits alike
+  if (w.alcohol_pct != null && w.alcohol_pct !== '') details += viewRow('mdi-percent-outline', T.label_alcohol_pct, w.alcohol_pct + ' % vol');
+
   // Grape
   if (w.grapes && w.grapes.length) details += viewGrapeRow(w.grapes);
   else if (w.grape) details += viewRow('mdi-fruit-grapes', T.label_grape || 'Grape', w.grape);
@@ -1091,7 +1094,6 @@ function openViewModal(id, wine) {
   // ── Spirits: casks, whisky facts and the open bottle ──────────────────────
   var sd = w.spirit_details || {};
   if (w.category && w.category !== 'wine') {
-    if (sd.abv != null) details += viewRow('mdi-percent', T.label_abv, sd.abv);
     if (sd.age_years != null) details += viewRow('mdi-timer-sand', T.label_age, sd.age_years);
     if (w.casks && w.casks.length) {
       details += viewRowHtml('mdi-barrel', T.label_casks, w.casks.map(function(c) {
@@ -1452,7 +1454,7 @@ function renderCard(w) {
   else if (w.grape) extra += '<span><i class="mdi mdi-fruit-grapes"></i> ' + escapeHtml(w.grape) + '</span>';
   var sdCard = w.spirit_details || {};
   if (sdCard.cask_summary) extra += '<span><i class="mdi mdi-barrel"></i> ' + escapeHtml(sdCard.cask_summary) + '</span>';
-  if (sdCard.abv != null) extra += '<span>' + sdCard.abv + ' %</span>';
+  if ((w.category || 'wine') !== 'wine' && w.alcohol_pct != null) extra += '<span>' + w.alcohol_pct + ' %</span>';
   if (sdCard.opened_at) extra += '<span class="card-open"><i class="mdi mdi-bottle-tonic"></i> ' +
     Math.round(sdCard.fill_level == null ? 100 : sdCard.fill_level) + ' %</span>';
   if (w.location) extra += '<span><i class="mdi mdi-map-marker"></i> ' + escapeHtml(w.location) + '</span>';
@@ -1529,7 +1531,7 @@ function updateCardData(card, w) {
   card.dataset.category = w.category || 'wine';
   card.dataset.cask = sdc.cask_summary || '';
   card.dataset.bottler = sdc.bottler || '';
-  card.dataset.abv = sdc.abv == null ? '' : sdc.abv;
+  card.dataset.alcohol_pct = w.alcohol_pct == null ? '' : w.alcohol_pct;
   card.dataset.age_years = sdc.age_years == null ? '' : sdc.age_years;
   card.dataset.bottle_format = w.bottle_format || '0.75';
   card.dataset.vivino_id = w.vivino_id || '';

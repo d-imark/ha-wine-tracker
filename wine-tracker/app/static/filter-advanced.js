@@ -41,7 +41,7 @@
     { key: 'price_effective', group: 'numbers', type: 'number', label: 'table_col_price_eff' },
     { key: 'rating',       group: 'numbers', type: 'number', label: 'filter_field_rating',   integer: true, min: 0, max: 5 },
     { key: 'quantity',     group: 'numbers', type: 'number', label: 'filter_field_quantity', integer: true, min: 0 },
-    { key: 'abv',          group: 'numbers', type: 'number', label: 'label_abv' },
+    { key: 'alcohol_pct',  group: 'numbers', type: 'number', label: 'label_alcohol_pct', min: 0 },
     { key: 'age_years',    group: 'numbers', type: 'number', label: 'label_age', integer: true },
     // Choice
     { key: 'type',          group: 'choice', type: 'choice', label: 'filter_field_type' },
@@ -117,6 +117,12 @@
       var parsed = JSON.parse(raw);
       if (parsed && typeof parsed.rules === 'object' && parsed.rules !== null) {
         state.rules = parsed.rules;
+        // The alcohol field used to be the spirits-only 'abv'.
+        if (state.rules.abv) {
+          if (!state.rules.alcohol_pct) state.rules.alcohol_pct = state.rules.abv;
+          delete state.rules.abv;
+          save();
+        }
         pruneInactiveRules();
       }
     } catch (e) { /* ignore */ }

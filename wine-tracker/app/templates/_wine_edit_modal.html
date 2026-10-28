@@ -787,6 +787,8 @@ function setWineCategory(cat) {
   if (lbl) lbl.textContent = producerLabel;
   var wineryInput = document.getElementById('wine_winery');
   if (wineryInput) wineryInput.placeholder = producerLabel;
+  var alcoholInput = document.getElementById('wine_alcohol_pct');
+  if (alcoholInput) alcoholInput.placeholder = isWine ? '13.5' : '46.0';
 
   // A type from the other vocabulary must not survive a category change.
   var typeEl = document.getElementById('wine_type');
@@ -992,7 +994,7 @@ function openWineModal(id, wine) {
     var e = document.getElementById(id);
     if (e) e.value = (v === null || v === undefined) ? '' : v;
   };
-  setv('wine_abv', sd.abv);
+  setv('wine_alcohol_pct', w.alcohol_pct);
   setv('wine_age_years', sd.age_years);
   setv('wine_distilled_year', sd.distilled_year);
   setv('wine_bottled_year', sd.bottled_year);

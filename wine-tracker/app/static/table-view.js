@@ -16,7 +16,6 @@
     { key: 'winery',          group: 'wine',    label: 'label_winery',                       minWidth: 150 },
     { key: 'drink_until',     group: 'wine',    label: 'label_drink_until',   numeric: true, minWidth: 100 },
     { key: 'age_years',       group: 'spirits', label: 'label_age',           numeric: true, minWidth: 90 },
-    { key: 'abv',             group: 'spirits', label: 'label_abv',           numeric: true, minWidth: 90 },
     { key: 'cask',            group: 'spirits', label: 'label_casks',                        minWidth: 170 },
     { key: 'bottler',         group: 'spirits', label: 'label_bottler',                      minWidth: 150 },
     { key: 'price',           group: 'price',   label: 'table_col_price_own', numeric: true, minWidth: 110 },
@@ -25,6 +24,7 @@
     { key: 'quantity',        group: 'general', label: 'table_col_quantity',  numeric: true, minWidth: 70 },
     { key: 'rating',          group: 'general', label: 'label_rating',        numeric: true, minWidth: 90 },
     { key: 'vivino_rating',   group: 'general', label: 'vivino_rating_label', numeric: true, minWidth: 90 },
+    { key: 'alcohol_pct',     group: 'general', label: 'label_alcohol_pct',   numeric: true, minWidth: 90 },
     { key: 'location',        group: 'general', label: 'label_location',                     minWidth: 130 },
     { key: 'bottle_format',   group: 'general', label: 'label_bottle_format', numeric: true, minWidth: 100 },
     { key: 'purchased_at',    group: 'general', label: 'label_purchased_at',                 minWidth: 120 }
@@ -40,8 +40,25 @@
 
   var DEFAULTS = {
     cellar: ['winery', 'year', 'region', 'grape', 'price_effective', 'quantity'],
-    bar:    ['winery', 'age_years', 'abv', 'cask', 'price_effective', 'quantity']
+    bar:    ['winery', 'age_years', 'alcohol_pct', 'cask', 'price_effective', 'quantity']
   };
+
+  // The alcohol column used to be the spirits-only 'abv'. Rename it in what
+  // this browser stored, so a chosen column or sort does not silently vanish.
+  (function migrateAbvKey() {
+    try {
+      ['cellar', 'bar'].forEach(function (area) {
+        var key = 'wineTableCols.' + area;
+        var list = JSON.parse(localStorage.getItem(key));
+        if (!Array.isArray(list) || list.indexOf('abv') === -1) return;
+        list = list.map(function (k) { return k === 'abv' ? 'alcohol_pct' : k; });
+        localStorage.setItem(key, JSON.stringify(list));
+      });
+      if (localStorage.getItem('wineTableSortCol') === 'abv') {
+        localStorage.setItem('wineTableSortCol', 'alcohol_pct');
+      }
+    } catch (e) {}
+  })();
 
 
   function areaKey() {

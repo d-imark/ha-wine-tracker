@@ -31,7 +31,7 @@
     </datalist>
   </div>
 
-  <div class="row2">
+  <div class="row3">
     <div data-cat="wine">
       <label>{{ t.label_vintage }}</label>
       <input type="number" name="year" id="wine_year" min="1900" max="2099" placeholder="2020">
@@ -40,6 +40,11 @@
     <div data-cat="spirits" hidden>
       <label>{{ t.label_age }}</label>
       <input type="number" name="age_years" id="wine_age_years" min="0" max="100">
+    </div>
+    {# One field for every category; the placeholder follows it (setWineCategory) #}
+    <div>
+      <label>{{ t.label_alcohol_pct }}</label>
+      <input type="number" name="alcohol_pct" id="wine_alcohol_pct" min="0" max="100" step="0.1" placeholder="13.5">
     </div>
     <div>
       <label>{{ t.label_quantity }}</label>
@@ -217,10 +222,6 @@
 
 <div class="wine-tab-panel" data-cat="spirits" data-panel="whisky" hidden>
   <div class="row2">
-    <div>
-      <label>{{ t.label_abv }}</label>
-      <input type="number" name="abv" id="wine_abv" min="0" max="100" step="0.1" placeholder="46.0">
-    </div>
     <div>
       <label>{{ t.label_bottler }}</label>
       <input type="text" name="bottler" id="wine_bottler" list="wineryList" autocomplete="off">

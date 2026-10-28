@@ -1868,3 +1868,23 @@ def test_wine_json_carries_alcohol_pct(client):
                                              "alcohol_pct": "13.5"}, headers=AJAX).data)["wine"]
     assert w["alcohol_pct"] == 13.5
     assert "abv" not in (w.get("spirit_details") or {})
+
+
+def test_form_has_one_alcohol_field(client):
+    html = client.get("/").data.decode()
+    assert html.count('name="alcohol_pct"') == 1
+    assert 'name="abv"' not in html
+
+
+def test_card_carries_alcohol_pct(client):
+    client.post("/add", data={"name": "Talisker", "category": "whisky", "quantity": "1",
+                              "alcohol_pct": "45.8"}, headers=AJAX)
+    html = client.get("/?area=bar").data.decode()
+    assert 'data-alcohol_pct="45.8"' in html and "data-abv" not in html
+    assert "45.8 %" in html     # the spirit card keeps showing it
+
+
+def test_wine_card_carries_alcohol_pct(client):
+    client.post("/add", data={"name": "Pinot Alk", "quantity": "1",
+                              "alcohol_pct": "13.5"}, headers=AJAX)
+    assert 'data-alcohol_pct="13.5"' in client.get("/").data.decode()

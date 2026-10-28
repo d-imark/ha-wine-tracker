@@ -919,6 +919,7 @@ input:focus, select:focus, textarea:focus {
 select option { background: var(--bg); }
 textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; }
 
 /* Partial-fill star display (read-only), driven by .sr-fill width % */
 .star-rating { position: relative; display: inline-block; white-space: nowrap; line-height: 1; }
