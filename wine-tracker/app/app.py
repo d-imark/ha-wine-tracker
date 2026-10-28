@@ -3110,6 +3110,8 @@ _SCHEMA_WINE = [
      "- vintage must be a 4-digit year or null. If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never \"correct\" it from a shop listing of another vintage."),
     ("region",      '"region": "wine region"', None),
     ("country",     '"country": "country of origin"', None),
+    ("alcohol_pct", '"alcohol_pct": alcohol by volume in percent as number or null',
+     "- alcohol_pct: alcohol by volume as a plain number (e.g. 13.5). Only set it when the label or a reliable source states it - do NOT guess."),
     ("grape",       '"grape": "grape variety/varieties"', None),
     ("grapes",      '"grapes": [{"name": "grape variety", "pct": percentage as number 0-100 or null}]',
      '- grapes: array of the wine\'s grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.'),
@@ -3135,8 +3137,8 @@ _SCHEMA_SPIRIT = [
      "- wine_type MUST be exactly one of the listed values"),
     ("region",     '"region": "region, e.g. Islay, Speyside, Kentucky"', None),
     ("country",    '"country": "country of origin"', None),
-    ("abv",        '"abv": alcohol by volume as number or null',
-     "- abv: alcohol by volume as a plain number (e.g. 46.3), null if unknown."),
+    ("alcohol_pct", '"alcohol_pct": alcohol by volume in percent as number or null',
+     "- alcohol_pct: alcohol by volume as a plain number (e.g. 46.3). Only set it when the label or a reliable source states it - do NOT guess."),
     ("age_years",  '"age_years": age statement in years as number, or null for NAS',
      "- age_years: only the official age statement. Return null for NAS bottlings - do NOT compute it from distilled/bottled years."),
     ("distilled_year", '"distilled_year": year as integer or null', None),
@@ -3344,7 +3346,7 @@ def _analyze_wine_from_context(opts, image_b64, media_type, wine_context, scope=
     if wine_context.get("grape"):   context_parts.append(f"Grape: {wine_context['grape']}")
     # Spirits-only context
     if wine_context.get("casks"):     context_parts.append(f"Casks: {wine_context['casks']}")
-    if wine_context.get("abv"):       context_parts.append(f"ABV: {wine_context['abv']}")
+    if wine_context.get("alcohol_pct"): context_parts.append(f"ABV: {wine_context['alcohol_pct']}")
     if wine_context.get("age_years"): context_parts.append(f"Age: {wine_context['age_years']} years")
     if wine_context.get("bottler"):   context_parts.append(f"Bottler: {wine_context['bottler']}")
 

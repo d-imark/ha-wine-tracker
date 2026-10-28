@@ -244,7 +244,7 @@ class TestAiScopes:
         s = wine_app._wine_json_schema("whisky", "profile")
         assert "taste_profile" in s
         # a whisky has no drinking window or maturity phases
-        for gone in ("maturity_data", "drink_from", "food_pairings", "abv", "casks"):
+        for gone in ("maturity_data", "drink_from", "food_pairings", "alcohol_pct", "casks"):
             assert gone not in s, gone
 
     def test_all_scope_is_unchanged(self):
@@ -769,7 +769,7 @@ class TestSpiritAiSchema:
     def test_whisky_schema_has_spirit_fields(self):
         import app as wine_app
         s = wine_app._wine_json_schema("whisky")
-        for f in ("abv", "age_years", "cask", "bottler", "batch_number", "peat_ppm"):
+        for f in ("alcohol_pct", "age_years", "cask", "bottler", "batch_number", "peat_ppm"):
             assert f in s, f
 
     def test_whisky_schema_drops_wine_fields(self):
@@ -782,6 +782,22 @@ class TestSpiritAiSchema:
         import app as wine_app
         s = wine_app._wine_json_schema("wine")
         assert "grapes" in s and "abv" not in s
+
+    def test_schema_asks_alcohol_for_wine_and_spirit(self):
+        import app as wine_app
+        for cat in ("wine", "whisky", "spirit"):
+            s = wine_app._wine_json_schema(cat)
+            assert '"alcohol_pct"' in s and '"abv"' not in s, cat
+
+    def test_rules_forbid_guessing_alcohol(self):
+        import app as wine_app
+        for cat in ("wine", "whisky"):
+            r = wine_app._wine_json_rules("de", "CHF", cat)
+            assert "alcohol_pct" in r and "do NOT guess" in r, cat
+
+    def test_profile_scope_does_not_ask_alcohol(self):
+        import app as wine_app
+        assert "alcohol_pct" not in wine_app._wine_json_schema("wine", "profile")
 
     def test_whisky_rules_mention_casks(self):
         import app as wine_app

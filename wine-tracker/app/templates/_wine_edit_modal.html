@@ -452,6 +452,7 @@ var _AR_COMMON_FIELDS = [
   { key: 'wine_type', el: 'wine_type',     labelKey: 'label_type', type: 'wine_type' },
   { key: 'country',   el: 'wine_country',  labelKey: 'label_country' },
   { key: 'region',    el: 'wine_region',   labelKey: 'label_region' },
+  { key: 'alcohol_pct', el: 'wine_alcohol_pct', labelKey: 'label_alcohol_pct' },
   { key: 'price',     el: 'wine_ai_price', labelKey: 'label_ai_price' },
   // The AI fills the description. `notes` is the user's own field and is
   // deliberately absent here - see the DESCRIPTION_RULE in app.py.
@@ -465,7 +466,6 @@ var _AR_WINE_FIELDS = [
   { key: 'drink_until', el: 'wine_drink_until', labelKey: 'label_drink_until' }
 ];
 var _AR_SPIRIT_FIELDS = [
-  { key: 'abv',            el: 'wine_abv',            labelKey: 'label_abv' },
   { key: 'age_years',      el: 'wine_age_years',      labelKey: 'label_age' },
   { key: 'distilled_year', el: 'wine_distilled_year', labelKey: 'label_distilled' },
   { key: 'bottled_year',   el: 'wine_bottled_year',   labelKey: 'label_bottled' },
@@ -477,7 +477,7 @@ var _AR_SPIRIT_FIELDS = [
 ];
 
 // The reload dialog must offer exactly the fields the form actually shows -
-// otherwise the AI returns values (abv, casks, age) that silently go nowhere,
+// otherwise the AI returns values (casks, age, bottler) that silently go nowhere,
 // which looked like "the AI fills almost nothing".
 function _arFields() {
   var cat = currentWineCategory();
@@ -1531,6 +1531,7 @@ function populateFormMerge(fields, imageFilename) {
   setIfEmpty('wine_description', fields.description);
   // bottle_format intentionally untouched - see _AR_COMMON_FIELDS.
 
+  setIfEmpty('wine_alcohol_pct', fields.alcohol_pct);
   if (currentWineCategory() === 'wine') {
     setIfEmpty('wine_year', fields.vintage);
     setIfEmpty('wine_drink_from', fields.drink_from);
@@ -1543,7 +1544,6 @@ function populateFormMerge(fields, imageFilename) {
       }
     }
   } else {
-    setIfEmpty('wine_abv', fields.abv);
     setIfEmpty('wine_age_years', fields.age_years);
     setIfEmpty('wine_distilled_year', fields.distilled_year);
     setIfEmpty('wine_bottled_year', fields.bottled_year);
@@ -1720,11 +1720,11 @@ function reloadViaAi(scope) {
   // Without the category the server falls back to the wine prompt and starts
   // looking for a wine that does not exist.
   context.category = currentWineCategory();
+  v = (document.getElementById('wine_alcohol_pct') || {}).value; if (v) context.alcohol_pct = v;
   if (context.category === 'wine') {
     v = grapeCollect().map(function(g){ return g.name; }).join(', '); if (v) context.grape = v;
   } else {
     v = caskCollect().map(function(c){ return c.name; }).join(' -> '); if (v) context.casks = v;
-    v = (document.getElementById('wine_abv') || {}).value;        if (v) context.abv = v;
     v = (document.getElementById('wine_age_years') || {}).value;  if (v) context.age_years = v;
     v = (document.getElementById('wine_bottler') || {}).value;    if (v) context.bottler = v;
   }
