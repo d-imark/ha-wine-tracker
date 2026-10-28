@@ -978,3 +978,19 @@ class TestPriceVintageFallback:
         fields = J.loads(resp.data)["fields"]
         assert set(fields) == {"price", "ai_rationale"}
         assert "vintage" not in fields
+
+
+class TestAlcoholPromptRule:
+    """One rule for reading % vol, shared by every prompt that asks for it."""
+
+    def _prompts(self):
+        return {cat: wine_app._wine_json_rules("de", "CHF", cat) for cat in ("wine", "whisky")}
+
+    def test_rule_covers_notations_proof_and_other_percentages(self):
+        for name, p in self._prompts().items():
+            for must in ("% vol", "proof", "100% Merlot", "do NOT guess"):
+                assert must in p, (name, must)
+
+    def test_rule_keeps_a_known_value(self):
+        for name, p in self._prompts().items():
+            assert "known information already gives an alcohol content" in p, name

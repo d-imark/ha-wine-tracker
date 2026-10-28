@@ -1929,3 +1929,25 @@ def test_cellar_context_mentions_alcohol(app, client):
         text, _ = wine_app._build_wine_cellar_context()
     line = next(l for l in text.splitlines() if "Kontext Alk" in l)
     assert "14.5 % vol" in line
+
+
+# ── reading alcohol content from AI answers ──────────────────────────────────
+
+@pytest.mark.parametrize("raw, expected", [
+    (46.3, 46.3), ("13,5 % vol", 13.5), ("Alc. 12.5% vol.", 12.5), ("14%", 14.0),
+    ("12.5 vol.-%", 12.5), ("ABV 43", 43.0), ("86 proof", 43.0),
+    ("100% Merlot", None), ("40% new oak", None), (250, None), ("viel", None),
+])
+def test_parse_alcohol_reads_label_notations(raw, expected):
+    import app as wine_app
+    assert wine_app._parse_alcohol(raw) == expected
+
+
+def test_ai_answer_alcohol_is_cleaned(app):
+    import app as wine_app
+    with app.app_context():
+        db = wine_app.get_db()
+        assert wine_app._canonicalize_ai_fields(db, {"alcohol_pct": "13,5 % vol"}, "wine")["alcohol_pct"] == 13.5
+        assert wine_app._canonicalize_ai_fields(db, {"alcohol_pct": "100% Merlot"}, "wine")["alcohol_pct"] is None
+        assert wine_app._canonicalize_ai_fields(db, {"alcohol_pct": "86 proof"}, "whisky")["alcohol_pct"] == 43.0
+        assert "alcohol_pct" not in wine_app._canonicalize_ai_fields(db, {"name": "X"}, "wine")

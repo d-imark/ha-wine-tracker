@@ -2312,4 +2312,5 @@ def test_wine_label_scan_asks_for_alcohol(mock_opts, mock_call, client):
                        content_type="multipart/form-data")
     prompt = mock_call.call_args[0][2]
     assert '"alcohol_pct"' in prompt and "do NOT guess" in prompt
+    assert wine_app._ALCOHOL_RULE in prompt     # same reading rule as the other prompts
     assert json.loads(resp.data)["fields"]["alcohol_pct"] == 12.5

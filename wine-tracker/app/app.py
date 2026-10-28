@@ -621,17 +621,31 @@ def _category_from_form(form):
     return value if value in CATEGORIES else "wine"
 
 
+# A number with the ways labels and AI answers write % vol around it. Anything
+# else ("100% Merlot", "40% new oak") does not match and is not alcohol.
+_ALCOHOL_RE = re.compile(
+    r"^(?:alc(?:ohol)?\.?|abv)?\s*(\d+(?:[.,]\d+)?)\s*"
+    r"(%\s*vol\.?|%|vol\.?\s*-?\s*%|vol\.?|abv|(proof))?\s*$", re.IGNORECASE)
+
+
 def _parse_alcohol(value):
-    """% vol as a float between 0 and 100, else None. Takes a decimal comma
-    ("13,5"); rejects inf/nan, which jsonify would turn into invalid JSON."""
-    if value is None:
+    """% vol as a float between 0 and 100, else None.
+
+    Reads plain numbers and label notations ("13,5 % vol", "Alc. 12.5% vol.",
+    "ABV 43"); US proof is halved. Rejects inf/nan, which jsonify would turn
+    into invalid JSON."""
+    if value is None or isinstance(value, bool):
         return None
-    raw = str(value).strip().replace(",", ".")
-    try:
-        v = float(raw) if raw else None
-    except ValueError:
-        return None
-    if v is None or not math.isfinite(v) or not 0 <= v <= 100:
+    if isinstance(value, (int, float)):
+        v = float(value)
+    else:
+        m = _ALCOHOL_RE.match(str(value).strip())
+        if not m:
+            return None
+        v = float(m.group(1).replace(",", "."))
+        if m.group(3):
+            v /= 2
+    if not math.isfinite(v) or not 0 <= v <= 100:
         return None
     return v
 
@@ -2288,6 +2302,11 @@ def _canonicalize_ai_fields(db, fields, category="wine"):
             return value
         return row[key] if row else value
 
+    # A text answer like "13,5 % vol" would be dropped by the number field in
+    # the form - hand the client a plain number or null.
+    if "alcohol_pct" in fields:
+        fields["alcohol_pct"] = _parse_alcohol(fields["alcohol_pct"])
+
     if category in ("whisky", "spirit"):
         # Spirits carry their own vocabulary: spirit types and cask names.
         if fields.get("wine_type"):
@@ -2729,7 +2748,7 @@ Rules:
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never "correct" it from a shop listing or catalog entry of another vintage.
-- alcohol_pct: alcohol by volume as a plain number (e.g. 13.5). Only set it when the label shows it - do NOT guess.
+{_ALCOHOL_RULE}
 - drink_from/drink_until: drinking window years. If mentioned on label, use those. Otherwise ESTIMATE a reasonable drinking window based on the wine type, grape variety, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price: the retail bottle price as a plain number in {currency}, without any currency symbol. If the label or your sources quote another currency, CONVERT the amount to {currency} at current exchange rates. Return null if no price is visible.
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
@@ -3120,6 +3139,20 @@ def vivino_image():
 # Kept as (key, schema line, rule line) triples so a scoped request can ask for a
 # subset. Asking only for what the user wants updated keeps the model from
 # "helpfully" rewriting facts it was not asked about - and it answers faster.
+# How to read % vol - one rule for the label scan and both schemas. Labels carry
+# several percentages, and a misread one ends up on the bottle unnoticed.
+_ALCOHOL_RULE = (
+    '- alcohol_pct: alcohol by volume as a plain number, e.g. 13.5. On labels it reads '
+    '"13,5 % vol", "alc. 13.5% vol.", "12.5 vol.-%" or "ABV 43" - a decimal comma is a '
+    'decimal point. US "proof" is twice the percentage: 86 proof = 43. NEVER take any '
+    'other percentage from the label, such as grape shares ("100% Merlot"), the share of '
+    'new oak, residual sugar or acidity. Typical values: wine 5-16, fortified and dessert '
+    'wine 15-22, spirits 37.5-70 (cask strength often 50-65) - re-check a reading far '
+    'outside these and return null when unsure. If the known information already gives an '
+    'alcohol content, return exactly that value unless a label image clearly shows another. '
+    'Without a label, use only a reliable source for this exact bottling and vintage; '
+    'otherwise null - do NOT guess.')
+
 _SCHEMA_WINE = [
     ("name",        '"name": "wine name (without the producer)"',
      '- winery: the producer/winery name (e.g. "Château Margaux", "Adrian et Diego Mathier"); set to empty string if not identifiable. Do NOT repeat the winery inside "name".'),
@@ -3132,7 +3165,7 @@ _SCHEMA_WINE = [
     ("region",      '"region": "wine region"', None),
     ("country",     '"country": "country of origin"', None),
     ("alcohol_pct", '"alcohol_pct": alcohol by volume in percent as number or null',
-     "- alcohol_pct: alcohol by volume as a plain number (e.g. 13.5). Only set it when the label or a reliable source states it - do NOT guess."),
+     _ALCOHOL_RULE),
     ("grape",       '"grape": "grape variety/varieties"', None),
     ("grapes",      '"grapes": [{"name": "grape variety", "pct": percentage as number 0-100 or null}]',
      '- grapes: array of the wine\'s grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.'),
@@ -3159,7 +3192,7 @@ _SCHEMA_SPIRIT = [
     ("region",     '"region": "region, e.g. Islay, Speyside, Kentucky"', None),
     ("country",    '"country": "country of origin"', None),
     ("alcohol_pct", '"alcohol_pct": alcohol by volume in percent as number or null',
-     "- alcohol_pct: alcohol by volume as a plain number (e.g. 46.3). Only set it when the label or a reliable source states it - do NOT guess."),
+     _ALCOHOL_RULE),
     ("age_years",  '"age_years": age statement in years as number, or null for NAS',
      "- age_years: only the official age statement. Return null for NAS bottlings - do NOT compute it from distilled/bottled years."),
     ("distilled_year", '"distilled_year": year as integer or null', None),
