@@ -2584,3 +2584,20 @@ def test_stats_drink_window_chart_with_outliers(client):
               for part in chart.split('class="dw-bar-label">')[1:]]
     assert labels[0] == f"< {cur - 3}" and labels[-1] == f"{cur + 15}+"
     assert str(cur - 14) not in chart and str(cur + 30) not in chart
+
+
+# ── stats polish ──────────────────────────────────────────────────────────────
+
+def test_drink_window_bars_show_the_bottle_total(client):
+    """Each bar carries its total bottle count, summed over the wine types."""
+    import re
+    from datetime import date
+    cur = date.today().year
+    client.post("/add", data={"name": "Rot A", "type": "Rotwein", "quantity": "2",
+                              "drink_from": str(cur), "drink_until": str(cur + 1)}, headers=AJAX)
+    client.post("/add", data={"name": "Weiss B", "type": "Weisswein", "quantity": "3",
+                              "drink_from": str(cur), "drink_until": str(cur)}, headers=AJAX)
+    html = client.get("/stats").data.decode()
+    chart = html.split('class="dw-chart"', 1)[1].split('class="dw-legend"', 1)[0]
+    totals = re.findall(r'class="dw-bar-total">(\d+)<', chart)
+    assert totals == ["5", "2"]

@@ -239,9 +239,11 @@
         {% for item in dw_chart %}
         <div class="dw-bar-col{% if item.year == current_year %} dw-current{% endif %}">
           <div class="dw-bar-stack">
+            {# total above the segments; the bars stop short of the top for it #}
+            <span class="dw-bar-total">{{ item.counts.values() | sum }}</span>
             {% for type_name in dw_type_order %}
             {% if item.counts.get(type_name, 0) > 0 %}
-            {% set h = (item.counts[type_name] / ns.max_total * 100) | round %}
+            {% set h = (item.counts[type_name] / ns.max_total * 86) | round %}
             <div class="dw-bar-seg chart-hover"
                  data-chart="dw" data-year="{{ item.year }}" data-key="{{ type_name }}"
                  style="height:{{ h }}%; background:{{ type_colors.get(type_name, 'var(--wine-anderes)') }}">
