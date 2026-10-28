@@ -141,6 +141,231 @@ function switchSettingsTab(name) {
   try { localStorage.setItem('wineSettingsTab', name); } catch (e) {}
 }
 
+// ── AI settings (settings modal) ─────────────────────────────────────────────
+// Reads and writes /api/ai-settings. API keys are write-only: the server only
+// says whether one is stored, so an empty key field keeps the stored key.
+
+var _aiSettings = null;
+var _aiModelCache = {};
+var _modelDdTarget = null;
+
+function _aiStatus(msg, kind) {
+  var el = document.getElementById('aiSettingsStatus');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'ai-status' + (kind ? ' ' + kind : '');
+}
+
+function _aiBusy(busy) {
+  ['aiTestBtn', 'aiSaveBtn'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = busy;
+  });
+}
+
+function aiSettingsLoad() {
+  fetch(_ingressPrefix() + '/api/ai-settings')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.ok) return;
+      _aiSettings = data;
+      document.getElementById('aiProviderSelect').value = data.settings.ai_provider || 'none';
+      document.getElementById('aiChatModelInput').value = data.settings.chat_model || '';
+      document.getElementById('aiHostInput').value = data.settings.ollama_host || '';
+      document.getElementById('aiWebSearchToggle').checked = data.settings.openai_web_search !== false;
+      document.getElementById('aiOverridesHint').style.display = data.overrides.length ? '' : 'none';
+      aiSettingsProviderChanged();
+    })
+    .catch(function() {});
+}
+
+function aiSettingsProviderChanged() {
+  var p = document.getElementById('aiProviderSelect').value;
+  document.getElementById('aiProviderFields').style.display = p === 'none' ? 'none' : '';
+  document.getElementById('aiTestBtn').style.display = p === 'none' ? 'none' : '';
+  if (p === 'none' || !_aiSettings) return;
+  document.getElementById('aiKeyRow').style.display = p === 'ollama' ? 'none' : '';
+  document.getElementById('aiHostRow').style.display = p === 'ollama' ? '' : 'none';
+  document.getElementById('aiWebSearchRow').style.display = p === 'openai' ? '' : 'none';
+  document.getElementById('aiModelInput').value = _aiSettings.settings[p + '_model'] || '';
+  var keyInput = document.getElementById('aiApiKeyInput');
+  keyInput.value = '';
+  keyInput.placeholder = _aiSettings.keys[p + '_api_key'] ? T.ai_key_stored : T.ai_key_placeholder;
+  _aiLoadModelList(p);
+}
+
+function _aiSetModelButtons(hasModels) {
+  ['aiModelDdBtn', 'aiChatModelDdBtn'].forEach(function(id) {
+    var b = document.getElementById(id);
+    if (b) b.style.display = hasModels ? '' : 'none';
+  });
+  // With a list the field is a picker; without one it stays free text.
+  ['aiModelInput', 'aiChatModelInput'].forEach(function(id) {
+    var input = document.getElementById(id);
+    if (input) input.readOnly = hasModels;
+  });
+}
+
+function _aiLoadModelList(provider) {
+  closeModelDd();
+  if (_aiModelCache[provider]) {
+    _aiSetModelButtons(_aiModelCache[provider].length > 0);
+    return;
+  }
+  _aiSetModelButtons(false);
+  fetch(_ingressPrefix() + '/api/ai-settings/models?provider=' + encodeURIComponent(provider))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.ok || !data.models) return;
+      _aiModelCache[provider] = data.models;
+      if (document.getElementById('aiProviderSelect').value === provider) {
+        _aiSetModelButtons(data.models.length > 0);
+      }
+    })
+    .catch(function() {});
+}
+
+function toggleModelDd(inputId, ev) {
+  if (ev) ev.stopPropagation();
+  var dd = document.getElementById('aiModelDd');
+  if (!dd) return;
+  if (_modelDdTarget === inputId && dd.style.display === 'block') { closeModelDd(); return; }
+  var provider = document.getElementById('aiProviderSelect').value;
+  var models = _aiModelCache[provider] || [];
+  if (!models.length) { closeModelDd(); return; }
+  _modelDdTarget = inputId;
+  var input = document.getElementById(inputId);
+  var current = input.value.trim();
+  var html = '';
+  if (models.length > 20) {
+    html += '<input type="text" class="model-dd-filter" oninput="filterModelDd(this)" onclick="event.stopPropagation()">';
+  }
+  // The chat model may be empty (= same model as for the labels).
+  if (inputId === 'aiChatModelInput') {
+    html += '<div class="model-dd-item' + (current === '' ? ' active' : '') + '" data-model="" tabindex="0" role="button">&mdash;</div>';
+  }
+  html += models.map(function(m) {
+    var esc = m.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return '<div class="model-dd-item' + (m === current ? ' active' : '') + '" data-model="' + esc + '" tabindex="0" role="button">' + esc + '</div>';
+  }).join('');
+  dd.innerHTML = html;
+  var r = input.getBoundingClientRect();
+  dd.style.display = 'block';
+  dd.style.left = r.left + 'px';
+  dd.style.width = r.width + 'px';
+  var ddHeight = Math.min(260, dd.scrollHeight);
+  var top = r.bottom + 4;
+  if (top + ddHeight > window.innerHeight - 8) top = Math.max(8, r.top - ddHeight - 4);
+  dd.style.top = top + 'px';
+  var filter = dd.querySelector('.model-dd-filter');
+  if (filter) filter.focus();
+  var active = dd.querySelector('.model-dd-item.active');
+  if (active) active.scrollIntoView({ block: 'center' });
+}
+
+function filterModelDd(filterInput) {
+  var q = filterInput.value.trim().toLowerCase();
+  document.querySelectorAll('#aiModelDd .model-dd-item').forEach(function(item) {
+    item.style.display = !q || item.dataset.model.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+  });
+}
+
+function closeModelDd() {
+  var dd = document.getElementById('aiModelDd');
+  if (dd) dd.style.display = 'none';
+  _modelDdTarget = null;
+}
+
+document.addEventListener('click', function(e) {
+  var dd = document.getElementById('aiModelDd');
+  if (!dd || dd.style.display !== 'block') return;
+  var item = e.target.closest('.model-dd-item');
+  if (item && dd.contains(item)) {
+    var input = document.getElementById(_modelDdTarget);
+    if (input) input.value = item.dataset.model;
+    closeModelDd();
+    return;
+  }
+  if (!dd.contains(e.target)) closeModelDd();
+});
+
+// The list is fixed-positioned: any scroll would leave it floating elsewhere.
+window.addEventListener('scroll', function(e) {
+  var dd = document.getElementById('aiModelDd');
+  if (!dd || dd.style.display !== 'block') return;
+  if (e.target === dd) return;
+  closeModelDd();
+}, true);
+
+function _aiPost(path, payload) {
+  return fetch(_ingressPrefix() + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: payload === undefined ? undefined : JSON.stringify(payload)
+  }).then(function(r) { return r.json(); });
+}
+
+// Saves, then reloads the page (which AI buttons a page shows depends on it) -
+// unless a callback wants to continue, like the connection test.
+function aiSettingsSave(cb) {
+  var p = document.getElementById('aiProviderSelect').value;
+  var payload = {
+    ai_provider: p,
+    chat_model: document.getElementById('aiChatModelInput').value
+  };
+  if (p !== 'none') {
+    payload[p + '_model'] = document.getElementById('aiModelInput').value;
+    if (p === 'ollama') payload.ollama_host = document.getElementById('aiHostInput').value;
+    if (p === 'openai') payload.openai_web_search = document.getElementById('aiWebSearchToggle').checked;
+    var key = document.getElementById('aiApiKeyInput').value.trim();
+    if (key) payload[p + '_api_key'] = key;
+  }
+  _aiStatus('…');
+  _aiBusy(true);
+  _aiPost('/api/ai-settings', payload)
+    .then(function(data) {
+      if (!data.ok) { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); return; }
+      if (payload[p + '_api_key']) delete _aiModelCache[p];
+      document.getElementById('aiApiKeyInput').value = '';
+      _aiStatus(T.ai_saved, 'ok');
+      if (typeof cb === 'function') { cb(); return; }
+      location.reload();
+    })
+    .catch(function() { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); });
+}
+
+function aiSettingsTest() {
+  aiSettingsSave(function() {
+    _aiStatus(T.ai_testing);
+    _aiPost('/api/ai-settings/test')
+      .then(function(data) {
+        _aiStatus(data.ok ? T.ai_test_ok : T.ai_test_failed + ': ' + (data.error || ''),
+                  data.ok ? 'ok' : 'error');
+        _aiBusy(false);
+      })
+      .catch(function() { _aiStatus(T.ai_test_failed, 'error'); _aiBusy(false); });
+  });
+}
+
+// Drops every app override so the add-on configuration applies again. Asks the
+// server which ones exist: "Test connection" saves without a reload, so the
+// list from page load can be out of date.
+function aiSettingsResetOverrides() {
+  _aiBusy(true);
+  fetch(_ingressPrefix() + '/api/ai-settings')
+    .then(function(r) { return r.json(); })
+    .then(function(current) {
+      var payload = {};
+      (current.overrides || []).forEach(function(k) { payload[k] = null; });
+      return _aiPost('/api/ai-settings', payload);
+    })
+    .then(function(data) {
+      if (!data.ok) { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); return; }
+      location.reload();
+    })
+    .catch(function() { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); });
+}
+
 // Reopens on the last tab - unless that tab is gone (the sommelier tab only
 // exists while AI is configured), then on the first one.
 function initSettingsTabs() {
@@ -327,6 +552,7 @@ document.addEventListener('DOMContentLoaded', function() {
   updateThemeSegmented();
   updateThemeDropdown();
   initSettingsTabs();
+  if (document.getElementById('aiProviderSelect')) aiSettingsLoad();
 });
 
 // ── Area (cellar / bar) ──────────────────────────────────────────────────────

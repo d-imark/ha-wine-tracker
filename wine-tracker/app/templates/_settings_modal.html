@@ -9,6 +9,7 @@
        exists when its section does - same conditions as the sections. #}
     <div class="settings-tabs">
       <button type="button" class="settings-tab" data-tab="appearance" onclick="switchSettingsTab('appearance')"><i class="mdi mdi-palette-outline"></i> {{ t.settings_theme }}</button>
+      {% if not auth_readonly %}<button type="button" class="settings-tab" data-tab="ai" onclick="switchSettingsTab('ai')"><i class="mdi mdi-robot-outline"></i> {{ t.settings_ai }}</button>{% endif %}
       {% if ai_enabled %}<button type="button" class="settings-tab" data-tab="sommelier" onclick="switchSettingsTab('sommelier')"><i class="mdi mdi-chat-outline"></i> {{ t.settings_chat }}</button>{% endif %}
       <button type="button" class="settings-tab" data-tab="data" onclick="switchSettingsTab('data')"><i class="mdi mdi-database-outline"></i> {{ t.settings_data }}</button>
       <button type="button" class="settings-tab" data-tab="about" onclick="switchSettingsTab('about')"><i class="mdi mdi-information-outline"></i> {{ t.settings_about }}</button>
@@ -130,6 +131,96 @@
         </div>
       </div>
 
+      <!-- AI provider settings (hidden for readonly users). theme.js fills
+           and saves it through /api/ai-settings; API keys are write-only. -->
+      {% if not auth_readonly %}
+      <div class="settings-section" data-settings-tab="ai">
+        <div class="settings-section-title">{{ t.settings_ai }}</div>
+
+        <div class="settings-row">
+          <div class="settings-row-label">{{ t.settings_ai_provider }}</div>
+          <div class="settings-row-control">
+            <select id="aiProviderSelect" onchange="aiSettingsProviderChanged()">
+              <option value="none">{{ t.ai_provider_none }}</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="ollama">Ollama</option>
+              <option value="minimax">MiniMax</option>
+              <option value="mistral">Mistral</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="aiProviderFields" class="settings-fields" style="display:none">
+          <div class="settings-row" id="aiKeyRow">
+            <div class="settings-row-label">{{ t.settings_ai_api_key }}</div>
+            <div class="settings-row-control">
+              <input type="password" id="aiApiKeyInput" class="ai-field" autocomplete="new-password">
+            </div>
+          </div>
+          <div class="settings-row" id="aiHostRow" style="display:none">
+            <div class="settings-row-label">Ollama Host</div>
+            <div class="settings-row-control">
+              <input type="text" id="aiHostInput" class="ai-field" placeholder="http://localhost:11434">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">{{ t.settings_ai_model }}</div>
+            <div class="settings-row-control">
+              <div class="model-dd-wrap">
+                <input type="text" id="aiModelInput" class="ai-field" autocomplete="off">
+                <button type="button" class="model-dd-btn" id="aiModelDdBtn" onclick="toggleModelDd('aiModelInput', event)" style="display:none"><i class="mdi mdi-chevron-down"></i></button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-row settings-row--top">
+            <div class="settings-row-label">{{ t.settings_ai_chat_model }}</div>
+            <div class="settings-row-control">
+              <div class="model-dd-wrap">
+                <input type="text" id="aiChatModelInput" class="ai-field" autocomplete="off">
+                <button type="button" class="model-dd-btn" id="aiChatModelDdBtn" onclick="toggleModelDd('aiChatModelInput', event)" style="display:none"><i class="mdi mdi-chevron-down"></i></button>
+              </div>
+              <div class="data-row-hint">{{ t.settings_ai_chat_model_hint }}</div>
+            </div>
+          </div>
+          {# OpenAI only: answers via the web search tool #}
+          <div class="settings-row settings-row--toggle" id="aiWebSearchRow" style="display:none">
+            <div class="settings-row-label">
+              {{ t.settings_ai_web_search }}
+              <div class="data-row-hint">{{ t.settings_ai_web_search_hint }}</div>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="aiWebSearchToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-label"></div>
+          <div class="settings-row-control">
+            <div class="ai-actions">
+              <button type="button" class="btn-submit ai-action-btn" id="aiSaveBtn" onclick="aiSettingsSave()">{{ t.btn_save_settings }}</button>
+              <button type="button" class="btn-cancel ai-action-btn" id="aiTestBtn" onclick="aiSettingsTest()">{{ t.btn_test_connection }}</button>
+            </div>
+            <div id="aiSettingsStatus" class="ai-status" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+
+        {# Shown while app values override the add-on configuration #}
+        <div class="settings-row" id="aiOverridesHint" style="display:none">
+          <div class="settings-row-label"></div>
+          <div class="settings-row-control">
+            <div class="data-row-hint">{{ t.ai_overrides_hint }}</div>
+            <button type="button" class="btn-cancel ai-action-btn ai-reset-btn" onclick="aiSettingsResetOverrides()">{{ t.btn_ai_reset }}</button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- Chat (only when AI is configured) -->
       {% if ai_enabled %}
       <div class="settings-section" data-settings-tab="sommelier">
@@ -242,3 +333,5 @@
     {% endif %}
   </div>
 </div>
+{# Model picker - fixed-positioned, outside the scrolling modal body #}
+<div class="model-dd-list" id="aiModelDd" style="display:none"></div>

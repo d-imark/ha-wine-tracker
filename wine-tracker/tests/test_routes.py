@@ -1963,7 +1963,7 @@ def _settings_tabs(html):
 def test_settings_modal_has_tabs(client):
     html = client.get("/").data.decode()
     tabs = _settings_tabs(html)
-    assert tabs == ["appearance", "data", "about"]      # no AI configured
+    assert tabs == ["appearance", "ai", "data", "about"]      # no AI configured
     for t in tabs:
         assert f'data-settings-tab="{t}"' in html
 
@@ -1973,7 +1973,7 @@ def test_sommelier_tab_only_with_ai(client, monkeypatch):
     monkeypatch.setattr(wine_app, "load_options", lambda: {
         **wine_app.HA_OPTIONS, "ai_provider": "anthropic", "anthropic_api_key": "sk-test"})
     assert _settings_tabs(client.get("/").data.decode()) == [
-        "appearance", "sommelier", "data", "about"]
+        "appearance", "ai", "sommelier", "data", "about"]
 
 
 def test_no_settings_footer_without_login(client):
@@ -2121,3 +2121,23 @@ class TestAiSettingsAuth:
         resp = client.post("/api/ai-settings", json={"ai_provider": "openai"},
                            headers={"X-Requested-With": "XMLHttpRequest"})
         assert resp.get_json()["ok"] is True
+
+
+def test_readonly_sees_no_ai_tab(client, monkeypatch):
+    import app as wine_app
+    monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+    with client.session_transaction() as s:
+        s["user"] = "viewer"
+        s["role"] = "readonly"
+    html = client.get("/").data.decode()
+    assert "ai" not in _settings_tabs(html)
+    assert 'id="aiProviderSelect"' not in html
+
+
+def test_ai_tab_offers_every_provider_and_web_search(client):
+    html = client.get("/").data.decode()
+    section = html.split('data-settings-tab="ai"', 1)[1].split('data-settings-tab=', 1)[0]
+    for p in ("none", "anthropic", "openai", "openrouter", "ollama", "minimax", "mistral"):
+        assert f'<option value="{p}"' in section, p
+    assert 'id="aiWebSearchToggle"' in section and 'id="aiOverridesHint"' in section
+    assert 'id="aiModelDd"' in html
