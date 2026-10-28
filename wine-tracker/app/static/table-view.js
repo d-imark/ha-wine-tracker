@@ -204,62 +204,105 @@
     syncHeaderButton(true);
 
     // Sort click handlers - persist in localStorage
-    var savedSortCol = '';
-    var savedSortAsc = false;
-    try {
-      savedSortCol = localStorage.getItem('wineTableSortCol') || '';
-      savedSortAsc = localStorage.getItem('wineTableSortAsc') === 'true';
-    } catch (e) {}
-    var sortDir = {};
-    if (savedSortCol) sortDir[savedSortCol] = savedSortAsc;
-
-    function sortTableBy(key, asc) {
-      sortDir[key] = asc;
-      try {
-        localStorage.setItem('wineTableSortCol', key);
-        localStorage.setItem('wineTableSortAsc', String(asc));
-      } catch (e) {}
-      var rows = Array.from(table.querySelectorAll('tbody tr'));
-      var numeric = isNumericKey(key);
-      rows.sort(function(a, b) {
-        var aCard = document.querySelector('.card[data-id="' + a.dataset.cardId + '"]');
-        var bCard = document.querySelector('.card[data-id="' + b.dataset.cardId + '"]');
-        if (!aCard || !bCard) return 0;
-        var aVal = aCard.dataset[key] || '';
-        var bVal = bCard.dataset[key] || '';
-        if (numeric) {
-          aVal = parseFloat(aVal) || 0;
-          bVal = parseFloat(bVal) || 0;
-          return asc ? aVal - bVal : bVal - aVal;
-        }
-        return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      });
-      var tbodyEl = table.querySelector('tbody');
-      rows.forEach(function(r) { tbodyEl.appendChild(r); });
-      // Update sort icons
-      table.querySelectorAll('.wine-table-sortable .mdi').forEach(function(icon) {
-        icon.className = 'mdi mdi-swap-vertical';
-        icon.style.opacity = '.5';
-      });
-      var activeTh = table.querySelector('[data-sort="' + key + '"] .mdi');
-      if (activeTh) {
-        activeTh.className = 'mdi ' + (asc ? 'mdi-chevron-up' : 'mdi-chevron-down');
-        activeTh.style.opacity = '1';
-      }
-    }
+    var saved = savedSort();
+    sortDir = {};
+    if (saved.col) sortDir[saved.col] = saved.asc;
 
     table.querySelectorAll('.wine-table-sortable').forEach(function(th) {
       th.addEventListener('click', function() {
         var key = th.dataset.sort;
         var asc = !(sortDir[key] || false);
+        if (searchActive) columnPickedDuringSearch = true;
         sortTableBy(key, asc);
       });
     });
 
-    // Apply saved sort on load
-    if (savedSortCol) {
-      sortTableBy(savedSortCol, savedSortAsc);
+    applyOrder();
+  }
+
+  // ── Row order ──────────────────────────────────────────────────────────
+  // Rows follow the saved column sort. While a search is active they follow
+  // the cards instead, which index.html ranks by relevance - until the user
+  // picks a column. Clearing the search returns to the saved column.
+  var sortDir = {};
+  var searchActive = false;
+  var columnPickedDuringSearch = false;
+
+  function savedSort() {
+    var s = { col: '', asc: false };
+    try {
+      s.col = localStorage.getItem('wineTableSortCol') || '';
+      s.asc = localStorage.getItem('wineTableSortAsc') === 'true';
+    } catch (e) {}
+    return s;
+  }
+
+  function setSortIcons(table, key, asc) {
+    table.querySelectorAll('.wine-table-sortable .mdi').forEach(function(icon) {
+      icon.className = 'mdi mdi-swap-vertical';
+      icon.style.opacity = '.5';
+    });
+    var activeTh = key && table.querySelector('[data-sort="' + key + '"] .mdi');
+    if (activeTh) {
+      activeTh.className = 'mdi ' + (asc ? 'mdi-chevron-up' : 'mdi-chevron-down');
+      activeTh.style.opacity = '1';
     }
+  }
+
+  function sortTableBy(key, asc) {
+    var table = document.getElementById('wineTable');
+    if (!table) return;
+    sortDir[key] = asc;
+    try {
+      localStorage.setItem('wineTableSortCol', key);
+      localStorage.setItem('wineTableSortAsc', String(asc));
+    } catch (e) {}
+    var rows = Array.from(table.querySelectorAll('tbody tr'));
+    var numeric = isNumericKey(key);
+    rows.sort(function(a, b) {
+      var aCard = document.querySelector('.card[data-id="' + a.dataset.cardId + '"]');
+      var bCard = document.querySelector('.card[data-id="' + b.dataset.cardId + '"]');
+      if (!aCard || !bCard) return 0;
+      var aVal = aCard.dataset[key] || '';
+      var bVal = bCard.dataset[key] || '';
+      if (numeric) {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+        return asc ? aVal - bVal : bVal - aVal;
+      }
+      return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+    var tbodyEl = table.querySelector('tbody');
+    rows.forEach(function(r) { tbodyEl.appendChild(r); });
+    setSortIcons(table, key, asc);
+  }
+
+  function followCards() {
+    var table = document.getElementById('wineTable');
+    if (!table) return;
+    var tbodyEl = table.querySelector('tbody');
+    var rows = {};
+    tbodyEl.querySelectorAll('tr').forEach(function(r) { rows[r.dataset.cardId] = r; });
+    document.querySelectorAll('#wineGrid .card').forEach(function(card) {
+      var row = rows[card.dataset.id];
+      if (row) tbodyEl.appendChild(row);
+    });
+    setSortIcons(table, '', false);
+  }
+
+  function applyOrder() {
+    var saved = savedSort();
+    if ((searchActive && !columnPickedDuringSearch) || !saved.col) followCards();
+    else sortTableBy(saved.col, saved.asc);
+  }
+
+  // Called by applyFilters() in index.html after it has ranked the cards.
+  function syncSearch(active) {
+    if (!active && !searchActive) return;
+    if (!active) columnPickedDuringSearch = false;
+    searchActive = active;
+    if (active && columnPickedDuringSearch) return;
+    applyOrder();
   }
 
   function remove() {
@@ -311,5 +354,6 @@
     openPicker: openPicker,
     togglePicked: togglePicked,
     resetColumns: resetColumns,
+    syncSearch: syncSearch,
   };
 })();

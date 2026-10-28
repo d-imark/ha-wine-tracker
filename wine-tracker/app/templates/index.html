@@ -301,6 +301,7 @@
 </div>
 
 <script src="{{ ingress }}/static/theme.js"></script>
+<script src="{{ ingress }}/static/search.js"></script>
 <script>
 const INGRESS = '{{ ingress }}';
 const CURRENCY = '{{ currency }}';
@@ -394,8 +395,27 @@ function debouncedFilter() {
   _filterTimer = setTimeout(applyFilters, 150);
 }
 
+// ── Search ───────────────────────────────────────────────────────────────────
+// Matching and ranking live in static/search.js. A card's normalized index is
+// cached on the element and rebuilt only when its data changes.
+function searchTokens() {
+  return WineSearch.tokenize(document.getElementById('searchInput').value);
+}
+
+function searchScore(card, tokens) {
+  var d = card.dataset;
+  var key = Object.keys(d).map(function(k) { return d[k]; }).join('\u0001');
+  if (card._searchKey !== key) {
+    card._searchKey = key;
+    card._searchIndex = WineSearch.buildIndex(d);
+  }
+  return WineSearch.score(card._searchIndex, tokens);
+}
+
+var _searchWasActive = false;
+
 function applyFilters() {
-  var query = document.getElementById('searchInput').value.trim().toLowerCase();
+  var tokens = searchTokens();
   var cards = document.querySelectorAll('.grid .card');
   var bottleVisibleCount = 0;
   var wineVisibleCount = 0;
@@ -404,14 +424,7 @@ function applyFilters() {
     var d = card.dataset;
     // Type match
     var typeOk = !activeType || d.type === activeType;
-    // Search match (name, region, notes)
-    var searchOk = !query ||
-      (d.name || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.region || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.year || '').indexOf(query) !== -1 ||
-      (d.grape || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.description || '').toLowerCase().indexOf(query) !== -1;
+    var searchOk = searchScore(card, tokens) > 0;
     // Drink window match
     var dwOk = true;
     if (activeDrinkWindow) {
@@ -439,6 +452,12 @@ function applyFilters() {
     if (visible) wineVisibleCount++;
   });
 
+  // Rank by relevance while searching; back to the default order once cleared.
+  var searchActive = tokens.length > 0;
+  if (searchActive || _searchWasActive) sortGrid();
+  if (window.TableView) TableView.syncSearch(searchActive);
+  _searchWasActive = searchActive;
+
   // Sync table row visibility if table view is active
   syncTableVisibility();
 
@@ -464,7 +483,7 @@ function applyFilters() {
   var wineCountEl = document.getElementById('wineCountNum');
   if (wineCountEl) wineCountEl.textContent = wineVisibleCount;
   var clearBtn = document.querySelector('.search-clear');
-  if (clearBtn) clearBtn.style.display = query ? 'block' : '';
+  if (clearBtn) clearBtn.style.display = searchActive ? 'block' : '';
 
   // Update tab counts
   updateTabCounts();
@@ -474,20 +493,14 @@ function updateTabCounts() {
   var opts = document.querySelectorAll('#filterTabs .filter-option');
   if (!opts.length) return;
   var cards = document.querySelectorAll('.grid .card');
-  var query = document.getElementById('searchInput').value.trim().toLowerCase();
+  var tokens = searchTokens();
 
   // Count cards per type (respecting search + empty filter, ignoring type filter)
   var counts = {};
   var total = 0;
   cards.forEach(function(card) {
     var d = card.dataset;
-    var searchOk = !query ||
-      (d.name || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.region || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.year || '').indexOf(query) !== -1 ||
-      (d.grape || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.description || '').toLowerCase().indexOf(query) !== -1;
+    var searchOk = searchScore(card, tokens) > 0;
     var dwOk = true;
     if (activeDrinkWindow) {
       var until = parseInt(d.drink_until);
@@ -535,11 +548,7 @@ function updateTabCounts() {
   var curYear = new Date().getFullYear();
   cards.forEach(function(card) {
     var d = card.dataset;
-    var searchOk = !query ||
-      (d.name || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.region || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.notes || '').toLowerCase().indexOf(query) !== -1 ||
-      (d.description || '').toLowerCase().indexOf(query) !== -1;
+    var searchOk = searchScore(card, tokens) > 0;
     var typeOk = !activeType || d.type === activeType;
     var emptyOk = showEmpty || parseInt(d.quantity) > 0;
     var advOk = !window.AdvancedFilter || window.AdvancedFilter.evaluate(d);
@@ -1523,10 +1532,21 @@ function updateCardData(card, w) {
   card.classList.toggle('empty', w.quantity == 0);
 }
 
+// Default order is type, name, year. While a search is active the best hits
+// come first, with the default order breaking ties.
 function sortGrid() {
   var grid = document.querySelector('.grid');
   var cards = Array.from(grid.querySelectorAll('.card'));
+  var tokens = searchTokens();
+  var scores = {};
+  if (tokens.length) {
+    cards.forEach(function(c) { scores[c.dataset.id] = searchScore(c, tokens); });
+  }
   cards.sort(function(a, b) {
+    if (tokens.length) {
+      var s = scores[b.dataset.id] - scores[a.dataset.id];
+      if (s !== 0) return s;
+    }
     var t = (a.dataset.type || '').localeCompare(b.dataset.type || '');
     if (t !== 0) return t;
     var n = (a.dataset.name || '').localeCompare(b.dataset.name || '');

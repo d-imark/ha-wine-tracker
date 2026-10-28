@@ -1161,23 +1161,11 @@ def logout():
 @app.route("/")
 def index():
     db = get_db()
-    q = request.args.get("q", "").strip()
-    t = request.args.get("type", "")
-    show_empty = request.args.get("show_empty", "1")
     area = (request.args.get("area") or "").strip().lower()
 
+    # Search, type and empty-bottle filters all run client-side in index.html.
     sql = "SELECT * FROM wines WHERE 1=1"
-    params = []
 
-    if q:
-        sql += (" AND (name LIKE ? OR region LIKE ? OR notes LIKE ?"
-                " OR description LIKE ?)")
-        params += [f"%{q}%"] * 4
-    if t:
-        sql += " AND type = ?"
-        params.append(t)
-    if show_empty == "0":
-        sql += " AND quantity > 0"
     # Area switch: the cellar shows wine, the bar everything else.
     if area == "cellar":
         sql += " AND category = 'wine'"
@@ -1185,7 +1173,7 @@ def index():
         sql += " AND category != 'wine'"
 
     sql += " ORDER BY type, name, year"
-    wines = [dict(row) for row in db.execute(sql, params).fetchall()]
+    wines = [dict(row) for row in db.execute(sql).fetchall()]
     for w in wines:
         w["grapes"] = grapes.list_wine_grapes(db, w["id"])
         w["spirit_details"] = spirits.get_details(db, w["id"])
@@ -1208,9 +1196,6 @@ def index():
         "index.html",
         wines=wines,
         used_types=used_types,
-        query=q,
-        active_type=t,
-        show_empty=show_empty,
         stats=stats,
         area=area or "cellar",
         price_effective=price_effective,

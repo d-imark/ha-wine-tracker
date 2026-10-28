@@ -28,14 +28,22 @@ class TestIndex:
         resp = client.get("/")
         assert b"Wine Tracker" in resp.data or b"wine" in resp.data.lower()
 
-    def test_search_filter(self, client, sample_wine):
-        resp = client.get("/?q=Château")
-        assert resp.status_code == 200
-        assert b"teau Test" in resp.data
+    def test_cards_carry_every_searched_field(self, client, sample_wine):
+        """The search runs client-side on data-* attributes (static/search.js);
+        every field it scores has to be on the card."""
+        html = client.get("/").data.decode()
+        assert "static/search.js" in html
+        for key in ("name", "winery", "year", "region", "country", "grape",
+                    "grapes", "location", "bottler", "cask", "notes",
+                    "description"):
+            assert f'data-{key}="' in html, key
 
-    def test_search_no_results(self, client, sample_wine):
-        resp = client.get("/?q=NonexistentWine12345")
-        assert resp.status_code == 200
+    def test_query_params_no_longer_filter_on_the_server(self, client):
+        """Search, type and empty filters moved to the browser; the server
+        ignores the old ?q=, ?type= and ?show_empty= parameters."""
+        client.post("/add", data={"name": "Leer", "quantity": "0"}, headers=AJAX)
+        html = client.get("/?q=Zzzgibtsnicht&type=Rotwein&show_empty=0").data
+        assert b'data-name="Leer"' in html
 
     def test_edit_param_loads(self, client, sample_wine):
         """Index with ?edit=ID should load successfully (JS opens modal client-side)."""
@@ -74,10 +82,6 @@ class TestIndex:
         # The JS-exposed handlers wired to the dialog's buttons:
         assert b'AdvancedFilter.closeNameDialog' in resp.data
         assert b'AdvancedFilter.confirmNameDialog' in resp.data
-
-    def test_type_filter(self, client, sample_wine):
-        resp = client.get("/?type=Rotwein")
-        assert resp.status_code == 200
 
     def test_drink_window_filter_labels_rendered(self, client, sample_wine):
         """Drink-window filter radios must render their translated labels.
@@ -121,15 +125,6 @@ class TestIndex:
         """Pencil button should still call editFromCard."""
         resp = client.get("/")
         assert b'editFromCard(this)' in resp.data
-
-    def test_hide_empty_bottles(self, client):
-        """show_empty=0 should hide wines with quantity=0."""
-        # Add a wine with quantity 0
-        client.post("/add", data={"name": "Empty Wine", "quantity": "0"}, headers=AJAX)
-        client.post("/add", data={"name": "Full Wine", "quantity": "5"}, headers=AJAX)
-        resp = client.get("/?show_empty=0")
-        assert b"Full Wine" in resp.data
-        assert b"Empty Wine" not in resp.data
 
     def test_view_toggle_buttons_present(self, client):
         """Settings modal should contain view mode radio buttons for all 4 view modes."""
@@ -1694,14 +1689,6 @@ class TestDescriptionAndNotes:
         row = db.execute("SELECT quantity, description FROM wines WHERE id=?", (wid,)).fetchone()
         assert row["quantity"] == 5
         assert row["description"] == "Bleibt stehen"
-
-    def test_search_covers_both_fields(self, client, db):
-        client.post("/add", data={"name": "Suchtest A", "quantity": "1",
-                                  "description": "Zzzbeschreibung"}, headers=AJAX)
-        client.post("/add", data={"name": "Suchtest B", "quantity": "1",
-                                  "notes": "Zzznotiz"}, headers=AJAX)
-        assert b"Suchtest A" in client.get("/?q=Zzzbeschreibung").data
-        assert b"Suchtest B" in client.get("/?q=Zzznotiz").data
 
     def test_duplicate_carries_the_description(self, client, db):
         client.post("/add", data={"name": "Dupli", "quantity": "1",
