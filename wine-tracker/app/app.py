@@ -166,8 +166,11 @@ def load_options():
     db_path = globals().get("DB_PATH")
     if db_path and os.path.exists(db_path):
         try:
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+            finally:
+                conn.close()
             for key, value in rows:
                 if key in AI_SETTING_KEYS and value:
                     defaults[key] = value
