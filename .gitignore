@@ -11,3 +11,5 @@ venv/
 scripts/reference_gap_report.md
 scripts/__pycache__/
 scripts/run-dev.local.ps1
+# Exports and backups (may hold real cellar data)
+*.zip
