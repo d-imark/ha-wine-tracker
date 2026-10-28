@@ -797,3 +797,32 @@ class TestAlcoholImportValues:
         _import(db, upload_dir, _zip_with([{"name": "Unsinn", "quantity": 1,
                                             "alcohol_pct": "inf"}]), "x.zip")
         assert _bottle(db, "Unsinn")["alcohol_pct"] is None
+
+
+class TestTimelineReplay:
+    def _zip(self, wines, timeline):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("wines.json", json.dumps(wines))
+            zf.writestr("timeline.json", json.dumps(timeline))
+        return buf.getvalue()
+
+    def test_every_entry_of_a_new_wine_is_restored(self, client, db, upload_dir):
+        """Only the first entry per wine used to survive: the 'has any timeline'
+        guard also fired on entries this very import had just written."""
+        tl = [{"wine_id": 7, "action": "added", "quantity": 6, "timestamp": "2026-01-01T10:00:00"},
+              {"wine_id": 7, "action": "consumed", "quantity": 1, "timestamp": "2026-02-01T19:00:00"},
+              {"wine_id": 7, "action": "restocked", "quantity": 2, "timestamp": "2026-03-01T12:00:00"}]
+        _import(db, upload_dir, self._zip([{"id": 7, "name": "Verlauf", "quantity": 7}], tl), "t.zip")
+        wid = db.execute("SELECT id FROM wines WHERE name='Verlauf'").fetchone()[0]
+        rows = db.execute("SELECT action, quantity FROM timeline WHERE wine_id=? ORDER BY timestamp",
+                          (wid,)).fetchall()
+        assert [(r[0], r[1]) for r in rows] == [("added", 6), ("consumed", 1), ("restocked", 2)]
+
+    def test_existing_wine_keeps_its_own_timeline(self, client, db, upload_dir):
+        client.post("/add", data={"name": "Schon da", "quantity": "1"}, headers=AJAX)
+        wid = db.execute("SELECT id FROM wines WHERE name='Schon da'").fetchone()[0]
+        before = db.execute("SELECT COUNT(*) FROM timeline WHERE wine_id=?", (wid,)).fetchone()[0]
+        tl = [{"wine_id": 3, "action": "consumed", "quantity": 1, "timestamp": "2026-02-01T19:00:00"}]
+        _import(db, upload_dir, self._zip([{"id": 3, "name": "Schon da", "quantity": 1}], tl), "t.zip")
+        assert db.execute("SELECT COUNT(*) FROM timeline WHERE wine_id=?", (wid,)).fetchone()[0] == before

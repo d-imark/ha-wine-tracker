@@ -642,16 +642,14 @@ def apply_import(parsed: dict, matches: list[dict], db, upload_dir: str,
     # Timeline is best-effort: only replay entries for wines that were freshly
     # inserted. Existing wines keep their current timeline untouched.
     timeline_entries = parsed.get("timeline") or []
+    # Taken BEFORE replaying: checking per entry would also see the rows this
+    # import just wrote and keep only the first entry of every wine.
+    had_timeline = {r[0] for r in db.execute(
+        "SELECT DISTINCT wine_id FROM timeline").fetchall()}
     for entry in timeline_entries:
         orig = entry.get("wine_id")
         new_id = id_map.get(orig)
-        if new_id is None:
-            continue
-        # Skip if this new_id already has any timeline (we only seed fresh ones)
-        has_any = db.execute(
-            "SELECT 1 FROM timeline WHERE wine_id=? LIMIT 1", (new_id,)
-        ).fetchone()
-        if has_any:
+        if new_id is None or new_id in had_timeline:
             continue
         db.execute(
             "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
