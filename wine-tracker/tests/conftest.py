@@ -94,6 +94,9 @@ def _patch_env(tmp_path, monkeypatch, _template_db):
     monkeypatch.setattr(wine_app, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(wine_app, "DB_PATH", db_path)
     monkeypatch.setattr(wine_app, "HA_OPTIONS", dict(TEST_OPTIONS))
+    # Deleted wines are kept in a module-level dict for the undo; ids repeat
+    # across tests, so a leftover from one test must not reach the next.
+    wine_app._DELETED_WINES.clear()
 
 
 @pytest.fixture

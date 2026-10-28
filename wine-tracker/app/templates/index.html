@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="{{ ingress }}/static/style.css">
 <script>
-(function(){var p={{ user_prefs | tojson }};var any=false;var dirty=false;try{dirty=!!localStorage.getItem('wtPrefsDirty')}catch(e){}for(var k in p){any=true;if(!dirty){try{localStorage.setItem(k,p[k])}catch(e){}}}window._serverPrefsEmpty=!any;window._prefsDirty=dirty;var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
+(function(){var p={{ user_prefs | tojson }},K={{ pref_keys | tojson }},any=false,dirty=false;for(var k in p){any=true;break}try{var dp=localStorage.getItem('wtPrefsDirty');dirty=!!dp&&dp!=='[]'}catch(e){}if(any&&!dirty){try{for(var i=0;i<K.length;i++){if(K[i] in p)localStorage.setItem(K[i],p[K[i]]);else localStorage.removeItem(K[i])}}catch(e){}}window._serverPrefsEmpty=!any;window._prefsDirty=dirty;var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
 </script>
 <script>window.INGRESS='{{ ingress }}';window._areaPath='/';</script>
 <title>Wine Tracker</title>
@@ -1623,32 +1623,33 @@ function changeQtyCard(card, delta, isUndo) {
   var oldQty = parseInt(d.quantity) || 0;
   var newQty = Math.max(0, oldQty + delta);
   if (newQty === oldQty) return;
+  var change = newQty - oldQty;
 
-  // /edit clears what a post leaves out for these fields, so they are sent
-  // back unchanged. grape/grapes are deliberately NOT sent: /edit would
-  // rebuild the blend from the plain text and drop the percentages.
-  var fd = new FormData();
-  [['name', d.name], ['year', d.year], ['type', d.type], ['region', d.region],
-   ['quantity', newQty], ['rating', d.rating], ['notes', d.notes],
-   ['description', d.description || ''],
-   ['bottle_format', d.bottle_format || '0.75'], ['vivino_id', d.vivino_id || ''],
-   ['drink_from', d.drink_from || ''], ['drink_until', d.drink_until || ''],
-   ['location', d.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
-  if (isUndo) fd.append('qty_undo', '1');
-
+  // Only the change goes to the server, which applies it in one transaction:
+  // quick clicks can then arrive in any order without saving an older number,
+  // and no other field of the bottle is touched.
   applyQtyUI(card, newQty);          // optimistic
-  fetch(INGRESS + '/edit/' + id, {
-    method: 'POST', body: fd,
-    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  var seq = (card._qtySeq || 0) + 1;
+  card._qtySeq = seq;
+  fetch(INGRESS + '/api/wine/' + id + '/quantity', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: JSON.stringify({ delta: change, undo: !!isUndo })
   })
-    .then(function(r) { if (!r.ok) throw new Error('save failed'); })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.ok) throw new Error('save failed');
+      // Only the answer to the latest click may set the number; an earlier
+      // one arriving late would flicker back.
+      if (card._qtySeq === seq) applyQtyUI(card, data.wine.quantity);
+    })
     .catch(function() {
-      applyQtyUI(card, oldQty);
+      // Take back exactly this click, whatever other clicks did meanwhile.
+      applyQtyUI(card, Math.max(0, (parseInt(card.dataset.quantity) || 0) - change));
       showErrorToast(T.toast_save_failed);
     });
 
   if (isUndo) { hideUndoToast(); return; }
-  var change = newQty - oldQty;
   showUndoToast(change < 0 ? T.toast_bottle_removed : T.toast_bottle_added, function() {
     var c = document.querySelector('.card[data-id="' + id + '"]');
     if (c) changeQtyCard(c, -change, true);

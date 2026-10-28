@@ -5,6 +5,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import threading
 import time
 import uuid
 from collections import defaultdict
@@ -579,6 +580,7 @@ def inject_globals():
         ctx["user_prefs"] = load_user_prefs()
     except Exception:
         ctx["user_prefs"] = {}
+    ctx["pref_keys"] = sorted(PREF_KEYS)
     return ctx
 
 
@@ -1556,6 +1558,12 @@ def edit(wine_id):
         purchased_at_val = request.form.get("purchased_at", "").strip() or None
     else:
         purchased_at_val = wine["purchased_at"]
+    # The plain grape text: a post without grape data keeps it. Writing None
+    # here emptied it on every quantity change, while the blend survived.
+    if "grape" in request.form or "grapes" in request.form:
+        grape_val = request.form.get("grape", "").strip() or None
+    else:
+        grape_val = wine["grape"]
     # A quantity +/- post does not carry it - keep the stored value then.
     if "alcohol_pct" in request.form:
         alcohol_val = _alcohol_from_form(request.form)
@@ -1588,7 +1596,7 @@ def edit(wine_id):
             request.form.get("drink_from") or None,
             request.form.get("drink_until") or None,
             request.form.get("location", "").strip() or None,
-            request.form.get("grape", "").strip() or None,
+            grape_val,
             int(vivino_raw) if vivino_raw else None,
             float(bottle_format_raw) if bottle_format_raw else 0.75,
             maturity_data_raw,
@@ -1603,27 +1611,8 @@ def edit(wine_id):
             wine_id,
         ),
     )
-    # Log quantity changes. An undo (qty_undo=1, from the toast) removes the
-    # entry it reverts instead of logging a counter entry - otherwise every
-    # undone click would show up in the timeline and the stats twice.
-    if new_quantity != old_quantity:
-        undone = False
-        if request.form.get("qty_undo") == "1":
-            reverted_action = "restocked" if new_quantity < old_quantity else "consumed"
-            entry = db.execute(
-                "SELECT id FROM timeline WHERE wine_id=? AND action=? AND quantity=? "
-                "ORDER BY id DESC LIMIT 1",
-                (wine_id, reverted_action, abs(new_quantity - old_quantity)),
-            ).fetchone()
-            if entry:
-                db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
-                undone = True
-        if not undone:
-            action = "consumed" if new_quantity < old_quantity else "restocked"
-            db.execute(
-                "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
-                (wine_id, action, abs(new_quantity - old_quantity), datetime.now().isoformat()),
-            )
+    _log_quantity_change(db, wine_id, old_quantity, new_quantity,
+                         undo=request.form.get("qty_undo") == "1")
     # Only touch grapes when the request actually carries grape data. A pure
     # quantity change (viewChangeQty) omits both keys, so structured pct survives.
     if "grapes" in request.form or "grape" in request.form:
@@ -1635,6 +1624,54 @@ def edit(wine_id):
         return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
     path = g.get("ingress", "") + url_for("index") + f"?new={wine_id}"
     return redirect(path)
+
+
+def _log_quantity_change(db, wine_id, old_quantity, new_quantity, undo=False):
+    """Log a quantity change in the timeline. An undo (from the toast) removes
+    the entry it reverts instead of logging a counter entry - otherwise every
+    undone click would show up in the timeline and the stats twice."""
+    if new_quantity == old_quantity:
+        return
+    if undo:
+        reverted_action = "restocked" if new_quantity < old_quantity else "consumed"
+        entry = db.execute(
+            "SELECT id FROM timeline WHERE wine_id=? AND action=? AND quantity=? "
+            "ORDER BY id DESC LIMIT 1",
+            (wine_id, reverted_action, abs(new_quantity - old_quantity)),
+        ).fetchone()
+        if entry:
+            db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
+            return
+    action = "consumed" if new_quantity < old_quantity else "restocked"
+    db.execute(
+        "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
+        (wine_id, action, abs(new_quantity - old_quantity), datetime.now().isoformat()),
+    )
+
+
+@app.route("/api/wine/<int:wine_id>/quantity", methods=["POST"])
+def api_wine_quantity(wine_id):
+    """Change the quantity by a delta (+1 / -1 from the popover and buttons).
+
+    Read and write happen in one IMMEDIATE transaction: quick clicks arrive on
+    parallel threads, and absolute values posted per click could overtake each
+    other and save an older number. Touches nothing but the quantity."""
+    payload = request.get_json(silent=True) or {}
+    delta = payload.get("delta")
+    if isinstance(delta, bool) or not isinstance(delta, int):
+        return jsonify(ok=False, error="delta_required"), 400
+    db = get_db()
+    db.execute("BEGIN IMMEDIATE")
+    row = db.execute("SELECT quantity FROM wines WHERE id=?", (wine_id,)).fetchone()
+    if not row:
+        db.rollback()
+        return jsonify(ok=False, error="not_found"), 404
+    old_quantity = row["quantity"] or 0
+    new_quantity = max(0, old_quantity + delta)
+    db.execute("UPDATE wines SET quantity=? WHERE id=?", (new_quantity, wine_id))
+    _log_quantity_change(db, wine_id, old_quantity, new_quantity, undo=bool(payload.get("undo")))
+    db.commit()
+    return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
 
 
 @app.route("/duplicate/<int:wine_id>", methods=["POST"])
@@ -1710,6 +1747,7 @@ def duplicate(wine_id):
 # and casks too. Lost on restart, which is fine for a few seconds of undo.
 _DELETED_WINES = {}
 _DELETED_WINES_MAX = 20
+_DELETED_WINES_LOCK = threading.Lock()      # waitress serves on 8 threads
 
 
 def _stash_wine(db, wine_id):
@@ -1723,9 +1761,10 @@ def _stash_wine(db, wine_id):
                 f"SELECT * FROM {table} WHERE wine_id=?", (wine_id,))]
         except sqlite3.OperationalError:
             children[table] = []      # table missing on very old databases
-    _DELETED_WINES[wine_id] = {"wine": dict(wine), "children": children}
-    while len(_DELETED_WINES) > _DELETED_WINES_MAX:
-        _DELETED_WINES.pop(next(iter(_DELETED_WINES)))
+    with _DELETED_WINES_LOCK:
+        _DELETED_WINES[wine_id] = {"wine": dict(wine), "children": children}
+        while len(_DELETED_WINES) > _DELETED_WINES_MAX:
+            _DELETED_WINES.pop(next(iter(_DELETED_WINES)))
     return wine
 
 
@@ -1759,23 +1798,32 @@ def delete(wine_id):
 @app.route("/api/wine/<int:wine_id>/restore", methods=["POST"])
 def restore_wine(wine_id):
     """Undo a deletion: the wine with its original id and all child rows."""
-    stashed = _DELETED_WINES.pop(wine_id, None)
+    # Taken out under the lock so two clicks cannot both restore; put back if
+    # the restore fails, so it can be tried again.
+    with _DELETED_WINES_LOCK:
+        stashed = _DELETED_WINES.pop(wine_id, None)
     if stashed is None:
         return jsonify(ok=False, error="not_restorable"), 404
     db = get_db()
     if db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
         return jsonify(ok=False, error="already_exists"), 409
-    _insert_row(db, "wines", stashed["wine"])
-    for table, rows in stashed["children"].items():
-        for row in rows:
-            _insert_row(db, table, row)
-    entry = db.execute(
-        "SELECT id FROM timeline WHERE wine_id=? AND action='removed' ORDER BY id DESC LIMIT 1",
-        (wine_id,),
-    ).fetchone()
-    if entry:
-        db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
-    db.commit()
+    try:
+        _insert_row(db, "wines", stashed["wine"])
+        for table, rows in stashed["children"].items():
+            for row in rows:
+                _insert_row(db, table, row)
+        entry = db.execute(
+            "SELECT id FROM timeline WHERE wine_id=? AND action='removed' ORDER BY id DESC LIMIT 1",
+            (wine_id,),
+        ).fetchone()
+        if entry:
+            db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        with _DELETED_WINES_LOCK:
+            _DELETED_WINES[wine_id] = stashed
+        raise
     return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
 
 
@@ -3778,22 +3826,22 @@ def _preset_row_to_dict(row):
 
 # ── UI preferences on the server ─────────────────────────────────────────────
 # localStorage alone loses them on a cache clear and on every other device.
-# Kept in step with PREF_KEYS / PREF_PREFIXES in theme.js.
+# Kept in step with PREF_KEYS in theme.js.
 PREF_KEYS = {
     "wine-theme", "wine-theme-name", "wineViewMode", "wineTableSortCol",
     "wineTableSortAsc", "wine-show-empty", "wine-advanced-filter-default",
     "chatEditWines", "chatRecording",
     "wt_area", "statsPriceBasis", "wineSettingsTab",
+    # the table column choice, per area
+    "wineTableCols.cellar", "wineTableCols.bar",
 }
-# The table column choice is stored per area: wineTableCols.cellar / .bar
-PREF_PREFIXES = ("wineTableCols.",)
 # Deliberately absent: "wine-advanced-filter", the ACTIVE filter. It is working
 # state - following you to another device it would hide bottles there.
 PREF_MAX_LEN = 4000
 
 
 def _is_pref_key(key):
-    return key in PREF_KEYS or any(key.startswith(p) for p in PREF_PREFIXES)
+    return isinstance(key, str) and key in PREF_KEYS
 
 
 def prefs_user():
@@ -3813,20 +3861,28 @@ def load_user_prefs():
 
 @app.route("/api/prefs", methods=["POST"])
 def api_prefs_save():
-    """Replace the user's preference snapshot. Readonly users may save their
-    own. A value too long to store is left out - cutting JSON would break it."""
+    """Apply what one browser changed: {"set": {key: value}, "remove": [key]}.
+
+    Per key, not a whole snapshot - a tab left open for days must not put its
+    old values back over what another device changed since. Readonly users
+    may save their own. A value too long to store is left out - cutting JSON
+    would break it."""
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
         return jsonify(ok=False, error="json_body_required"), 400
-    prefs = {k: v for k, v in payload.items()
-             if _is_pref_key(k) and isinstance(v, str) and len(v) <= PREF_MAX_LEN}
+    to_set = payload.get("set") if isinstance(payload.get("set"), dict) else {}
+    to_remove = payload.get("remove") if isinstance(payload.get("remove"), list) else []
     user = prefs_user()
     db = get_db()
-    db.execute("DELETE FROM user_prefs WHERE user = ?", (user,))
-    db.executemany(
-        "INSERT INTO user_prefs (user, key, value) VALUES (?, ?, ?)",
-        [(user, k, v) for k, v in prefs.items()],
-    )
+    for key, value in to_set.items():
+        if _is_pref_key(key) and isinstance(value, str) and len(value) <= PREF_MAX_LEN:
+            db.execute(
+                "INSERT INTO user_prefs (user, key, value) VALUES (?, ?, ?) "
+                "ON CONFLICT(user, key) DO UPDATE SET value=excluded.value",
+                (user, key, value))
+    for key in to_remove:
+        if _is_pref_key(key):
+            db.execute("DELETE FROM user_prefs WHERE user = ? AND key = ?", (user, key))
     db.commit()
     return jsonify(ok=True)
 

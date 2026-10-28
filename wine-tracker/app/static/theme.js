@@ -567,58 +567,68 @@ function confirmImport() {
 
 // ── UI preferences on the server ─────────────────────────────────────────────
 // Every page's head script seeds localStorage from the server copy (before
-// this file loads, so that does not echo back). From here on, writes to the
-// keys below are mirrored to /api/prefs, debounced. Kept in step with
-// PREF_KEYS / PREF_PREFIXES in app.py; the active advanced filter is left out
-// on purpose (working state, not a preference).
+// this file loads, so that does not echo back) and drops keys the server no
+// longer has. From here on, writes to the keys below are sent to /api/prefs -
+// only the keys that changed, so a tab left open for days cannot put its old
+// values back over what another device changed. Kept in step with PREF_KEYS in
+// app.py; the active advanced filter is left out on purpose (working state).
 var PREF_KEYS = ['wine-theme', 'wine-theme-name', 'wineViewMode', 'wineTableSortCol',
                  'wineTableSortAsc', 'wine-show-empty', 'wine-advanced-filter-default',
                  'chatEditWines', 'chatRecording',
-                 'wt_area', 'statsPriceBasis', 'wineSettingsTab'];
-var PREF_PREFIXES = ['wineTableCols.'];
+                 'wt_area', 'statsPriceBasis', 'wineSettingsTab',
+                 'wineTableCols.cellar', 'wineTableCols.bar'];
+// Keys changed here but not yet on the server, as a JSON list. While it is
+// not empty the head scripts do not seed from the (older) server copy -
+// otherwise a quick reload or page change would put the old value back.
+var PREF_DIRTY = 'wtPrefsDirty';
 var _prefSyncTimer = null;
+var _origSetItem = null, _origRemoveItem = null;
 
 function _isPrefKey(k) {
-  return PREF_KEYS.indexOf(k) !== -1 ||
-    PREF_PREFIXES.some(function(p) { return String(k).indexOf(p) === 0; });
+  return PREF_KEYS.indexOf(k) !== -1;
 }
 
-function _collectPrefs() {
-  var prefs = {};
-  try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (_isPrefKey(k)) prefs[k] = localStorage.getItem(k);
-    }
-  } catch (e) {}
-  return prefs;
+function _pendingPrefKeys() {
+  try { return JSON.parse(localStorage.getItem(PREF_DIRTY)) || []; } catch (e) { return []; }
 }
 
-// A change not yet on the server is marked in 'wtPrefsDirty'. While the mark
-// is set, the head scripts do not seed from the (older) server copy - without
-// it a quick reload or page change would put the old value back.
-var PREF_DIRTY = 'wtPrefsDirty';
+function _setPendingPrefKeys(keys) {
+  // The unpatched setter: the marker itself is not a preference.
+  try { (_origSetItem || Storage.prototype.setItem).call(localStorage, PREF_DIRTY, JSON.stringify(keys)); } catch (e) {}
+}
+
+function _markPrefPending(k) {
+  var keys = _pendingPrefKeys();
+  if (keys.indexOf(k) === -1) { keys.push(k); _setPendingPrefKeys(keys); }
+  clearTimeout(_prefSyncTimer);
+  _prefSyncTimer = setTimeout(_sendPrefs, 400);
+}
 
 function _sendPrefs() {
   clearTimeout(_prefSyncTimer);
   _prefSyncTimer = null;
-  var mark = null;
-  try { mark = localStorage.getItem(PREF_DIRTY); } catch (e) {}
+  var keys = _pendingPrefKeys();
+  if (!keys.length) return;
+  var set = {}, remove = [];
+  keys.forEach(function(k) {
+    var v = localStorage.getItem(k);
+    if (v === null) remove.push(k); else set[k] = v;
+  });
   fetch(_ingressPrefix() + '/api/prefs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    body: JSON.stringify(_collectPrefs()),
+    body: JSON.stringify({ set: set, remove: remove }),
     keepalive: true      // still delivered when the page is being left
   }).then(function(r) {
-    // Only clear the mark if nothing changed while the request was out.
-    try { if (r.ok && localStorage.getItem(PREF_DIRTY) === mark) localStorage.removeItem(PREF_DIRTY); } catch (e) {}
+    if (!r.ok) return;
+    // Settle only what was sent and has not changed again since.
+    var left = _pendingPrefKeys().filter(function(k) {
+      if (keys.indexOf(k) === -1) return true;
+      var v = localStorage.getItem(k);
+      return v === null ? !(remove.indexOf(k) !== -1) : set[k] !== v;
+    });
+    _setPendingPrefKeys(left);
   }).catch(function() {});
-}
-
-function _schedulePrefSync() {
-  try { localStorage.setItem(PREF_DIRTY, String(Date.now())); } catch (e) {}
-  clearTimeout(_prefSyncTimer);
-  _prefSyncTimer = setTimeout(_sendPrefs, 400);
 }
 
 // Leaving the page must not drop a change still waiting for its timer.
@@ -630,21 +640,30 @@ window.addEventListener('pagehide', function() {
   // Patched on the prototype, not on localStorage itself: assigning
   // localStorage.setItem may store an item named "setItem" instead.
   if (!window.Storage) return;
-  var proto = Storage.prototype, origSet = proto.setItem, origRemove = proto.removeItem;
+  var proto = Storage.prototype;
+  _origSetItem = proto.setItem;
+  _origRemoveItem = proto.removeItem;
   proto.setItem = function(k, v) {
-    origSet.call(this, k, v);
-    if (this === window.localStorage && _isPrefKey(k)) _schedulePrefSync();
+    var before = this === window.localStorage ? this.getItem(k) : null;
+    _origSetItem.call(this, k, v);
+    if (this === window.localStorage && _isPrefKey(k) && before !== String(v)) _markPrefPending(k);
   };
   proto.removeItem = function(k) {
-    origRemove.call(this, k);
-    if (this === window.localStorage && _isPrefKey(k)) _schedulePrefSync();
+    var had = this === window.localStorage && this.getItem(k) !== null;
+    _origRemoveItem.call(this, k);
+    if (had && _isPrefKey(k)) _markPrefPending(k);
   };
-  // Upload what this browser has when the server has nothing yet (first visit
-  // after the update) or when an earlier change never made it there.
-  if (window._prefsDirty === true ||
-      (window._serverPrefsEmpty === true && Object.keys(_collectPrefs()).length)) {
-    document.addEventListener('DOMContentLoaded', _schedulePrefSync);
+  // First visit after the update: the server has nothing yet, so upload what
+  // this browser already had instead of losing it.
+  if (window._serverPrefsEmpty === true) {
+    PREF_KEYS.forEach(function(k) {
+      if (localStorage.getItem(k) !== null) {
+        var keys = _pendingPrefKeys();
+        if (keys.indexOf(k) === -1) { keys.push(k); _setPendingPrefKeys(keys); }
+      }
+    });
   }
+  if (_pendingPrefKeys().length) document.addEventListener('DOMContentLoaded', _sendPrefs);
 })();
 
 // Apply theme name on load (mode is handled by inline script + OS listener)

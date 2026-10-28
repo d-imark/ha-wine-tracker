@@ -2201,53 +2201,48 @@ class TestUserPrefs:
     """Tests for server-side persistence of UI preferences (/api/prefs)."""
 
     def test_save_and_seed_prefs(self, client, db):
-        resp = client.post("/api/prefs", json={"wine-theme": "dark", "wineViewMode": "table"})
+        resp = client.post("/api/prefs", json={"set": {"wine-theme": "dark", "wineViewMode": "table"}})
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
         assert _stored_prefs(db) == {"wine-theme": "dark", "wineViewMode": "table"}
         assert b'"wine-theme": "dark"' in client.get("/").data
 
     def test_unknown_keys_ignored(self, client, db):
-        client.post("/api/prefs", json={"evil-key": "x", "wine-theme": "light"})
+        client.post("/api/prefs", json={"set": {"evil-key": "x", "wine-theme": "light"}})
         assert list(_stored_prefs(db)) == ["wine-theme"]
 
-    def test_post_replaces_previous_prefs(self, client, db):
-        client.post("/api/prefs", json={"wine-theme": "dark", "wine-show-empty": "1"})
-        client.post("/api/prefs", json={"wine-theme": "light"})
-        assert _stored_prefs(db) == {"wine-theme": "light"}
-
     def test_non_string_values_ignored(self, client, db):
-        client.post("/api/prefs", json={"wine-theme": {"nested": True}, "wineViewMode": "cards"})
+        client.post("/api/prefs", json={"set": {"wine-theme": {"nested": True}, "wineViewMode": "cards"}})
         assert _stored_prefs(db) == {"wineViewMode": "cards"}
 
     def test_missing_json_body_keeps_prefs(self, client, db):
-        client.post("/api/prefs", json={"wine-theme": "dark"})
+        client.post("/api/prefs", json={"set": {"wine-theme": "dark"}})
         resp = client.post("/api/prefs", data="kein json")
         assert resp.status_code == 400
         assert _stored_prefs(db) == {"wine-theme": "dark"}
 
     def test_prefix_keys_and_our_keys_are_stored(self, client, db):
         cols = '["winery","alcohol_pct","quantity"]'
-        client.post("/api/prefs", json={"wineTableCols.bar": cols, "wt_area": "bar",
+        client.post("/api/prefs", json={"set": {"wineTableCols.bar": cols, "wt_area": "bar",
                                         "statsPriceBasis": "ai", "wineSettingsTab": "data",
-                                        "wineTableColsX": "nope"})
+                                        "wineTableColsX": "nope"}})
         assert _stored_prefs(db) == {"wineTableCols.bar": cols, "wt_area": "bar",
                                      "statsPriceBasis": "ai", "wineSettingsTab": "data"}
 
     def test_active_filter_is_not_synced(self, client, db):
         """A filter is working state - following you to another device it would
         hide bottles there for no visible reason."""
-        client.post("/api/prefs", json={"wine-advanced-filter": '{"rules":{}}', "wine-theme": "dark"})
+        client.post("/api/prefs", json={"set": {"wine-advanced-filter": '{"rules":{}}', "wine-theme": "dark"}})
         assert _stored_prefs(db) == {"wine-theme": "dark"}
 
     def test_overlong_values_are_dropped_not_cut(self, client, db):
-        client.post("/api/prefs", json={"wineTableCols.cellar": "[" + '"x",' * 2000 + '"y"]',
-                                        "wine-theme": "dark"})
+        client.post("/api/prefs", json={"set": {"wineTableCols.cellar": "[" + '"x",' * 2000 + '"y"]',
+                                        "wine-theme": "dark"}})
         assert _stored_prefs(db) == {"wine-theme": "dark"}
 
     @pytest.mark.parametrize("path", ["/", "/stats", "/timeline", "/reference"])
     def test_every_page_seeds_prefs(self, client, path):
-        client.post("/api/prefs", json={"wine-theme-name": "burgundy"})
+        client.post("/api/prefs", json={"set": {"wine-theme-name": "burgundy"}})
         head = client.get(path).data.decode().split("</head>", 1)[0]
         assert '"wine-theme-name": "burgundy"' in head
 
@@ -2275,10 +2270,10 @@ class TestUserPrefsAuth:
     def test_prefs_are_per_user(self, db):
         client = self._make_auth_app()
         client.post("/login", data={"username": "admin", "password": "secret"})
-        client.post("/api/prefs", json={"wine-theme": "dark"})
+        client.post("/api/prefs", json={"set": {"wine-theme": "dark"}})
         client.get("/logout")
         client.post("/login", data={"username": "viewer", "password": "pass"})
-        client.post("/api/prefs", json={"wine-theme": "light"},
+        client.post("/api/prefs", json={"set": {"wine-theme": "light"}},
                     headers={"X-Requested-With": "XMLHttpRequest"})
         rows = {r["user"]: r["value"]
                 for r in db.execute("SELECT user, value FROM user_prefs WHERE key='wine-theme'")}
@@ -2287,14 +2282,14 @@ class TestUserPrefsAuth:
     def test_readonly_can_save_prefs(self, db):
         client = self._make_auth_app()
         client.post("/login", data={"username": "viewer", "password": "pass"})
-        resp = client.post("/api/prefs", json={"wineViewMode": "list"},
+        resp = client.post("/api/prefs", json={"set": {"wineViewMode": "list"}},
                            headers={"X-Requested-With": "XMLHttpRequest"})
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
 
     def test_prefs_require_login(self):
         client = self._make_auth_app()
-        resp = client.post("/api/prefs", json={"wine-theme": "dark"})
+        resp = client.post("/api/prefs", json={"set": {"wine-theme": "dark"}})
         assert resp.status_code == 401
 
 
@@ -2449,3 +2444,120 @@ def test_readonly_cannot_restore(client, db, upload_dir, monkeypatch):
         s["user"] = "viewer"
         s["role"] = "readonly"
     assert client.post(f"/api/wine/{wid}/restore", headers=AJAX).status_code == 403
+
+
+# ── review fixes P5-P7 ────────────────────────────────────────────────────────
+
+def test_quantity_only_edit_keeps_the_grape_text(client, db):
+    w = json.loads(client.post("/add", data={
+        "name": "Traube", "quantity": "2",
+        "grapes": json.dumps([{"name": "Merlot", "pct": 60}, {"name": "Cabernet Franc", "pct": 40}]),
+    }, headers=AJAX).data)["wine"]
+    client.post(f"/edit/{w['id']}", data={"name": "Traube", "quantity": "3"}, headers=AJAX)
+    row = db.execute("SELECT grape FROM wines WHERE id=?", (w["id"],)).fetchone()
+    assert row["grape"] == "Merlot, Cabernet Franc"
+
+
+class TestQuantityEndpoint:
+    """POST /api/wine/<id>/quantity applies a delta on the server, so quick
+    clicks cannot overtake each other and no other field is touched."""
+
+    def _wine(self, client, qty=3, **extra):
+        data = {"name": "Mengenwein", "quantity": str(qty), "notes": "Meine Notiz",
+                "grapes": json.dumps([{"name": "Syrah", "pct": 100}])}
+        data.update(extra)
+        return json.loads(client.post("/add", data=data, headers=AJAX).data)["wine"]["id"]
+
+    def _post(self, client, wid, **payload):
+        return client.post(f"/api/wine/{wid}/quantity", json=payload, headers=AJAX)
+
+    def _timeline(self, db, wid):
+        return [(r[0], r[1]) for r in db.execute(
+            "SELECT action, quantity FROM timeline WHERE wine_id=? ORDER BY id", (wid,))]
+
+    def test_delta_changes_only_the_quantity(self, client, db):
+        wid = self._wine(client)
+        resp = self._post(client, wid, delta=-1).get_json()
+        assert resp["ok"] is True and resp["wine"]["quantity"] == 2
+        row = db.execute("SELECT notes, grape FROM wines WHERE id=?", (wid,)).fetchone()
+        assert row["notes"] == "Meine Notiz" and row["grape"] == "Syrah"
+        assert self._timeline(db, wid)[-1] == ("consumed", 1)
+
+    def test_never_below_zero(self, client, db):
+        wid = self._wine(client, qty=1)
+        assert self._post(client, wid, delta=-5).get_json()["wine"]["quantity"] == 0
+        assert self._timeline(db, wid)[-1] == ("consumed", 1)
+        self._post(client, wid, delta=-1)
+        assert self._timeline(db, wid)[-1] == ("consumed", 1)      # nothing new logged
+
+    def test_undo_removes_the_entry(self, client, db):
+        wid = self._wine(client)
+        self._post(client, wid, delta=-1)
+        self._post(client, wid, delta=1, undo=True)
+        assert self._timeline(db, wid) == [("added", 3)]
+
+    def test_unknown_wine_is_404(self, client):
+        assert self._post(client, 987654, delta=1).status_code == 404
+
+    def test_bad_delta_is_400(self, client):
+        wid = self._wine(client)
+        assert self._post(client, wid, delta="viel").status_code == 400
+        assert self._post(client, wid).status_code == 400
+
+    def test_readonly_cannot_change(self, client, monkeypatch):
+        import app as wine_app
+        wid = self._wine(client)
+        monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+        with client.session_transaction() as s:
+            s["user"] = "viewer"
+            s["role"] = "readonly"
+        assert self._post(client, wid, delta=1).status_code == 403
+
+    def test_concurrent_clicks_all_count(self, app, client, db):
+        """Eight parallel +1 must end at +8 - the server reads and writes the
+        quantity in one locked transaction."""
+        import threading
+        wid = self._wine(client, qty=3)
+        errors = []
+
+        def click():
+            try:
+                c = app.test_client()
+                r = c.post(f"/api/wine/{wid}/quantity", json={"delta": 1}, headers=AJAX)
+                if r.status_code != 200:
+                    errors.append(r.status_code)
+            except Exception as e:          # pragma: no cover - surfaced below
+                errors.append(repr(e))
+
+        threads = [threading.Thread(target=click) for _ in range(8)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        assert errors == []
+        assert db.execute("SELECT quantity FROM wines WHERE id=?", (wid,)).fetchone()[0] == 11
+        restocked = [q for a, q in self._timeline(db, wid) if a == "restocked"]
+        assert sum(restocked) == 8
+
+
+class TestPrefsDelta:
+    """The browser sends what changed; other devices' settings survive."""
+
+    def test_set_keeps_other_keys(self, client, db):
+        client.post("/api/prefs", json={"set": {"wine-theme": "dark", "wineViewMode": "table"}})
+        client.post("/api/prefs", json={"set": {"wine-theme": "light"}})
+        assert _stored_prefs(db) == {"wine-theme": "light", "wineViewMode": "table"}
+
+    def test_remove_deletes_only_those_keys(self, client, db):
+        client.post("/api/prefs", json={"set": {"wine-show-empty": "1", "wine-theme": "dark"}})
+        client.post("/api/prefs", json={"remove": ["wine-show-empty"]})
+        assert _stored_prefs(db) == {"wine-theme": "dark"}
+
+    def test_table_column_keys_are_limited_to_the_areas(self, client, db):
+        client.post("/api/prefs", json={"set": {"wineTableCols.cellar": "[]", "wineTableCols.bar": "[]",
+                                                "wineTableCols.x1": "[]"}})
+        assert sorted(_stored_prefs(db)) == ["wineTableCols.bar", "wineTableCols.cellar"]
+
+    def test_unknown_and_invalid_entries_ignored(self, client, db):
+        client.post("/api/prefs", json={"set": {"evil": "x", "wine-theme": {"a": 1},
+                                                "wineViewMode": "list"},
+                                        "remove": ["evil", 5]})
+        assert _stored_prefs(db) == {"wineViewMode": "list"}
