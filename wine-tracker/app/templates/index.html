@@ -1791,7 +1791,23 @@ document.getElementById('deleteForm').addEventListener('submit', function(e) {
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    if (!data.ok) return;
+    if (!data.ok) throw new Error('delete failed');
+    if (data.restorable) {
+      // The server keeps the wine and everything attached to it for a while;
+      // restoring re-adds the card through the normal post-save path.
+      showUndoToast(T.toast_wine_deleted, function() {
+        fetch(INGRESS + '/api/wine/' + id + '/restore', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.ok) throw new Error('restore failed');
+            window._onWineSaved(res);
+          })
+          .catch(function() { showErrorToast(T.toast_save_failed); });
+      });
+    }
     var card = document.querySelector('.card[data-id="' + id + '"]');
     if (card) card.remove();
     if (currentViewMode === 'table') TableView.render();
@@ -1804,6 +1820,11 @@ document.getElementById('deleteForm').addEventListener('submit', function(e) {
     if (!grid.querySelector('.card')) {
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div><img src="' + INGRESS + '/static/logo.png" alt="Wine Tracker" class="empty-state-logo"></div><p>' + T.empty_no_wines + '<br>' + T.empty_add_first + '</p></div>';
     }
+  })
+  .catch(function() {
+    // The card stays; say so instead of failing silently.
+    closeModal('deleteModal');
+    showErrorToast(T.toast_save_failed);
   });
 });
 

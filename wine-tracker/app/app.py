@@ -1705,32 +1705,78 @@ def duplicate(wine_id):
     return ingress_redirect("index")
 
 
+# Deleted wines, kept in memory for the undo toast: the wines row plus every
+# child row, so a restore brings back grapes, purchases, images, spirit details
+# and casks too. Lost on restart, which is fine for a few seconds of undo.
+_DELETED_WINES = {}
+_DELETED_WINES_MAX = 20
+
+
+def _stash_wine(db, wine_id):
+    wine = db.execute("SELECT * FROM wines WHERE id=?", (wine_id,)).fetchone()
+    if not wine:
+        return None
+    children = {}
+    for table in WINE_CHILD_TABLES:
+        try:
+            children[table] = [dict(r) for r in db.execute(
+                f"SELECT * FROM {table} WHERE wine_id=?", (wine_id,))]
+        except sqlite3.OperationalError:
+            children[table] = []      # table missing on very old databases
+    _DELETED_WINES[wine_id] = {"wine": dict(wine), "children": children}
+    while len(_DELETED_WINES) > _DELETED_WINES_MAX:
+        _DELETED_WINES.pop(next(iter(_DELETED_WINES)))
+    return wine
+
+
+def _insert_row(db, table, row):
+    cols = list(row.keys())
+    db.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+               [row[c] for c in cols])
+
+
 @app.route("/delete/<int:wine_id>", methods=["POST"])
 def delete(wine_id):
     db = get_db()
-    wine = db.execute("SELECT image, quantity FROM wines WHERE id=?", (wine_id,)).fetchone()
+    wine = _stash_wine(db, wine_id)
     # Log removal before deleting
     if wine:
         db.execute(
             "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
             (wine_id, "removed", wine["quantity"] or 0, datetime.now().isoformat()),
         )
-    if wine and wine["image"]:
-        # Only delete image if no other wine uses it
-        count = db.execute(
-            "SELECT COUNT(*) FROM wines WHERE image=? AND id!=?", (wine["image"], wine_id)
-        ).fetchone()[0]
-        if count == 0:
-            try:
-                os.remove(os.path.join(UPLOAD_DIR, wine["image"]))
-            except FileNotFoundError:
-                pass
+    # Image files stay on disk so the deletion can be undone; the sweep at
+    # start (cleanup_orphan_uploads) removes them once nothing refers to them.
     delete_wine_children(db, wine_id)
     db.execute("DELETE FROM wines WHERE id=?", (wine_id,))
     db.commit()
     if is_ajax():
-        return jsonify({"ok": True, "deleted": wine_id, "stats": stats_json()})
+        return jsonify({"ok": True, "deleted": wine_id, "restorable": wine is not None,
+                        "stats": stats_json()})
     return ingress_redirect("index")
+
+
+@app.route("/api/wine/<int:wine_id>/restore", methods=["POST"])
+def restore_wine(wine_id):
+    """Undo a deletion: the wine with its original id and all child rows."""
+    stashed = _DELETED_WINES.pop(wine_id, None)
+    if stashed is None:
+        return jsonify(ok=False, error="not_restorable"), 404
+    db = get_db()
+    if db.execute("SELECT 1 FROM wines WHERE id=?", (wine_id,)).fetchone():
+        return jsonify(ok=False, error="already_exists"), 409
+    _insert_row(db, "wines", stashed["wine"])
+    for table, rows in stashed["children"].items():
+        for row in rows:
+            _insert_row(db, table, row)
+    entry = db.execute(
+        "SELECT id FROM timeline WHERE wine_id=? AND action='removed' ORDER BY id DESC LIMIT 1",
+        (wine_id,),
+    ).fetchone()
+    if entry:
+        db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
+    db.commit()
+    return jsonify({"ok": True, "wine": wine_json(wine_id), "stats": stats_json()})
 
 
 @app.route("/chat")
@@ -5032,9 +5078,45 @@ def api_wine_image_vivino(wine_id):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def cleanup_orphan_uploads(max_age_hours=24):
+    """Delete upload files nothing refers to any more; returns how many.
+
+    Deleting a wine leaves its files for the undo. Referenced are the main
+    image (wines.image), every image of the gallery (wine_images) and chat
+    images. Files younger than max_age_hours stay: AI analysis stores the
+    photo before the wine is saved.
+    """
+    removed = 0
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            referenced = set()
+            for sql in ("SELECT image FROM wines WHERE image IS NOT NULL",
+                        "SELECT filename FROM wine_images WHERE filename IS NOT NULL",
+                        "SELECT image_path FROM chat_messages WHERE image_path IS NOT NULL"):
+                referenced |= {r[0] for r in conn.execute(sql)}
+        finally:
+            conn.close()
+        cutoff = time.time() - max_age_hours * 3600
+        for name in os.listdir(UPLOAD_DIR):
+            path = os.path.join(UPLOAD_DIR, name)
+            if name in referenced or not os.path.isfile(path):
+                continue
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        if removed:
+            app.logger.info("Removed %d orphaned upload file(s)", removed)
+    except (sqlite3.Error, OSError) as e:
+        # A table missing or a file locked: skip this time, never fail the start.
+        app.logger.warning("Skipped orphan upload sweep: %s", e)
+    return removed
+
+
 if __name__ == "__main__":
     from waitress import serve
     init_db()
+    cleanup_orphan_uploads()
     # Production WSGI server: multi-threaded so long AI calls (up to 120s)
     # don't block other requests; single process keeps SQLite happy.
     serve(app, host="0.0.0.0", port=5050, threads=8)

@@ -1037,3 +1037,49 @@ class TestAppSettingsOverlay:
         monkeypatch.setenv("OPENAI_MODEL", "from-env")
         self._store("openai_model", "from-app")
         assert wine_app.load_options()["openai_model"] == "from-app"
+
+
+# ── startup sweep of orphaned upload files (P7) ──────────────────────────────
+
+class TestOrphanUploadSweep:
+    """Deleting a wine keeps its files for the undo; the sweep at start removes
+    files nothing refers to any more - but never a gallery or chat image."""
+
+    def _file(self, name, age_hours):
+        import time
+        path = os.path.join(wine_app.UPLOAD_DIR, name)
+        with open(path, "wb") as f:
+            f.write(b"x")
+        t = time.time() - age_hours * 3600
+        os.utime(path, (t, t))
+        return path
+
+    def _refer(self, image=None, gallery=None, chat=None):
+        import sqlite3
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        cur = conn.execute("INSERT INTO wines (name, quantity, image) VALUES ('Sweep', 1, ?)", (image,))
+        wid = cur.lastrowid
+        if gallery:
+            conn.execute("INSERT INTO wine_images (wine_id, category, filename, is_default, sort_order, created) "
+                         "VALUES (?, 'scan', ?, 0, 1, '2026-01-01')", (wid, gallery))
+        if chat:
+            sid = conn.execute("INSERT INTO chat_sessions (title, created, updated) VALUES ('s', 'x', 'x')").lastrowid
+            conn.execute("INSERT INTO chat_messages (session_id, role, content, timestamp, image_path) "
+                         "VALUES (?, 'user', 'hi', 'x', ?)", (sid, chat))
+        conn.commit()
+        conn.close()
+
+    def test_sweep_keeps_gallery_and_chat_files(self, app):
+        main = self._file("main.jpg", 48)
+        gallery = self._file("gallery.jpg", 48)
+        chat = self._file("chat.jpg", 48)
+        self._refer(image="main.jpg", gallery="gallery.jpg", chat="chat.jpg")
+        wine_app.cleanup_orphan_uploads()
+        assert os.path.exists(main) and os.path.exists(gallery) and os.path.exists(chat)
+
+    def test_sweep_removes_old_orphans_only(self, app):
+        old = self._file("old_orphan.jpg", 48)
+        fresh = self._file("fresh_orphan.jpg", 1)      # e.g. an AI upload not saved yet
+        removed = wine_app.cleanup_orphan_uploads()
+        assert not os.path.exists(old) and os.path.exists(fresh)
+        assert removed == 1

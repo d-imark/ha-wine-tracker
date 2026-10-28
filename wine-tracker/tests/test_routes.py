@@ -682,8 +682,9 @@ class TestDeleteWine:
         data = json.loads(resp.data)
         assert data["ok"] is True  # Still returns ok (idempotent)
 
-    def test_delete_removes_orphan_image(self, client, upload_dir):
-        """Deleting a wine should remove its image if no other wine uses it."""
+    def test_delete_keeps_image_until_the_sweep(self, client, upload_dir):
+        """The image stays for the undo; the start-up sweep removes it once no
+        wine refers to it any more."""
         fake_image = (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100), "label.png")
         resp = client.post(
             "/add",
@@ -696,6 +697,9 @@ class TestDeleteWine:
         assert os.path.isfile(img_path)
 
         client.post(f"/delete/{wine['id']}", headers=AJAX)
+        assert os.path.isfile(img_path)
+        import app as wine_app
+        wine_app.cleanup_orphan_uploads(max_age_hours=0)
         assert not os.path.isfile(img_path)
 
 
@@ -2368,3 +2372,80 @@ def test_qty_badge_opens_the_popover(client, sample_wine):
     html = client.get("/").data.decode()
     assert 'onclick="openQtyPopover(this, event)"' in html
     assert 'id="qtyPopover"' in html and 'id="undoToast"' in html
+
+
+# ── undo deleting a wine (P7) ─────────────────────────────────────────────────
+
+_CHILD_TABLES = ("wine_grapes", "wine_purchases", "wine_images", "spirit_details", "spirit_casks")
+
+
+def _make_full_whisky(client, db, upload_dir):
+    """A whisky with everything that hangs off a bottle: details, casks,
+    grapes rows, a purchase and three image files."""
+    import images
+    w = json.loads(client.post("/add", data={
+        "name": "Voll Whisky", "category": "whisky", "type": "Single Malt", "quantity": "2",
+        "alcohol_pct": "46", "age_years": "12", "bottler": "Original",
+        "casks": json.dumps([{"name": "Ex-Bourbon", "years": 10}, {"name": "PX Sherry", "years": 2}]),
+    }, headers=AJAX).data)["wine"]
+    wid = w["id"]
+    client.post(f"/api/wine/{wid}/purchases", json={"quantity": 2, "unit_price": 80})
+    db.execute("INSERT INTO wine_grapes (wine_id, name, pct, position) VALUES (?, 'Gerste', NULL, 0)", (wid,))
+    for i, cat in enumerate(("scan", "vivino", "scan")):
+        fname = f"full{i}.jpg"
+        with open(os.path.join(upload_dir, fname), "wb") as f:
+            f.write(b"\xff\xd8img")
+        images.add_image(db, wid, cat, fname)
+    db.commit()
+    return wid
+
+
+def _snapshot(db, wid):
+    snap = {"wines": [dict(r) for r in db.execute("SELECT * FROM wines WHERE id=?", (wid,))]}
+    for t in _CHILD_TABLES:
+        snap[t] = sorted((dict(r) for r in db.execute(f"SELECT * FROM {t} WHERE wine_id=?", (wid,))),
+                         key=lambda r: json.dumps(r, sort_keys=True, default=str))
+    return snap
+
+
+def test_delete_offers_restore_and_keeps_files(client, db, upload_dir):
+    wid = _make_full_whisky(client, db, upload_dir)
+    resp = client.post(f"/delete/{wid}", headers=AJAX).get_json()
+    assert resp["ok"] is True and resp["restorable"] is True
+    for i in range(3):
+        assert os.path.exists(os.path.join(upload_dir, f"full{i}.jpg"))
+
+
+def test_restore_brings_back_everything(client, db, upload_dir):
+    wid = _make_full_whisky(client, db, upload_dir)
+    before = _snapshot(db, wid)
+    assert all(before[t] for t in _CHILD_TABLES)          # the fixture really has all of them
+    client.post(f"/delete/{wid}", headers=AJAX)
+    assert db.execute("SELECT COUNT(*) FROM wines WHERE id=?", (wid,)).fetchone()[0] == 0
+    resp = client.post(f"/api/wine/{wid}/restore", headers=AJAX).get_json()
+    assert resp["ok"] is True and resp["wine"]["id"] == wid
+    assert _snapshot(db, wid) == before
+    actions = [r[0] for r in db.execute("SELECT action FROM timeline WHERE wine_id=?", (wid,))]
+    assert "removed" not in actions
+
+
+def test_restore_unknown_is_404(client):
+    assert client.post("/api/wine/987654/restore", headers=AJAX).status_code == 404
+
+
+def test_restore_twice_is_404(client, db, upload_dir):
+    wid = _make_full_whisky(client, db, upload_dir)
+    client.post(f"/delete/{wid}", headers=AJAX)
+    assert client.post(f"/api/wine/{wid}/restore", headers=AJAX).status_code == 200
+    assert client.post(f"/api/wine/{wid}/restore", headers=AJAX).status_code == 404
+
+
+def test_readonly_cannot_restore(client, db, upload_dir, monkeypatch):
+    import app as wine_app
+    wid = _make_full_whisky(client, db, upload_dir)
+    client.post(f"/delete/{wid}", headers=AJAX)
+    monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+    with client.session_transaction() as s:
+        s["user"] = "viewer"
+        s["role"] = "readonly"
+    assert client.post(f"/api/wine/{wid}/restore", headers=AJAX).status_code == 403
