@@ -1888,3 +1888,44 @@ def test_wine_card_carries_alcohol_pct(client):
     client.post("/add", data={"name": "Pinot Alk", "quantity": "1",
                               "alcohol_pct": "13.5"}, headers=AJAX)
     assert 'data-alcohol_pct="13.5"' in client.get("/").data.decode()
+
+
+# ── alcohol content in the sommelier chat and server-side parsing ────────────
+
+def test_parse_alcohol_accepts_only_sane_values():
+    import app as wine_app
+    assert wine_app._parse_alcohol("13,5") == 13.5
+    assert wine_app._parse_alcohol(46) == 46.0
+    for bad in ("inf", "nan", "-5", "250", "abc", None, ""):
+        assert wine_app._parse_alcohol(bad) is None, bad
+
+
+def test_chat_edit_sets_alcohol_pct(client, db):
+    import app as wine_app
+    client.post("/add", data={"name": "Chat Alk", "quantity": "1"}, headers=AJAX)
+    wid = db.execute("SELECT id FROM wines WHERE name='Chat Alk'").fetchone()[0]
+    res = wine_app._process_chat_edit_wine(
+        '[EDIT_WINE]{"id": %d, "alcohol_pct": "13,5"}[/EDIT_WINE]' % wid, db)
+    assert res and "alcohol_pct" in res["fields"]
+    assert _alc(db, "Chat Alk") == 13.5
+    # garbage must not clear a good value
+    wine_app._process_chat_edit_wine('[EDIT_WINE]{"id": %d, "alcohol_pct": "viel"}[/EDIT_WINE]' % wid, db)
+    assert _alc(db, "Chat Alk") == 13.5
+
+
+def test_chat_add_stores_alcohol_pct(client, db):
+    import app as wine_app
+    wine_app._process_chat_add_wine(
+        '[ADD_WINE]{"name": "Chat Neu", "wine_type": "Weisswein", "alcohol_pct": 12}[/ADD_WINE]',
+        None, [], db)
+    assert _alc(db, "Chat Neu") == 12.0
+
+
+def test_cellar_context_mentions_alcohol(app, client):
+    import app as wine_app
+    client.post("/add", data={"name": "Kontext Alk", "quantity": "1",
+                              "alcohol_pct": "14.5"}, headers=AJAX)
+    with app.test_request_context("/"):
+        text, _ = wine_app._build_wine_cellar_context()
+    line = next(l for l in text.splitlines() if "Kontext Alk" in l)
+    assert "14.5 % vol" in line

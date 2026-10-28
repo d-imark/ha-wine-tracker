@@ -2298,3 +2298,18 @@ class TestOpenBottleRoutes:
 
     def test_unknown_wine_is_404(self, client):
         assert client.post("/api/wine/999999/open").status_code == 404
+
+
+@patch("app._call_anthropic")
+@patch("app.load_options")
+def test_wine_label_scan_asks_for_alcohol(mock_opts, mock_call, client):
+    """The label is where % vol is printed; the wine prompt must ask for it."""
+    mock_opts.return_value = {**wine_app.HA_OPTIONS, "ai_provider": "anthropic",
+                              "anthropic_api_key": "sk-test"}
+    mock_call.return_value = json.dumps({"name": "Riesling", "alcohol_pct": 12.5})
+    resp = client.post("/api/analyze-wine",
+                       data={"image": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100), "l.png")},
+                       content_type="multipart/form-data")
+    prompt = mock_call.call_args[0][2]
+    assert '"alcohol_pct"' in prompt and "do NOT guess" in prompt
+    assert json.loads(resp.data)["fields"]["alcohol_pct"] == 12.5

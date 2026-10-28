@@ -785,3 +785,15 @@ class TestDescriptionRoundTrip:
         row = db.execute("SELECT description FROM wines WHERE name='Altes Backup'").fetchone()
         assert row is not None
         assert not row["description"]
+
+
+class TestAlcoholImportValues:
+    def test_csv_decimal_comma(self, client, db, upload_dir):
+        csv_text = 'name,quantity,alkohol\nKomma,1,"13,5"\n'
+        _import(db, upload_dir, csv_text.encode(), "c.csv")
+        assert _bottle(db, "Komma")["alcohol_pct"] == 13.5
+
+    def test_out_of_range_is_dropped(self, client, db, upload_dir):
+        _import(db, upload_dir, _zip_with([{"name": "Unsinn", "quantity": 1,
+                                            "alcohol_pct": "inf"}]), "x.zip")
+        assert _bottle(db, "Unsinn")["alcohol_pct"] is None

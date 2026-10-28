@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import secrets
@@ -620,13 +621,24 @@ def _category_from_form(form):
     return value if value in CATEGORIES else "wine"
 
 
-def _alcohol_from_form(form):
-    """% vol from the form, None when empty or not a number."""
-    raw = (form.get("alcohol_pct") or "").strip().replace(",", ".")
+def _parse_alcohol(value):
+    """% vol as a float between 0 and 100, else None. Takes a decimal comma
+    ("13,5"); rejects inf/nan, which jsonify would turn into invalid JSON."""
+    if value is None:
+        return None
+    raw = str(value).strip().replace(",", ".")
     try:
-        return float(raw) if raw else None
+        v = float(raw) if raw else None
     except ValueError:
         return None
+    if v is None or not math.isfinite(v) or not 0 <= v <= 100:
+        return None
+    return v
+
+
+def _alcohol_from_form(form):
+    """% vol from the form, None when empty or not a valid value."""
+    return _parse_alcohol(form.get("alcohol_pct"))
 
 
 def _spirit_payload_from_form(form):
@@ -999,12 +1011,17 @@ def migrate_abv_to_alcohol_pct(db):
     cols = {r[1] for r in db.execute("PRAGMA table_info(spirit_details)")}
     if "abv" not in cols:
         return 0
-    cur = db.execute(
-        "UPDATE wines SET alcohol_pct = "
-        "(SELECT abv FROM spirit_details WHERE wine_id = wines.id) "
-        "WHERE alcohol_pct IS NULL AND EXISTS "
-        "(SELECT 1 FROM spirit_details WHERE wine_id = wines.id AND abv IS NOT NULL)")
-    moved = cur.rowcount or 0
+    # Row by row through _parse_alcohol: older imports stored abv unconverted,
+    # so the REAL column can hold text like "46,3" - copied as-is it would break
+    # the '%g' on the card and take the whole list down.
+    moved = 0
+    for wine_id, abv in db.execute(
+            "SELECT sd.wine_id, sd.abv FROM spirit_details sd JOIN wines w ON w.id = sd.wine_id "
+            "WHERE sd.abv IS NOT NULL AND w.alcohol_pct IS NULL").fetchall():
+        value = _parse_alcohol(abv)
+        if value is not None:
+            db.execute("UPDATE wines SET alcohol_pct=? WHERE id=?", (value, wine_id))
+            moved += 1
 
     # Saved filter presets name the field too.
     for row in db.execute("SELECT id, conditions FROM filter_presets").fetchall():
@@ -2612,6 +2629,8 @@ def _build_wine_cellar_context():
             parts.append(f"{labels['region']}: {w['region']}")
         if w.get("grape"):
             parts.append(f"{labels['grape']}: {w['grape']}")
+        if isinstance(w.get("alcohol_pct"), (int, float)):
+            parts.append(f"{w['alcohol_pct']:g} % vol")
         if w.get("quantity"):
             parts.append(f"{labels['quantity']}: {w['quantity']} {labels['bottles']}")
         if w.get("rating"):
@@ -2682,6 +2701,7 @@ def analyze_wine():
   "wine_type": "one of: Rotwein, Weisswein, Rosé, Schaumwein, Dessertwein, Likörwein, Anderes",
   "vintage": year as integer or null,
   "region": "wine region",
+  "alcohol_pct": alcohol by volume in percent as number or null,
   "grape": "grape variety/varieties",
   "grapes": [{{"name": "grape variety", "pct": percentage as number 0-100 or null}}],
   "price": number or null,
@@ -2709,6 +2729,7 @@ Rules:
 - grapes: array of the wine's grape varieties. Each item has a name plus pct (0-100) when the blend proportion is known, otherwise pct null. For a single-varietal wine return one item. Keep "grape" as a comma-joined summary of the same names.
 - vintage must be a 4-digit year or null
 - If the known information already gives a vintage, return exactly that vintage. Only report a different year when a label image clearly shows one - never "correct" it from a shop listing or catalog entry of another vintage.
+- alcohol_pct: alcohol by volume as a plain number (e.g. 13.5). Only set it when the label shows it - do NOT guess.
 - drink_from/drink_until: drinking window years. If mentioned on label, use those. Otherwise ESTIMATE a reasonable drinking window based on the wine type, grape variety, region, and vintage using your wine expertise. For example, a simple Pinot Grigio 2023 might be 2024-2026, while a Barolo 2018 might be 2025-2035. Only return null if you cannot determine enough about the wine to estimate.
 - price: the retail bottle price as a plain number in {currency}, without any currency symbol. If the label or your sources quote another currency, CONVERT the amount to {currency} at current exchange rates. Return null if no price is visible.
 - maturity_data: Estimate the 4 maturity phases (youth, maturity, peak, decline) as year ranges based on wine type, grape, region, and vintage. Youth = early years after bottling, maturity = developing complexity, peak = optimal drinking, decline = past prime. Set to null if vintage is null or unknown.
@@ -3759,8 +3780,9 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
     db.execute(
         """INSERT INTO wines
            (name, year, type, region, quantity, rating, notes, description, image, added,
-            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
+            alcohol_pct)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             name,
             year,
@@ -3782,6 +3804,7 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
             data.get("grape", ""),
             None,  # vivino_id
             0.75,  # bottle_format
+            _parse_alcohol(data.get("alcohol_pct")),
         ),
     )
     db.commit()
@@ -3838,6 +3861,11 @@ def _process_chat_add_wine(response_text, session_id, session_images, db):
                     params.append(int(enriched["drink_until"]))
                 except (ValueError, TypeError):
                     pass
+            # Same for the alcohol content.
+            alc = _parse_alcohol(enriched.get("alcohol_pct"))
+            if _parse_alcohol(data.get("alcohol_pct")) is None and alc is not None:
+                updates.append("alcohol_pct = ?")
+                params.append(alc)
 
             if updates:
                 params.append(wine_id)
@@ -3930,6 +3958,13 @@ def _process_chat_edit_wine(response_text, db):
                 updates[df] = int(data[df]) if data[df] else None
             except (ValueError, TypeError):
                 pass
+    if "alcohol_pct" in data:
+        raw = data["alcohol_pct"]
+        # Empty clears it; anything unparseable leaves the stored value alone.
+        if raw is None or str(raw).strip() == "":
+            updates["alcohol_pct"] = None
+        elif _parse_alcohol(raw) is not None:
+            updates["alcohol_pct"] = _parse_alcohol(raw)
 
     if not updates:
         return None
@@ -4189,7 +4224,7 @@ def api_chat():
             f'{{"name": "Wine Name", "year": 2020, "wine_type": "Rotwein", "region": "Region, Country", '
             f'"grape": "Grape Variety", "quantity": 1, "rating": 0, '
             f'"description": "2-3 sentences about style, aroma and taste", '
-            f'"price": 0, "drink_from": null, "drink_until": null, "location": "", '
+            f'"price": 0, "drink_from": null, "drink_until": null, "alcohol_pct": null, "location": "", '
             f'"image_index": 1}}\n'
             f"[/ADD_WINE]\n"
             f"- image_index: which uploaded image to use (1-based), or null for no image\n"
@@ -4202,7 +4237,8 @@ def api_chat():
             f"[EDIT_WINE]\n"
             f'{{"id": 42, "year": 2021, "quantity": 3, "rating": 4}}\n'
             f"[/EDIT_WINE]\n"
-            f"- Supported fields: name, year, wine_type, region, grape, quantity, rating, description, notes, price, drink_from, drink_until, location, purchased_at\n"
+            f"- Supported fields: name, year, wine_type, region, grape, quantity, rating, description, notes, price, drink_from, drink_until, alcohol_pct, location, purchased_at\n"
+            f"- alcohol_pct: % vol as a plain number (e.g. 13.5); only set it when the label or the user states it\n"
             f"- Same rule as above: notes only on the user's explicit dictation.\n\n"
             f"=== DELETE WINE ===\n"
             f"Use the wine ID from [ID:...] in the cellar data. Be VERY careful - always double-confirm deletion.\n"

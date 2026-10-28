@@ -445,3 +445,18 @@ class TestAlcoholMigration:
         assert "abv" not in _columns(conn, "spirit_details")
         assert "alcohol_pct" in _columns(conn, "wines")
         conn.close()
+
+    def test_migration_survives_text_in_abv(self, app, client):
+        """Old imports stored abv unconverted; text like "46,3" or "viel" must
+        neither crash the migration nor the cellar page afterwards."""
+        _make_legacy_alcohol_db(abv="46,3")
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        conn.execute("INSERT INTO wines (name, category, quantity) VALUES ('Kaputt', 'whisky', 1)")
+        wid = conn.execute("SELECT id FROM wines WHERE name='Kaputt'").fetchone()[0]
+        conn.execute("INSERT INTO spirit_details (wine_id, abv) VALUES (?, 'viel')", (wid,))
+        conn.commit()
+        conn.close()
+        wine_app.init_db()
+        assert _alcohol("Lagavulin") == 46.3
+        assert _alcohol("Kaputt") is None
+        assert client.get("/?area=bar").status_code == 200

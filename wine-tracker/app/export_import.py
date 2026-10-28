@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import os
 import zipfile
 from datetime import datetime, timezone
@@ -351,8 +352,10 @@ def _legacy_alcohol(w: dict):
     for v in (w.get("alcohol_pct"), w.get("abv"),
               (w.get("spirit_details") or {}).get("abv")
               if isinstance(w.get("spirit_details"), dict) else None):
-        f = _coerce_float(v)
-        if f is not None:
+        # Spreadsheets from de-CH Excel write "13,5".
+        f = _coerce_float(v.replace(",", ".") if isinstance(v, str) else v)
+        # inf/nan would become invalid JSON in wine_json(); % vol is 0-100.
+        if f is not None and math.isfinite(f) and 0 <= f <= 100:
             return f
     return None
 
