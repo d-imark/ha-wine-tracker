@@ -1,15 +1,23 @@
-{# Settings modal - shared partial (included by index.html & stats.html) #}
+{# Settings modal - shared partial (index, stats, timeline, chat, reference) #}
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <div class="modal-header">
       <span>{{ t.settings_title }}</span>
       <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
     </div>
+    {# Tabs switch the sections below (theme.js: switchSettingsTab). A tab only
+       exists when its section does - same conditions as the sections. #}
+    <div class="settings-tabs">
+      <button type="button" class="settings-tab" data-tab="appearance" onclick="switchSettingsTab('appearance')"><i class="mdi mdi-palette-outline"></i> {{ t.settings_theme }}</button>
+      {% if ai_enabled %}<button type="button" class="settings-tab" data-tab="sommelier" onclick="switchSettingsTab('sommelier')"><i class="mdi mdi-chat-outline"></i> {{ t.settings_chat }}</button>{% endif %}
+      <button type="button" class="settings-tab" data-tab="data" onclick="switchSettingsTab('data')"><i class="mdi mdi-database-outline"></i> {{ t.settings_data }}</button>
+      <button type="button" class="settings-tab" data-tab="about" onclick="switchSettingsTab('about')"><i class="mdi mdi-information-outline"></i> {{ t.settings_about }}</button>
+    </div>
     <div class="modal-body">
       <!-- Hidden element for translated theme labels -->
       <span data-theme-labels='{"classic":"{{ t.theme_classic }}","vineyard":"{{ t.theme_vineyard }}","champagne":"{{ t.theme_champagne }}","slate":"{{ t.theme_slate }}","burgundy":"{{ t.theme_burgundy }}","homeassistant":"{{ t.theme_homeassistant }}"}'  style="display:none"></span>
 
-      <div class="settings-section">
+      <div class="settings-section" data-settings-tab="appearance">
         <div class="settings-section-title">{{ t.settings_theme }}</div>
 
         <div class="settings-row">
@@ -101,7 +109,7 @@
           </div>
         </div>
 
-        <div class="settings-row">
+        <div class="settings-row settings-row--toggle">
           <div class="settings-row-label">{{ t.settings_advanced_filter_default }}</div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -111,7 +119,7 @@
           </div>
         </div>
 
-        <div class="settings-row">
+        <div class="settings-row settings-row--toggle">
           <div class="settings-row-label">{{ t.settings_show_empty }}</div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -124,9 +132,9 @@
 
       <!-- Chat (only when AI is configured) -->
       {% if ai_enabled %}
-      <div class="settings-section">
+      <div class="settings-section" data-settings-tab="sommelier">
         <div class="settings-section-title">{{ t.settings_chat }}</div>
-        <div class="settings-row">
+        <div class="settings-row settings-row--toggle">
           <div class="settings-row-label">{{ t.settings_chat_recording }}</div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -135,7 +143,7 @@
             </label>
           </div>
         </div>
-        <div class="settings-row">
+        <div class="settings-row settings-row--toggle">
           <div class="settings-row-label">{{ t.settings_chat_edit_wines }}</div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -148,7 +156,7 @@
       {% endif %}
 
       <!-- Data: Export / Import -->
-      <div class="settings-section">
+      <div class="settings-section" data-settings-tab="data">
         <div class="settings-section-title">{{ t.settings_data }}</div>
 
         <div class="settings-row data-row">
@@ -182,7 +190,7 @@
       </div>
 
       <!-- About -->
-      <div class="settings-section">
+      <div class="settings-section" data-settings-tab="about">
         <div class="settings-section-title">{{ t.settings_about }}</div>
         <div class="settings-row">
           <div class="settings-row-label">{{ t.about_version }}</div>
@@ -224,16 +232,13 @@
         </div>
       </div>
 
-      {% if auth_user %}
-      <div class="settings-section" style="border-top: 1px solid var(--border); padding-top: .9rem;">
-        <div class="settings-row">
-          <div class="settings-row-label"><i class="mdi mdi-account"></i> {{ auth_user }}</div>
-          <div class="settings-row-control">
-            <a href="{{ ingress }}/logout" class="btn-cancel"><i class="mdi mdi-logout"></i> {{ t.btn_logout }}</a>
-          </div>
-        </div>
-      </div>
-      {% endif %}
     </div>
+    {# Outside the scrolling body: stays visible on every tab #}
+    {% if auth_user %}
+    <div class="settings-footer">
+      <span class="settings-footer-user"><i class="mdi mdi-account"></i> {{ auth_user }}</span>
+      <a href="{{ ingress }}/logout" class="settings-footer-logout"><i class="mdi mdi-logout"></i> {{ t.btn_logout }}</a>
+    </div>
+    {% endif %}
   </div>
 </div>

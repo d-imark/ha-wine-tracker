@@ -1243,13 +1243,35 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 .reload-toast.neutral { background: var(--surface, #2a2a2a); color: var(--muted, #999); border: 1px solid var(--border, #444); }
 
 /* ── Settings Modal ───────────────────────────────────────────────────────── */
-#settingsModal .modal { max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+/* Anchored at the top: tabs differ in height, a centered modal would jump. */
+#settingsModal.modal-overlay { align-items: flex-start; }
+#settingsModal .modal { max-width: 480px; max-height: 80vh; margin-top: 10vh; display: flex; flex-direction: column; overflow: hidden; }
 #settingsModal .modal-body { overflow-y: auto; gap: 1.8rem; flex: 1; padding-bottom: 2.5rem; }
 #settingsModal .theme-dropdown-list { position: fixed; z-index: 10000; }
 @media (min-width: 700px) {
   #settingsModal .modal { max-width: 900px; }
 }
-.settings-section { display: flex; flex-direction: column; gap: 1rem; }
+.settings-tabs {
+  display: flex; gap: .25rem; overflow-x: auto; overflow-y: hidden;
+  padding: 0 1.25rem; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+  scrollbar-width: none;
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab {
+  display: flex; align-items: center; gap: .4rem;
+  background: none; border: none; cursor: pointer;
+  padding: .65rem .9rem; font-size: .85rem; font-weight: 600;
+  color: var(--muted); border-bottom: 2px solid transparent;
+  margin-bottom: -1px; white-space: nowrap;
+  transition: color .2s, border-color .2s;
+}
+.settings-tab .mdi { font-size: 1rem; }
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+/* The tab already names the section */
+.settings-section[data-settings-tab] > .settings-section-title { display: none; }
+.settings-section { display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
 .settings-section-title {
   font-size: .7rem; color: var(--muted); text-transform: uppercase;
   letter-spacing: .05em;
@@ -1266,12 +1288,32 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   flex: 1; min-width: 0;
 }
 @media (max-width: 500px) {
-  .settings-row { flex-direction: column; align-items: stretch; gap: .4rem; }
+  .settings-section { gap: 1.25rem; }
+  .settings-row { flex-direction: column; align-items: stretch; gap: .5rem; }
+  /* Desktop flex bases would act on height in column direction */
+  .settings-row-label, .settings-row-control { flex: 0 0 auto; }
+  .settings-row--toggle { flex-direction: row; justify-content: space-between; align-items: center; }
+  .settings-row--toggle > .settings-row-label { flex: 1; }
+  #settingsModal.modal-overlay { padding: 0; }
+  #settingsModal .modal {
+    max-width: none; width: 100%;
+    height: 100vh; height: 100dvh; max-height: none;
+    margin-top: 0; border-radius: 0; border: none;
+  }
 }
-/* Push logout section to bottom of modal */
-#settingsModal .settings-section:last-child {
-  margin-top: auto;
+/* Account + logout: a slim footer below the scrolling body */
+.settings-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .6rem 1.25rem; border-top: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0; font-size: .8rem;
 }
+.settings-footer-user { display: flex; align-items: center; gap: .35rem; color: var(--muted); }
+.settings-footer-logout {
+  display: flex; align-items: center; gap: .35rem;
+  color: var(--muted); text-decoration: none; font-weight: 600;
+  transition: color .2s;
+}
+.settings-footer-logout:hover { color: var(--accent2); }
 
 /* Data section (Export / Import) - inherits settings-row layout, adds hint
    below the label and aligns label to the top so long text wraps naturally. */
@@ -1281,12 +1323,11 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   margin-top: .2rem; line-height: 1.35;
 }
 
-/* Uniform button size for Export / Import / Logout actions.
+/* Uniform button size for the Export / Import actions.
    min-width ensures short labels (Abmelden, Datei wählen) stretch to
    match the longest label (Sicherung herunterladen). display:inline-block
    is required because width/min-width has no effect on inline a/label. */
-.data-action-btn,
-#settingsModal .settings-section a.btn-cancel[href*="logout"] {
+.data-action-btn {
   display: inline-block; box-sizing: border-box;
   text-decoration: none; text-align: center;
   padding: .55rem 1rem;
@@ -1296,8 +1337,7 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   max-width: 100%;
 }
 @media (max-width: 500px) {
-  .data-action-btn,
-  #settingsModal .settings-section a.btn-cancel[href*="logout"] {
+  .data-action-btn {
     align-self: stretch; min-width: 0; width: 100%;
   }
 }

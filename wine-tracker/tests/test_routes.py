@@ -1951,3 +1951,41 @@ def test_ai_answer_alcohol_is_cleaned(app):
         assert wine_app._canonicalize_ai_fields(db, {"alcohol_pct": "100% Merlot"}, "wine")["alcohol_pct"] is None
         assert wine_app._canonicalize_ai_fields(db, {"alcohol_pct": "86 proof"}, "whisky")["alcohol_pct"] == 43.0
         assert "alcohol_pct" not in wine_app._canonicalize_ai_fields(db, {"name": "X"}, "wine")
+
+
+# ── settings modal tabs (P3) ──────────────────────────────────────────────────
+
+def _settings_tabs(html):
+    import re
+    return re.findall(r'class="settings-tab" data-tab="(\w+)"', html)
+
+
+def test_settings_modal_has_tabs(client):
+    html = client.get("/").data.decode()
+    tabs = _settings_tabs(html)
+    assert tabs == ["appearance", "data", "about"]      # no AI configured
+    for t in tabs:
+        assert f'data-settings-tab="{t}"' in html
+
+
+def test_sommelier_tab_only_with_ai(client, monkeypatch):
+    import app as wine_app
+    monkeypatch.setattr(wine_app, "load_options", lambda: {
+        **wine_app.HA_OPTIONS, "ai_provider": "anthropic", "anthropic_api_key": "sk-test"})
+    assert _settings_tabs(client.get("/").data.decode()) == [
+        "appearance", "sommelier", "data", "about"]
+
+
+def test_no_settings_footer_without_login(client):
+    assert 'class="settings-footer"' not in client.get("/").data.decode()
+
+
+def test_settings_footer_shows_the_logged_in_user(client, monkeypatch):
+    import app as wine_app
+    monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+    with client.session_transaction() as s:
+        s["user"] = "dominik"
+        s["role"] = "admin"
+    html = client.get("/").data.decode()
+    footer = html.split('class="settings-footer"', 1)[1].split("</div>", 1)[0]
+    assert "dominik" in footer and "/logout" in footer

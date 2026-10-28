@@ -129,6 +129,29 @@ function toggleChatEditWines(enabled) {
   localStorage.setItem('chatEditWines', enabled ? '1' : '0');
 }
 
+// ── Settings modal tabs ──────────────────────────────────────────────────────
+
+function switchSettingsTab(name) {
+  document.querySelectorAll('#settingsModal .settings-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.tab === name);
+  });
+  document.querySelectorAll('#settingsModal .settings-section[data-settings-tab]').forEach(function(sec) {
+    sec.style.display = sec.dataset.settingsTab === name ? '' : 'none';
+  });
+  try { localStorage.setItem('wineSettingsTab', name); } catch (e) {}
+}
+
+// Reopens on the last tab - unless that tab is gone (the sommelier tab only
+// exists while AI is configured), then on the first one.
+function initSettingsTabs() {
+  var tabs = document.querySelectorAll('#settingsModal .settings-tab');
+  if (!tabs.length) return;
+  var saved = null;
+  try { saved = localStorage.getItem('wineSettingsTab'); } catch (e) {}
+  var valid = Array.prototype.some.call(tabs, function(b) { return b.dataset.tab === saved; });
+  switchSettingsTab(valid ? saved : tabs[0].dataset.tab);
+}
+
 function _ingressPrefix() {
   // The settings modal renders the ingress path onto the export button; not
   // every page that includes the modal sets window.INGRESS.
@@ -303,6 +326,7 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', fu
 document.addEventListener('DOMContentLoaded', function() {
   updateThemeSegmented();
   updateThemeDropdown();
+  initSettingsTabs();
 });
 
 // ── Area (cellar / bar) ──────────────────────────────────────────────────────
