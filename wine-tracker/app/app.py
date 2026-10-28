@@ -92,10 +92,14 @@ def load_options():
         "mistral_model": "mistral-medium-latest",
         "openai_web_search": True,
     }
+    # Whether some source chose a provider - even "none". Only when none did does
+    # the old Anthropic autodetect below apply.
+    provider_explicit = False
     try:
         with open(OPTIONS_PATH, "r") as f:
             opts = json.load(f)
         defaults.update(opts)
+        provider_explicit = "ai_provider" in opts
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
@@ -121,6 +125,8 @@ def load_options():
         val = os.environ.get(env_key)
         if val:
             defaults[opt_key] = val
+            if opt_key == "ai_provider":
+                provider_explicit = True
 
     # OPENAI_WEB_SEARCH is a bool option; the generic env loop above only handles
     # string values, so parse it explicitly (HA/options.json deliver a real bool).
@@ -129,7 +135,8 @@ def load_options():
         defaults["openai_web_search"] = ws.strip().lower() not in ("0", "false", "no", "off", "")
 
     # Backward compat: auto-detect Anthropic from old config (pre-multi-provider)
-    if defaults.get("ai_provider", "none") == "none" and defaults.get("anthropic_api_key", "").strip():
+    if (not provider_explicit and defaults.get("ai_provider", "none") == "none"
+            and defaults.get("anthropic_api_key", "").strip()):
         defaults["ai_provider"] = "anthropic"
     return defaults
 

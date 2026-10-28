@@ -40,6 +40,19 @@ class TestLoadOptions:
         opts = wine_app.load_options()
         assert opts["ai_provider"] == "anthropic"
 
+    def test_explicit_none_is_not_overridden(self, tmp_path, monkeypatch):
+        opts_file = tmp_path / "options.json"
+        opts_file.write_text('{"ai_provider": "none", "anthropic_api_key": "sk-x"}')
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", str(opts_file))
+        assert wine_app.load_options()["ai_provider"] == "none"
+
+    def test_env_none_is_not_overridden(self, tmp_path, monkeypatch):
+        opts_file = tmp_path / "options.json"
+        opts_file.write_text('{"anthropic_api_key": "sk-x"}')
+        monkeypatch.setattr(wine_app, "OPTIONS_PATH", str(opts_file))
+        monkeypatch.setenv("AI_PROVIDER", "none")
+        assert wine_app.load_options()["ai_provider"] == "none"
+
     def test_invalid_json_uses_defaults(self, tmp_path, monkeypatch):
         opts_file = tmp_path / "options.json"
         opts_file.write_text("{broken json")
