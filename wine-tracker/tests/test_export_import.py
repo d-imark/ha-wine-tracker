@@ -655,13 +655,14 @@ class TestSpiritsExportImport:
         import json as J
         client.post("/add", data={
             "name": "Exp Whisky", "category": "whisky", "type": "Single Malt",
-            "quantity": "1", "abv": "46",
+            "quantity": "1", "alcohol_pct": "46",
             "casks": J.dumps([{"name": "Ex-Bourbon", "years": 10}]),
         }, follow_redirects=True)
         zf = zipfile.ZipFile(io.BytesIO(client.get("/export").data))
         w = next(x for x in json.loads(zf.read("wines.json")) if x["name"] == "Exp Whisky")
         assert w["category"] == "whisky"
-        assert w["spirit_details"]["abv"] == 46
+        assert w["alcohol_pct"] == 46
+        assert "abv" not in w["spirit_details"]
         assert [c["name"] for c in w["casks"]] == ["Ex-Bourbon"]
 
     def test_import_restores_spirit_data(self, client, db, upload_dir):
@@ -670,14 +671,14 @@ class TestSpiritsExportImport:
         parsed = {
             "wines": [{"name": "Imp Whisky", "category": "whisky", "type": "Single Malt",
                        "quantity": 1,
-                       "spirit_details": {"abv": 43, "age_years": 12},
+                       "spirit_details": {"age_years": 12},
                        "casks": [{"name": "Oloroso Sherry", "years": 12}]}],
             "timeline": [], "purchases": [], "images": {}, "original_ids": [None],
         }
         apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir, strategy="skip")
         wid = db.execute("SELECT id FROM wines WHERE name='Imp Whisky'").fetchone()[0]
         assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "whisky"
-        assert spirits.get_details(db, wid)["abv"] == 43
+        assert spirits.get_details(db, wid)["age_years"] == 12
         assert [c["name"] for c in spirits.list_casks(db, wid)] == ["Oloroso Sherry"]
 
     def test_legacy_archive_without_category_imports_as_wine(self, client, db, upload_dir):
@@ -687,6 +688,59 @@ class TestSpiritsExportImport:
         apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir, strategy="skip")
         wid = db.execute("SELECT id FROM wines WHERE name='Legacy Cat'").fetchone()[0]
         assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "wine"
+
+
+# ── alcohol content: bottle field, legacy and upstream archives ──────────────
+
+def _zip_with(wines):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("wines.json", json.dumps(wines))
+    return buf.getvalue()
+
+
+def _import(db, upload_dir, data, filename):
+    from export_import import parse_import_file, match_wines, apply_import
+    parsed = parse_import_file(data, filename)
+    apply_import(parsed, match_wines(parsed["wines"], db), db, upload_dir, strategy="skip")
+
+
+def _bottle(db, name):
+    return db.execute("SELECT winery, alcohol_pct FROM wines WHERE name=?", (name,)).fetchone()
+
+
+class TestAlcoholExportImport:
+    def test_export_carries_alcohol_pct(self, client, db):
+        client.post("/add", data={"name": "Exp Riesling", "quantity": "1",
+                                  "alcohol_pct": "12.5"}, headers=AJAX)
+        zf = zipfile.ZipFile(io.BytesIO(client.get("/export").data))
+        w = next(x for x in json.loads(zf.read("wines.json")) if x["name"] == "Exp Riesling")
+        assert w["alcohol_pct"] == 12.5
+        header = zf.read("wines.csv").decode("utf-8-sig").splitlines()[0].split(",")
+        assert "alcohol_pct" in header and "abv" not in header
+
+    def test_import_legacy_fork_json_abv(self, client, db, upload_dir):
+        _import(db, upload_dir, _zip_with([{
+            "name": "Alt Whisky", "category": "whisky", "quantity": 1,
+            "spirit_details": {"abv": 46.3, "age_years": 10}}]), "old.zip")
+        assert _bottle(db, "Alt Whisky")["alcohol_pct"] == 46.3
+
+    def test_import_legacy_csv_abv_column(self, client, db, upload_dir):
+        csv_text = "name,quantity,abv\nCSV Whisky,1,43\n"
+        _import(db, upload_dir, csv_text.encode(), "old.csv")
+        assert _bottle(db, "CSV Whisky")["alcohol_pct"] == 43.0
+
+    def test_import_upstream_export(self, client, db, upload_dir):
+        _import(db, upload_dir, _zip_with([{
+            "name": "Barbaresco", "quantity": 1, "producer": "Gaja",
+            "alcohol_pct": 14.5}]), "upstream.zip")
+        row = _bottle(db, "Barbaresco")
+        assert row["winery"] == "Gaja" and row["alcohol_pct"] == 14.5
+
+    def test_import_producer_does_not_override_winery(self, client, db, upload_dir):
+        _import(db, upload_dir, _zip_with([{
+            "name": "Zweifach", "quantity": 1, "winery": "A", "producer": "B"}]), "x.zip")
+        assert _bottle(db, "Zweifach")["winery"] == "A"
 
 
 # ── description round-trip ────────────────────────────────────────────────────

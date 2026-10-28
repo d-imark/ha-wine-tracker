@@ -55,6 +55,7 @@ WINE_COLUMNS = [
     "maturity_data",
     "taste_profile",
     "food_pairings",
+    "alcohol_pct",
 ]
 
 # A subset of columns presented in the CSV for readability. The JSON
@@ -81,7 +82,7 @@ CSV_COLUMNS = [
     "vivino_id",
     # appended so existing spreadsheets keep their column positions
     "category",
-    "abv",
+    "alcohol_pct",
     "description",
 ]
 
@@ -137,8 +138,9 @@ def _build_readme(manifest: dict) -> str:
 | `grape` | string | Grape variety / blend (auto-derived cache of `grapes`) |
 | `grapes` | array | Structured blend: list of `{{name, pct}}`; `pct` is the percentage or null |
 | `country` | string | Country |
+| `alcohol_pct` | number | Alcohol content in % vol, e.g. `13.5` (wine and spirits) |
 | `category` | string | `wine`, `whisky` or `spirit` (missing = `wine`) |
-| `spirit_details` | object | Spirits-only facts (abv, age_years, cask_summary, bottler, batch_number, opened_at, fill_level ...) |
+| `spirit_details` | object | Spirits-only facts (age_years, cask_summary, bottler, batch_number, opened_at, fill_level ...) |
 | `casks` | array | Maturation chain: list of `{{name, years}}`, first entry is the initial cask |
 | `quantity` | integer | Bottles currently in cellar |
 | `rating` | integer | 0 - 5 personal rating |
@@ -214,7 +216,6 @@ def build_export_zip(db, upload_dir: str, app_version: str = "") -> bytes:
         w["spirit_details"] = spirit_model.get_details(db, w["id"])
         w["casks"] = [{"name": c["name"], "years": c["years"]}
                       for c in spirit_model.list_casks(db, w["id"])]
-        w["abv"] = w["spirit_details"].get("abv")     # for the CSV view
 
     try:
         timeline_rows = db.execute(
@@ -313,6 +314,12 @@ CSV_ALIASES = {
     "beschreibung": "description",
     "image": "image",
     "vivino_id": "vivino_id",
+    "alcohol_pct": "alcohol_pct",
+    "alkohol": "alcohol_pct",
+    "abv": "alcohol_pct",          # exports from before alcohol_pct
+    # Archives of the upstream Wine Tracker call the winery "producer".
+    "producer": "producer",
+    "produzent": "producer",
 }
 
 
@@ -338,6 +345,18 @@ def _coerce_float(v):
         return None
 
 
+def _legacy_alcohol(w: dict):
+    """% vol from `alcohol_pct`, else from where older fork exports kept it
+    (the CSV column `abv`, or `spirit_details.abv` for spirits)."""
+    for v in (w.get("alcohol_pct"), w.get("abv"),
+              (w.get("spirit_details") or {}).get("abv")
+              if isinstance(w.get("spirit_details"), dict) else None):
+        f = _coerce_float(v)
+        if f is not None:
+            return f
+    return None
+
+
 def _normalize_wine(w: dict) -> dict:
     """Coerce types so a wine dict is ready to insert into SQLite."""
     out = {k: w.get(k) for k in WINE_COLUMNS if k != "id"}
@@ -353,6 +372,9 @@ def _normalize_wine(w: dict) -> dict:
     out["vivino_id"] = _coerce_int(out.get("vivino_id"))
     bf = _coerce_float(out.get("bottle_format"))
     out["bottle_format"] = bf if bf is not None else 0.75
+    out["alcohol_pct"] = _legacy_alcohol(w)
+    if not (out.get("winery") or "").strip() and (w.get("producer") or "").strip():
+        out["winery"] = w["producer"].strip()
     # Image must be a bare filename - reject path traversal from crafted files
     # (the value later ends up in os.remove() when the image is replaced).
     img = out.get("image")
@@ -365,7 +387,7 @@ def _normalize_wine(w: dict) -> dict:
         out["grapes"] = w["grapes"]
     # Same for the spirits payload.
     if isinstance(w.get("spirit_details"), dict):
-        out["spirit_details"] = w["spirit_details"]
+        out["spirit_details"] = {k: v for k, v in w["spirit_details"].items() if k != "abv"}
     if isinstance(w.get("casks"), list):
         out["casks"] = w["casks"]
     out["category"] = (w.get("category") or "wine")
