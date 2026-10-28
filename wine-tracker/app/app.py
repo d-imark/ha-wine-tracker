@@ -1603,17 +1603,27 @@ def edit(wine_id):
             wine_id,
         ),
     )
-    # Log quantity changes
-    if new_quantity < old_quantity:
-        db.execute(
-            "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
-            (wine_id, "consumed", old_quantity - new_quantity, datetime.now().isoformat()),
-        )
-    elif new_quantity > old_quantity:
-        db.execute(
-            "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
-            (wine_id, "restocked", new_quantity - old_quantity, datetime.now().isoformat()),
-        )
+    # Log quantity changes. An undo (qty_undo=1, from the toast) removes the
+    # entry it reverts instead of logging a counter entry - otherwise every
+    # undone click would show up in the timeline and the stats twice.
+    if new_quantity != old_quantity:
+        undone = False
+        if request.form.get("qty_undo") == "1":
+            reverted_action = "restocked" if new_quantity < old_quantity else "consumed"
+            entry = db.execute(
+                "SELECT id FROM timeline WHERE wine_id=? AND action=? AND quantity=? "
+                "ORDER BY id DESC LIMIT 1",
+                (wine_id, reverted_action, abs(new_quantity - old_quantity)),
+            ).fetchone()
+            if entry:
+                db.execute("DELETE FROM timeline WHERE id=?", (entry["id"],))
+                undone = True
+        if not undone:
+            action = "consumed" if new_quantity < old_quantity else "restocked"
+            db.execute(
+                "INSERT INTO timeline (wine_id, action, quantity, timestamp) VALUES (?,?,?,?)",
+                (wine_id, action, abs(new_quantity - old_quantity), datetime.now().isoformat()),
+            )
     # Only touch grapes when the request actually carries grape data. A pure
     # quantity change (viewChangeQty) omits both keys, so structured pct survives.
     if "grapes" in request.form or "grape" in request.form:

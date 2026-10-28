@@ -3297,3 +3297,53 @@ html.light .adv-cond-input[type="time"]::-webkit-calendar-picker-indicator {
 .ribbon-wodka, .ribbon-grappa, .ribbon-obstbrand { background: #b9b9b9; color: #333; }
 .ribbon-likör, .ribbon-likoer               { background: #da70d6; }
 .ribbon-anderes-destillat                   { background: var(--wine-anderes); }
+
+/* ── Qty popover (from the qty badge / table quantity cell) ──────────────── */
+.qty-badge[onclick] { cursor: pointer; }
+.qty-badge[onclick]:hover { border-color: var(--accent2); }
+.view-list .qty-badge[onclick]:hover { color: var(--accent2); }
+.wine-table .col-quantity[onclick] { cursor: pointer; }
+.wine-table .col-quantity[onclick]:hover { color: var(--accent2); }
+.qty-popover {
+  position: fixed;
+  display: flex; align-items: center; gap: .25rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: .3rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  z-index: 150;
+}
+.qty-popover button {
+  width: 34px; height: 34px; border: none; background: none;
+  color: var(--text); font-size: 1.1rem; cursor: pointer;
+  border-radius: 6px; transition: background .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.qty-popover button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.qty-popover-count {
+  min-width: 2rem; text-align: center;
+  font-size: .95rem; font-weight: 700; color: var(--gold);
+}
+
+/* ── Undo / error toast ───────────────────────────────────────────────────── */
+.undo-toast {
+  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: .75rem;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: .55rem .75rem .55rem 1.1rem; font-size: .9rem;
+  z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  transition: opacity .4s ease;
+}
+.undo-toast button {
+  background: none; border: none; cursor: pointer;
+  color: var(--gold); font-weight: 700; font-size: .9rem;
+  padding: .3rem .6rem; border-radius: 6px; transition: background .15s;
+}
+.undo-toast button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.undo-toast.error #undoToastMsg { color: #e74c3c; }
+html.light .undo-toast.error #undoToastMsg { color: #c0392b; }
+/* Above the bottom tab bar on phones */
+@media (max-width: 600px) {
+  .undo-toast { bottom: calc(56px + 1rem + env(safe-area-inset-bottom, 0px)); }
+  body.embedded .undo-toast { bottom: calc(56px + 1rem); }
+}

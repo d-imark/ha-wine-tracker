@@ -159,7 +159,7 @@
     </div>
 
     <!-- Quantity badge -->
-    <div class="qty-badge {% if w['quantity'] > 0 %}has{% endif %}">
+    <div class="qty-badge {% if w['quantity'] > 0 %}has{% endif %}"{% if not auth_readonly %} onclick="openQtyPopover(this, event)"{% endif %}>
       {{ w['quantity'] }} {{ t.bottle_abbr if w['quantity'] == 1 else t.bottles_abbr }}
     </div>
 
@@ -246,6 +246,21 @@
 
 
 <!-- ═══════════════ DELETE CONFIRM MODAL ═══════════════ -->
+{% if not auth_readonly %}
+<!-- ═══════════════ QTY POPOVER (opened from the qty badge / table cell) ═══════════════ -->
+<div class="qty-popover" id="qtyPopover" style="display:none">
+  <button type="button" onclick="qtyPopoverChange(-1)" title="{{ t.btn_less }}">−</button>
+  <span class="qty-popover-count" id="qtyPopoverCount">0</span>
+  <button type="button" onclick="qtyPopoverChange(1)" title="{{ t.btn_more }}">+</button>
+</div>
+
+<!-- ═══════════════ UNDO / ERROR TOAST ═══════════════ -->
+<div class="undo-toast" id="undoToast" style="display:none" role="status" aria-live="polite">
+  <span id="undoToastMsg"></span>
+  <button type="button" onclick="undoToastClick()">{{ t.btn_undo }}</button>
+</div>
+{% endif %}
+
 <div class="modal-overlay" id="deleteModal">
   <div class="modal" style="max-width:360px">
     <div class="modal-header">
@@ -1249,35 +1264,10 @@ function openPurchasesFromView(id) {
 }
 
 function viewChangeQty(delta) {
-  var id = window._viewWineId, w = window._viewWineData;
-  if (!id || !w) return;
-  var newQty = Math.max(0, (parseInt(w.quantity, 10) || 0) + delta);
-  w.quantity = newQty;
-  ['viewQtyCount', 'viewQtyStep'].forEach(function(eid) {
-    var e = document.getElementById(eid); if (e) e.textContent = newQty;
-  });
-  // Keep the card on the page in sync (optimistic)
-  var card = document.querySelector('.card[data-id="' + id + '"]');
-  if (card) {
-    card.dataset.quantity = newQty;
-    var badge = card.querySelector('.qty-badge');
-    if (badge) { badge.textContent = newQty + ' ' + (newQty === 1 ? T.bottle_abbr : T.bottles_abbr); badge.classList.toggle('has', newQty > 0); }
-    var qd = card.querySelector('.qty-display'); if (qd) qd.textContent = newQty;
-    card.classList.toggle('empty', newQty == 0);
-  }
-  // Persist via /edit (logs consumed/restocked); send the fields /edit would
-  // otherwise clear, but omit enrichment/price so they stay preserved.
-  var fd = new FormData();
-  // NOTE: grape/grapes intentionally omitted so the edit route preserves the
-  // structured blend (incl. percentages) on a pure quantity change.
-  [['name', w.name], ['year', w.year], ['type', w.type], ['region', w.region],
-   ['quantity', newQty], ['rating', w.rating], ['notes', w.notes],
-   ['description', w.description || ''],
-   ['bottle_format', w.bottle_format || '0.75'], ['vivino_id', w.vivino_id || ''],
-   ['drink_from', w.drink_from || ''], ['drink_until', w.drink_until || ''],
-   ['location', w.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
-  fetch(INGRESS + '/edit/' + id, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-  if (typeof applyFilters === 'function') applyFilters();
+  // Same path as the card, so the toast, the undo and the error handling
+  // apply here too; applyQtyUI keeps this modal's counter in step.
+  var card = document.querySelector('.card[data-id="' + window._viewWineId + '"]');
+  changeQtyCard(card, delta);
 }
 
 function viewDelete() {
@@ -1484,7 +1474,7 @@ function renderCard(w) {
 
   return ribbonHtml +
     '<div class="card-img' + (w.image ? ' shimmer' : '') + '" onclick="cardImgClick(this)">' + imgHtml + '</div>' +
-    '<div class="qty-badge ' + (w.quantity > 0 ? 'has' : '') + '">' + w.quantity + ' ' + (w.quantity === 1 ? T.bottle_abbr : T.bottles_abbr) + '</div>' +
+    '<div class="qty-badge ' + (w.quantity > 0 ? 'has' : '') + '"' + (AUTH_READONLY ? '' : ' onclick="openQtyPopover(this, event)"') + '>' + w.quantity + ' ' + (w.quantity === 1 ? T.bottle_abbr : T.bottles_abbr) + '</div>' +
     '<div class="card-body" onclick="viewFromCard(this)">' +
       (w.winery ? '<div class="card-winery" title="' + escapeHtml(w.winery) + '">' + escapeHtml(w.winery) + '</div>' : '') +
       '<div class="card-name" title="' + escapeHtml(w.name) + '">' + escapeHtml(w.name) + '</div>' +
@@ -1595,42 +1585,156 @@ window._onWineSaved = function(data) {
 // ── AJAX qty change ───────────────────────────────────────────────────────────
 
 function changeQty(el, delta) {
-  var card = el.closest('.card');
+  changeQtyCard(el.closest('.card'), delta);
+}
+
+// Every place that shows the quantity of a bottle, in one go.
+function applyQtyUI(card, qty) {
+  card.dataset.quantity = qty;
+  var qd = card.querySelector('.qty-display'); if (qd) qd.textContent = qty;
+  var badge = card.querySelector('.qty-badge');
+  if (badge) {
+    badge.textContent = qty + ' ' + (qty === 1 ? T.bottle_abbr : T.bottles_abbr);
+    badge.classList.toggle('has', qty > 0);
+  }
+  card.classList.toggle('empty', qty == 0);
+  var row = document.querySelector('#wineTable tr[data-card-id="' + card.dataset.id + '"]');
+  if (row) {
+    var cell = row.querySelector('.col-quantity'); if (cell) cell.textContent = qty;
+    row.classList.toggle('empty', qty == 0);
+  }
+  if (window._viewWineId == card.dataset.id && window._viewWineData) {
+    window._viewWineData.quantity = qty;
+    ['viewQtyCount', 'viewQtyStep'].forEach(function(eid) {
+      var e = document.getElementById(eid); if (e) e.textContent = qty;
+    });
+  }
+  var pc = document.getElementById('qtyPopoverCount');
+  if (pc && qtyPopoverCard === card) pc.textContent = qty;
+  applyFilters();
+}
+
+// One path for the card buttons, the popover, the table and the view modal.
+// isUndo: sent by the toast; the server then drops the reverted timeline entry.
+function changeQtyCard(card, delta, isUndo) {
+  if (!card) return;
   var id = card.dataset.id;
   var d = card.dataset;
-  var newQty = Math.max(0, (parseInt(d.quantity) || 0) + delta);
+  var oldQty = parseInt(d.quantity) || 0;
+  var newQty = Math.max(0, oldQty + delta);
+  if (newQty === oldQty) return;
 
+  // /edit clears what a post leaves out for these fields, so they are sent
+  // back unchanged. grape/grapes are deliberately NOT sent: /edit would
+  // rebuild the blend from the plain text and drop the percentages.
   var fd = new FormData();
-  fd.append('name', d.name);
-  fd.append('year', d.year);
-  fd.append('type', d.type);
-  fd.append('region', d.region);
-  fd.append('quantity', newQty);
-  fd.append('rating', d.rating);
-  fd.append('notes', d.notes);
-  fd.append('description', d.description || '');
-  fd.append('purchased_at', d.purchased_at);
-  fd.append('price', d.price);
-  fd.append('drink_from', d.drink_from);
-  fd.append('drink_until', d.drink_until);
-  fd.append('location', d.location);
-  fd.append('grape', d.grape);
-  fd.append('bottle_format', d.bottle_format || '0.75');
-  fd.append('vivino_id', d.vivino_id || '');
+  [['name', d.name], ['year', d.year], ['type', d.type], ['region', d.region],
+   ['quantity', newQty], ['rating', d.rating], ['notes', d.notes],
+   ['description', d.description || ''],
+   ['bottle_format', d.bottle_format || '0.75'], ['vivino_id', d.vivino_id || ''],
+   ['drink_from', d.drink_from || ''], ['drink_until', d.drink_until || ''],
+   ['location', d.location || '']].forEach(function(p) { fd.append(p[0], p[1] == null ? '' : p[1]); });
+  if (isUndo) fd.append('qty_undo', '1');
 
-  // Optimistic UI update
-  card.dataset.quantity = newQty;
-  card.querySelector('.qty-display').textContent = newQty;
-  card.querySelector('.qty-badge').textContent = newQty + ' ' + (newQty === 1 ? T.bottle_abbr : T.bottles_abbr);
-  card.querySelector('.qty-badge').classList.toggle('has', newQty > 0);
-  card.classList.toggle('empty', newQty == 0);
-  applyFilters();
-
+  applyQtyUI(card, newQty);          // optimistic
   fetch(INGRESS + '/edit/' + id, {
     method: 'POST', body: fd,
     headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+    .then(function(r) { if (!r.ok) throw new Error('save failed'); })
+    .catch(function() {
+      applyQtyUI(card, oldQty);
+      showErrorToast(T.toast_save_failed);
+    });
+
+  if (isUndo) { hideUndoToast(); return; }
+  var change = newQty - oldQty;
+  showUndoToast(change < 0 ? T.toast_bottle_removed : T.toast_bottle_added, function() {
+    var c = document.querySelector('.card[data-id="' + id + '"]');
+    if (c) changeQtyCard(c, -change, true);
   });
 }
+
+// ── Undo / error toast ───────────────────────────────────────────────────────
+
+var undoToastAction = null;
+var undoToastTimer = null;
+
+function _showToast(message, isError, onUndo, timeoutMs) {
+  var toast = document.getElementById('undoToast');
+  if (!toast) return;
+  undoToastAction = onUndo || null;
+  document.getElementById('undoToastMsg').textContent = message;
+  toast.classList.toggle('error', !!isError);
+  toast.querySelector('button').style.display = onUndo ? '' : 'none';
+  toast.style.display = 'flex';
+  toast.style.opacity = '1';
+  clearTimeout(undoToastTimer);
+  undoToastTimer = setTimeout(hideUndoToast, timeoutMs);
+}
+
+function showUndoToast(message, onUndo) { _showToast(message, false, onUndo, 6000); }
+function showErrorToast(message) { _showToast(message, true, null, 4000); }
+
+function hideUndoToast() {
+  var toast = document.getElementById('undoToast');
+  if (!toast) return;
+  clearTimeout(undoToastTimer);
+  toast.style.opacity = '0';
+  setTimeout(function() { if (toast.style.opacity === '0') toast.style.display = 'none'; }, 400);
+  undoToastAction = null;
+}
+
+function undoToastClick() {
+  if (!undoToastAction) return;
+  var action = undoToastAction;
+  hideUndoToast();
+  action();
+}
+
+// ── Qty popover (opened from the qty badge or the table's quantity cell) ─────
+
+var qtyPopoverCard = null;
+
+function openQtyPopover(el, ev) {
+  ev.stopPropagation();
+  var pop = document.getElementById('qtyPopover');
+  if (!pop) return;
+  // The anchor sits in a card or in a table row that points at its card.
+  var card = el.closest('.card');
+  if (!card) {
+    var row = el.closest('[data-card-id]');
+    card = row && document.querySelector('.card[data-id="' + row.dataset.cardId + '"]');
+  }
+  if (!card) return;
+  if (qtyPopoverCard === card && pop.style.display !== 'none') { closeQtyPopover(); return; }
+  qtyPopoverCard = card;
+  document.getElementById('qtyPopoverCount').textContent = card.dataset.quantity || '0';
+  pop.style.display = 'flex';
+  var r = el.getBoundingClientRect();
+  var pr = pop.getBoundingClientRect();
+  var left = Math.max(8, Math.min(r.left, window.innerWidth - pr.width - 8));
+  var top = r.bottom + 6;
+  if (top + pr.height > window.innerHeight - 8) top = r.top - pr.height - 6;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+}
+
+function closeQtyPopover() {
+  var pop = document.getElementById('qtyPopover');
+  if (pop) pop.style.display = 'none';
+  qtyPopoverCard = null;
+}
+
+function qtyPopoverChange(delta) {
+  if (qtyPopoverCard) changeQtyCard(qtyPopoverCard, delta);
+}
+
+document.addEventListener('click', function(e) {
+  var pop = document.getElementById('qtyPopover');
+  if (pop && pop.style.display !== 'none' && !pop.contains(e.target)) closeQtyPopover();
+});
+window.addEventListener('scroll', closeQtyPopover, true);
 
 // ── AJAX duplicate ────────────────────────────────────────────────────────────
 

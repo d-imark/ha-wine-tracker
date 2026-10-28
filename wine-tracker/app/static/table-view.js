@@ -194,8 +194,12 @@
             ? '<span class="cell-clip cell-sub">' + escapeHtml(d.winery) + '</span>' : '')
         + '<span class="cell-clip">' + escapeHtml(d.name) + '</span></td>';
       cols.forEach(function (col) {
+        // The quantity cell opens the same -/+ popover as the card badge.
+        var readonly = typeof AUTH_READONLY !== 'undefined' && AUTH_READONLY;
+        var qtyClick = (col.key === 'quantity' && !readonly)
+          ? ' onclick="openQtyPopover(this, event)"' : '';
         tbody += '<td class="col-' + col.key
-          + (col.numeric ? ' wine-table-right' : '') + '">'
+          + (col.numeric ? ' wine-table-right' : '') + '"' + qtyClick + '>'
           + cellHtml(d, col) + '</td>';
       });
       tbody += '</tr>';
