@@ -38,6 +38,16 @@ class TestIndex:
                     "description"):
             assert f'data-{key}="' in html, key
 
+    def test_bottle_format_rendered_canonically(self, client):
+        """Server-rendered cards must match the AJAX-rendered form ("3", not
+        "3.0"), or filter chips and presets stop matching after a save."""
+        client.post("/add", data={"name": "Magnum", "quantity": "1", "bottle_format": "1.5"}, headers=AJAX)
+        client.post("/add", data={"name": "Doppelmagnum", "quantity": "1", "bottle_format": "3"}, headers=AJAX)
+        html = client.get("/").data.decode()
+        assert 'data-bottle_format="1.5"' in html
+        assert 'data-bottle_format="3"' in html
+        assert 'data-bottle_format="3.0"' not in html
+
     def test_query_params_no_longer_filter_on_the_server(self, client):
         """Search, type and empty filters moved to the browser; the server
         ignores the old ?q=, ?type= and ?show_empty= parameters."""

@@ -141,7 +141,7 @@
        data-abv="{{ (w['spirit_details'] and w['spirit_details']['abv']) or '' }}"
        data-age_years="{{ (w['spirit_details'] and w['spirit_details']['age_years']) or '' }}"
        data-vivino_id="{{ w['vivino_id'] or '' }}"
-       data-bottle_format="{{ w['bottle_format'] or '0.75' }}">
+       data-bottle_format="{{ '%g'|format(w['bottle_format'] or 0.75) }}">
 
     {% if w['quantity'] == 0 %}
       <div class="ribbon ribbon-empty">{{ t.ribbon_empty }}</div>
@@ -743,6 +743,8 @@ document.querySelectorAll('.modal-overlay').forEach(function(el) {
   el.addEventListener('click', function(e) {
     if (e.target !== el) return;
     if (el.id === 'wineModal') return; // handled by include
+    // The advanced filter has to drop unapplied edits when it closes.
+    if (el.id === 'advancedFilterModal' && window.AdvancedFilter) { AdvancedFilter.closeModal(); return; }
     el.classList.remove('open');
   });
 });
@@ -754,6 +756,8 @@ document.addEventListener('keydown', function(e) {
     document.querySelectorAll('.modal-overlay.open').forEach(function(el) {
       if (el.id === 'wineModal') {
         tryCloseWineModal();
+      } else if (el.id === 'advancedFilterModal' && window.AdvancedFilter) {
+        AdvancedFilter.closeModal();
       } else {
         el.classList.remove('open');
       }
