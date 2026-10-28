@@ -250,7 +250,10 @@
             {% endfor %}
           </div>
           <div class="dw-bar-label">
-            {% if short_desktop %}
+            {% if item.year is string %}
+            {# the "older" / "later" bars on either side of the clamped axis #}
+            {{ t['dw_' ~ item.year] }}
+            {% elif short_desktop %}
             <span class="dw-yr-short">{{ item.year % 100 }}</span>
             <span class="dw-yr-full">{{ item.year }}</span>
             {% elif short_mobile %}
@@ -737,7 +740,8 @@ function editWine(id) {
     if (chart === 'dw') {
       var yr = el.dataset.year;
       var dwYear = WINE_DATA.byDW[yr] || {};
-      return { title: (WINE_TYPE_NAMES[key] || key) + ' · ' + yr, wines: dwYear[key] || [] };
+      var yrLabel = { older: T.dw_older, later: T.dw_later }[yr] || yr;
+      return { title: (WINE_TYPE_NAMES[key] || key) + ' · ' + yrLabel, wines: dwYear[key] || [] };
     }
     return null;
   }

@@ -949,3 +949,48 @@ class TestPriceVintageFallback:
         fields = J.loads(resp.data)["fields"]
         assert set(fields) == {"price", "ai_rationale"}
         assert "vintage" not in fields
+
+
+# ── stats: drink window chart ─────────────────────────────────────────────────
+
+class TestDrinkWindowChart:
+    """Years from current-3 to current+15; everything outside goes into one
+    bar on either side instead of stretching the axis."""
+    CUR = 2026
+
+    def _w(self, wid, frm, until, qty=1, t="Rotwein"):
+        return {"id": wid, "name": f"W{wid}", "year": 2020, "type": t,
+                "quantity": qty, "drink_from": frm, "drink_until": until}
+
+    def _chart(self, wines):
+        return wine_app._drink_window_chart(wines, self.CUR)
+
+    def test_axis_is_clamped_to_minus_3_plus_15(self):
+        chart, _, _ = self._chart([self._w(1, 2012, 2055, qty=2)])
+        years = [c["year"] for c in chart]
+        assert years == list(range(2023, 2042))
+        assert all(c["counts"] == {"Rotwein": 2} for c in chart)
+
+    def test_window_ended_before_the_axis_goes_to_older(self):
+        chart, _, names = self._chart([self._w(1, 2010, 2018), self._w(2, 2025, 2027)])
+        assert chart[0]["year"] == "older" and chart[0]["counts"] == {"Rotwein": 1}
+        assert [c["year"] for c in chart[1:]] == [2025, 2026, 2027]
+        assert names["older"]["Rotwein"][0]["id"] == 1
+
+    def test_window_starting_after_the_axis_goes_to_later(self):
+        chart, _, names = self._chart([self._w(1, 2045, 2060, qty=3), self._w(2, 2026, 2028)])
+        assert chart[-1]["year"] == "later" and chart[-1]["counts"] == {"Rotwein": 3}
+        assert [c["year"] for c in chart[:-1]] == [2026, 2027, 2028]
+        assert names["later"]["Rotwein"][0]["id"] == 1
+
+    def test_compact_when_everything_is_close(self):
+        chart, order, _ = self._chart([self._w(1, 2026, 2029, t="Weisswein")])
+        assert [c["year"] for c in chart] == [2026, 2027, 2028, 2029]
+        assert order == ["Weisswein"]
+
+    def test_only_until_counts_one_year(self):
+        chart, _, _ = self._chart([self._w(1, None, 2030)])
+        assert [c["year"] for c in chart] == [2030]
+
+    def test_empty(self):
+        assert self._chart([]) == ([], [], {})

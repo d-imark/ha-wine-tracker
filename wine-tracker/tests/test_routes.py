@@ -1797,3 +1797,25 @@ class TestCardDatasetPriceFields:
         card = self._card(client.get("/").data.decode(), "Cuvee Dataset")
         assert "data-grapes=" in card
         assert "Merlot" in card and "Syrah" in card
+
+
+def test_stats_drink_window_chart_with_outliers(client):
+    """An old dessert wine and a very long-lived red must not stretch the axis,
+    and their bars must render with a label instead of a year."""
+    from datetime import date
+    cur = date.today().year
+    client.post("/add", data={"name": "Alter Suesswein", "quantity": "1", "type": "Dessertwein",
+                              "drink_from": str(cur - 14), "drink_until": str(cur - 8)}, headers=AJAX)
+    client.post("/add", data={"name": "Ewiger Roter", "quantity": "2", "type": "Rotwein",
+                              "drink_from": str(cur + 20), "drink_until": str(cur + 30)}, headers=AJAX)
+    client.post("/add", data={"name": "Jetzt Trinken", "quantity": "3", "type": "Weisswein",
+                              "drink_from": str(cur), "drink_until": str(cur + 2)}, headers=AJAX)
+    resp = client.get("/stats")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    chart = html.split('class="dw-chart"', 1)[1].split('class="dw-legend"', 1)[0]
+    assert chart.count('class="dw-bar-col') == 5          # older, cur..cur+2, later
+    labels = [part.split("</div>", 1)[0].strip()
+              for part in chart.split('class="dw-bar-label">')[1:]]
+    assert labels[0] == "älter" and labels[-1] == "später"
+    assert str(cur - 14) not in chart and str(cur + 30) not in chart
