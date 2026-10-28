@@ -13,6 +13,7 @@ configuration:
       Wähle einen KI-Anbieter für die Weinetikett-Erkennung, oder "none" zum Deaktivieren.
       Wenn aktiviert, kannst du ein Foto vom Etikett machen und die KI füllt die Weindetails
       automatisch aus.
+      Alles lässt sich auch in der App unter Einstellungen → KI-Anbieter einstellen; dort gespeicherte Werte haben Vorrang vor dieser Konfiguration.
   anthropic_api_key:
     name: Anthropic API-Schlüssel
     description: API-Schlüssel von console.anthropic.com. Erforderlich bei KI-Anbieter "anthropic".
@@ -25,6 +26,10 @@ configuration:
   openai_model:
     name: OpenAI Modell
     description: Modellname für OpenAI (z.B. gpt-5.5).
+  openai_web_search:
+    name: OpenAI-Websuche
+    description: >-
+      Lässt OpenAI für Preise und Fakten im Web nachschauen (nur bei KI-Anbieter "openai").
   openrouter_api_key:
     name: OpenRouter API-Schlüssel
     description: API-Schlüssel von openrouter.ai. Erforderlich bei KI-Anbieter "openrouter".

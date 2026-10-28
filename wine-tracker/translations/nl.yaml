@@ -12,6 +12,7 @@ configuration:
     description: >-
       Kies een AI-provider voor etiketherkenning, of "none" om uit te schakelen.
       Wanneer ingeschakeld, maak een foto van het etiket en de AI vult automatisch de wijndetails in.
+      Alles kan ook in de app worden ingesteld onder Instellingen → AI-aanbieder; daar opgeslagen waarden gaan voor deze configuratie.
   anthropic_api_key:
     name: Anthropic API-sleutel
     description: API-sleutel van console.anthropic.com. Vereist voor provider "anthropic".
@@ -24,6 +25,10 @@ configuration:
   openai_model:
     name: OpenAI Model
     description: Modelnaam voor OpenAI (bijv. gpt-5.5).
+  openai_web_search:
+    name: OpenAI-webzoekfunctie
+    description: >-
+      Laat OpenAI prijzen en feiten op het web opzoeken (alleen bij AI-aanbieder "openai").
   openrouter_api_key:
     name: OpenRouter API-sleutel
     description: API-sleutel van openrouter.ai. Vereist voor provider "openrouter".

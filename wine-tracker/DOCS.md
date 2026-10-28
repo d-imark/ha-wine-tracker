@@ -30,19 +30,22 @@ A sleek, modern wine cellar tracker running directly in your Home Assistant side
 - **Vivino wine search** - search by name, see ratings, region & price, and import directly; regional fallback chain surfaces country-specific wines (e.g. Australian labels)
 - **Vivino ID management** - view, edit & test Vivino wine links directly in the edit modal
 - **Reload missing data** - re-analyze wines with incomplete fields via AI or Vivino
-- **Star rating** (1-5 stars), quick `+`/`−` quantity buttons & duplicate wines
+- **Star rating** (1-5 stars), quick `+`/`−` quantity buttons & duplicate wines; tap the bottle badge for a quick quantity popover, with undo
+- **Undo** - quantity changes and deleted wines (with grapes, purchases, images and whisky data) can be undone for a few seconds
 - **Bottle format** - track bottle sizes from Piccolo (0.1875l) to Nebuchadnezzar (15l), auto-detected by AI
 - **Cellar view modes** - Cards, List, Grid, and a sortable Table view with responsive columns
 - **Activity timeline** - chronological log of wines added, consumed, restocked & removed
 - **Maturity graph** - AI-generated bell curve showing Youth → Maturity → Peak → Decline with a "Today" marker
 - **Taste profile & food pairings** - AI-generated body/tannin/acidity/sweetness bars and matching dishes in your language
 - **Unified navigation** - consistent header with filter dropdown across all pages; hamburger menu on narrow viewports
-- **Search & filter** by wine type, vintage year, grape variety, name, region or notes
+- **Search & filter** - word-by-word search that ignores accents and forgives typos, ranked by relevance (name, winery, grape, region, country, vintage, location, notes, ...); advanced filter with presets
+- **Alcohol content** (% vol) for wine and spirits, read from the label by AI
 - **Drink window** (from/until year) with AI estimation
 - **Purchase price** with configurable currency
 - **Autocomplete** for region, grape variety, purchase source & storage location
 - **Interactive 3D globe** showing your wine regions on a WebGL globe
-- **Statistics** - donut charts, stock history area chart, total bottles, total liters, value overview & average age
+- **Statistics** - donut charts, stock history area chart, drink window chart, top 5 priciest / cheapest, total bottles, total liters, value overview & average age
+- **Settings follow you** - theme, view, sorting, table columns and more are stored per user on the server
 - **6 themes** with dark & light mode
 - **7 languages**: DE, EN, FR, IT, ES, PT, NL
 - **REST API** at `/api/summary` for HA sensor integration
@@ -63,6 +66,10 @@ All options are set in the Home Assistant add-on configuration page.
 
 Pick one AI provider and configure its API key and model. The AI is used for label recognition, maturity/taste/food enrichment, and the sommelier chat.
 
+> **In-app AI settings:** provider, API keys, models, a separate sommelier chat model and the OpenAI web search can also be set in the app under **Settings → AI provider**, including a connection test. Values saved there **take precedence** over this configuration; the app shows when it overrides it and can reset to it. API keys are never displayed.
+>
+> **Note (since 1.17.0):** `ai_provider` is no longer switched to `anthropic` automatically just because an Anthropic key is present - Home Assistant always passes `none` by default, which now really disables AI. Choose your provider explicitly.
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `ai_provider` | `none` | `none`, `anthropic`, `openai`, `openrouter`, `ollama`, `minimax`, `mistral` |
@@ -70,6 +77,7 @@ Pick one AI provider and configure its API key and model. The AI is used for lab
 | `anthropic_model` | `claude-opus-4-8` | Anthropic model identifier |
 | `openai_api_key` | _(empty)_ | OpenAI API key from [platform.openai.com](https://platform.openai.com) |
 | `openai_model` | `gpt-5.5` | OpenAI vision model |
+| `openai_web_search` | `true` | Let OpenAI look up prices and facts on the web |
 | `openrouter_api_key` | _(empty)_ | OpenRouter API key from [openrouter.ai](https://openrouter.ai) |
 | `openrouter_model` | `anthropic/claude-opus-4.8` | Any vision-capable OpenRouter model |
 | `ollama_host` | `http://localhost:11434` | Local Ollama server URL |
@@ -113,5 +121,5 @@ sensor:
 
 See the full documentation and changelog on [GitHub](https://github.com/d-imark/ha-wine-tracker).
 
-[version-badge]: https://img.shields.io/badge/version-v1.11.0-blue.svg
+[version-badge]: https://img.shields.io/badge/version-v1.17.0-blue.svg
 [ai-badge]: https://img.shields.io/badge/AI%20powered-label%20recognition-blueviolet.svg

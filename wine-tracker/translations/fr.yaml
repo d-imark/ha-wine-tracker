@@ -12,6 +12,7 @@ configuration:
     description: >-
       Choisissez un fournisseur IA pour la reconnaissance d'étiquettes, ou "none" pour désactiver.
       Quand activé, prenez une photo de l'étiquette et l'IA remplit automatiquement les détails du vin.
+      Tout peut aussi être réglé dans l'app sous Réglages → Fournisseur d'IA ; les valeurs enregistrées là-bas priment sur cette configuration.
   anthropic_api_key:
     name: Clé API Anthropic
     description: Clé API de console.anthropic.com. Requise pour le fournisseur "anthropic".
@@ -24,6 +25,10 @@ configuration:
   openai_model:
     name: Modèle OpenAI
     description: Nom du modèle OpenAI (p.ex. gpt-5.5).
+  openai_web_search:
+    name: Recherche web OpenAI
+    description: >-
+      Permet à OpenAI de chercher prix et informations sur le web (uniquement avec le fournisseur "openai").
   openrouter_api_key:
     name: Clé API OpenRouter
     description: Clé API de openrouter.ai. Requise pour le fournisseur "openrouter".

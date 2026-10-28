@@ -12,6 +12,7 @@ configuration:
     description: >-
       Escolha um provedor de IA para o reconhecimento de rótulos, ou "none" para desativar.
       Quando ativado, tire uma foto do rótulo e a IA preenche automaticamente os detalhes do vinho.
+      Tudo pode também ser definido na app em Definições → Fornecedor de IA; os valores guardados aí têm prioridade sobre esta configuração.
   anthropic_api_key:
     name: Chave API Anthropic
     description: Chave API de console.anthropic.com. Necessária para o provedor "anthropic".
@@ -24,6 +25,10 @@ configuration:
   openai_model:
     name: Modelo OpenAI
     description: Nome do modelo OpenAI (ex. gpt-5.5).
+  openai_web_search:
+    name: Pesquisa web da OpenAI
+    description: >-
+      Permite que a OpenAI procure preços e informações na web (só com o fornecedor "openai").
   openrouter_api_key:
     name: Chave API OpenRouter
     description: Chave API de openrouter.ai. Necessária para o provedor "openrouter".

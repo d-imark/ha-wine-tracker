@@ -12,6 +12,7 @@ configuration:
     description: >-
       Scegli un provider IA per il riconoscimento delle etichette, o "none" per disattivare.
       Quando attivato, scatta una foto dell'etichetta e l'IA compila automaticamente i dettagli del vino.
+      Tutto si può impostare anche nell'app in Impostazioni → Fornitore IA; i valori salvati lì hanno la precedenza su questa configurazione.
   anthropic_api_key:
     name: Chiave API Anthropic
     description: Chiave API da console.anthropic.com. Richiesta per il provider "anthropic".
@@ -24,6 +25,10 @@ configuration:
   openai_model:
     name: Modello OpenAI
     description: Nome del modello OpenAI (es. gpt-5.5).
+  openai_web_search:
+    name: Ricerca web OpenAI
+    description: >-
+      Permette a OpenAI di cercare prezzi e informazioni sul web (solo con il fornitore "openai").
   openrouter_api_key:
     name: Chiave API OpenRouter
     description: Chiave API da openrouter.ai. Richiesta per il provider "openrouter".

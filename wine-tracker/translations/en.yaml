@@ -13,6 +13,7 @@ configuration:
       Choose an AI provider for wine label recognition, or "none" to disable.
       When enabled, you can snap a photo of a wine label and AI will
       automatically fill in the wine details.
+      Everything can also be set in the app under Settings → AI provider; values saved there take precedence over this configuration.
   anthropic_api_key:
     name: Anthropic API Key
     description: API key from console.anthropic.com. Required when AI provider is "anthropic".
@@ -25,6 +26,10 @@ configuration:
   openai_model:
     name: OpenAI Model
     description: Model name for OpenAI (e.g. gpt-5.5).
+  openai_web_search:
+    name: OpenAI web search
+    description: >-
+      Lets OpenAI look up prices and facts on the web (only with AI provider "openai").
   openrouter_api_key:
     name: OpenRouter API Key
     description: API key from openrouter.ai. Required when AI provider is "openrouter".
