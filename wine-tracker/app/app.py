@@ -2072,6 +2072,23 @@ def stats_page():
         f"ORDER BY {EFFECTIVE_PRICE_SQL} ASC LIMIT 1"
     ).fetchone()
 
+    # Top 5 each way, for the price card's second switch - same rules as the
+    # single extremes above: recorded prices skip a zero for "cheapest", the
+    # effective price (own, else AI estimate) does not.
+    def _price_ranking(price_sql, order, positive):
+        cond = f"{price_sql} IS NOT NULL" + (f" AND {price_sql} > 0" if positive else "")
+        return [dict(r) for r in q(
+            f"SELECT id, name, year, type, {price_sql} AS price FROM wines "
+            f"WHERE {A} AND {cond} ORDER BY {price_sql} {order}, name LIMIT 5"
+        ).fetchall()]
+
+    price_top = {
+        "own": {"top_exp": _price_ranking("price", "DESC", False),
+                "top_cheap": _price_ranking("price", "ASC", True)},
+        "est": {"top_exp": _price_ranking(EFFECTIVE_PRICE_SQL, "DESC", False),
+                "top_cheap": _price_ranking(EFFECTIVE_PRICE_SQL, "ASC", False)},
+    }
+
     # Best rated bottles
     best_rated = [dict(r) for r in q(
         f"SELECT id, name, year, type, rating, quantity FROM wines WHERE {A} "
@@ -2231,6 +2248,7 @@ def stats_page():
         cheapest=dict(cheapest) if cheapest else None,
         most_expensive_est=dict(most_expensive_est) if most_expensive_est else None,
         cheapest_est=dict(cheapest_est) if cheapest_est else None,
+        price_top=price_top,
         best_rated=best_rated,
         avg_age=avg_age["avg_age"] if avg_age else None,
         oldest=dict(oldest) if oldest else None,
@@ -3860,7 +3878,7 @@ PREF_KEYS = {
     "wine-theme", "wine-theme-name", "wineViewMode", "wineTableSortCol",
     "wineTableSortAsc", "wine-show-empty", "wine-advanced-filter-default",
     "chatEditWines", "chatRecording",
-    "wt_area", "statsPriceBasis", "wineSettingsTab",
+    "wt_area", "statsPriceBasis", "statsPriceView", "wineSettingsTab",
     # the table column choice, per area
     "wineTableCols.cellar", "wineTableCols.bar",
 }

@@ -2601,3 +2601,40 @@ def test_drink_window_bars_show_the_bottle_total(client):
     chart = html.split('class="dw-chart"', 1)[1].split('class="dw-legend"', 1)[0]
     totals = re.findall(r'class="dw-bar-total">(\d+)<', chart)
     assert totals == ["5", "2"]
+
+
+class TestPriceTop5:
+    """The price card offers overview, top 5 most expensive and top 5 cheapest,
+    for recorded prices and for the AI estimate alike."""
+
+    def _seed(self, client):
+        for i, price in enumerate([10, 25, 40, 55, 70, 85, 99]):
+            w = json.loads(client.post("/add", data={"name": f"Preis{price}", "quantity": "1"},
+                                       headers=AJAX).data)["wine"]
+            client.post(f"/api/wine/{w['id']}/purchases", json={"quantity": 1, "unit_price": price})
+        # one bottle known only by its AI estimate
+        client.post("/add", data={"name": "NurKI", "quantity": "1", "ai_price": "500"}, headers=AJAX)
+
+    def _list(self, html, basis, view):
+        import re
+        block = html.split(f'data-price-basis="{basis}" data-price-view="{view}"', 1)[1]
+        block = block.split("</div>\n  </div>", 1)[0] if view == "overview" else block.split('data-price-', 1)[0]
+        return re.findall(r'class="wine-name">([^<]+)<', block)
+
+    def test_top5_lists_for_recorded_prices(self, client):
+        self._seed(client)
+        html = client.get("/stats").data.decode()
+        assert self._list(html, "own", "top_exp") == ["Preis99", "Preis85", "Preis70", "Preis55", "Preis40"]
+        assert self._list(html, "own", "top_cheap") == ["Preis10", "Preis25", "Preis40", "Preis55", "Preis70"]
+
+    def test_top5_with_estimate_includes_estimated_bottles(self, client):
+        self._seed(client)
+        html = client.get("/stats").data.decode()
+        assert self._list(html, "est", "top_exp")[0] == "NurKI"
+
+    def test_view_switch_is_rendered(self, client):
+        self._seed(client)
+        html = client.get("/stats").data.decode()
+        assert 'id="priceViewSwitch"' in html
+        for view in ("overview", "top_exp", "top_cheap"):
+            assert f'data-view="{view}"' in html

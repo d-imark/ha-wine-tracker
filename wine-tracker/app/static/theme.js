@@ -575,7 +575,7 @@ function confirmImport() {
 var PREF_KEYS = ['wine-theme', 'wine-theme-name', 'wineViewMode', 'wineTableSortCol',
                  'wineTableSortAsc', 'wine-show-empty', 'wine-advanced-filter-default',
                  'chatEditWines', 'chatRecording',
-                 'wt_area', 'statsPriceBasis', 'wineSettingsTab',
+                 'wt_area', 'statsPriceBasis', 'statsPriceView', 'wineSettingsTab',
                  'wineTableCols.cellar', 'wineTableCols.bar'];
 // Keys changed here but not yet on the server, as a JSON list. While it is
 // not empty the head scripts do not seed from the (older) server copy -

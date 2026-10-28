@@ -312,7 +312,7 @@
      estimate filling in. A macro rather than copied markup, so the two can never
      drift apart. #}
   {%- macro price_list(top, low, avg, kind) -%}
-  <div class="wine-list" data-price-basis="{{ kind }}"
+  <div class="wine-list" data-price-basis="{{ kind }}" data-price-view="overview"
        {% if kind == 'est' %}hidden{% endif %}>
     {% if top %}
     <a href="#" onclick="editWine({{ top['id'] }}); return false;" class="wine-list-item wine-list-link">
@@ -349,6 +349,29 @@
   </div>
   {%- endmacro -%}
 
+  {# Top 5 most expensive / cheapest - the second switch. Hidden until chosen. #}
+  {%- macro price_rank(items, kind, view) -%}
+  <div class="wine-list" data-price-basis="{{ kind }}" data-price-view="{{ view }}" hidden>
+    {% for w in items %}
+    <a href="#" onclick="editWine({{ w['id'] }}); return false;" class="wine-list-item wine-list-link">
+      {% if w['type'] %}<span class="type-corner type-{{ w['type']|lower|replace('é','e')|replace('ö','oe') }}"></span>{% endif %}
+      <div class="rank">{{ loop.index }}</div>
+      <div class="wine-info">
+        <div class="wine-name">{{ w['name'] }}</div>
+        <div class="wine-detail">{% if w['year'] %}{{ w['year'] }}{% endif %}</div>
+      </div>
+      <div class="wine-price">{{ currency }} {{ "%.2f"|format(w['price']) }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {%- endmacro -%}
+
+  {%- macro price_views(top, low, avg, kind, ranks) -%}
+  {{ price_list(top, low, avg, kind) }}
+  {{ price_rank(ranks['top_exp'], kind, 'top_exp') }}
+  {{ price_rank(ranks['top_cheap'], kind, 'top_cheap') }}
+  {%- endmacro -%}
+
   {# The switch only earns its place when the two bases actually differ, i.e.
      when at least one bottle falls back to the AI estimate. #}
   {% set own_n = value['bottles'] if value else 0 %}
@@ -368,15 +391,23 @@
       {% endif %}
     </h2>
     <div class="stat-body">
+      <div class="price-view-switch" id="priceViewSwitch">
+        <button type="button" class="pb-btn active" data-view="overview"
+                onclick="setPriceView('overview')">{{ t.stat_view_overview }}</button>
+        <button type="button" class="pb-btn" data-view="top_exp"
+                onclick="setPriceView('top_exp')">{{ t.stat_top5_expensive }}</button>
+        <button type="button" class="pb-btn" data-view="top_cheap"
+                onclick="setPriceView('top_cheap')">{{ t.stat_top5_cheapest }}</button>
+      </div>
       {% if show_switch %}
-        {{ price_list(most_expensive, cheapest, value['avg_price'], 'own') }}
-        {{ price_list(most_expensive_est, cheapest_est, value_est['avg_price'], 'est') }}
+        {{ price_views(most_expensive, cheapest, value['avg_price'], 'own', price_top['own']) }}
+        {{ price_views(most_expensive_est, cheapest_est, value_est['avg_price'], 'est', price_top['est']) }}
       {% elif own_n > 0 %}
-        {{ price_list(most_expensive, cheapest, value['avg_price'], 'own') }}
+        {{ price_views(most_expensive, cheapest, value['avg_price'], 'own', price_top['own']) }}
       {% else %}
         {# nothing recorded, so the estimate is all there is - and it says so #}
         <div class="price-basis-note">{{ t.stat_value_est_hint }} ({{ est_n }}/{{ total_bottles_in_area }})</div>
-        {{ price_list(most_expensive_est, cheapest_est, value_est['avg_price'], 'est-only') }}
+        {{ price_views(most_expensive_est, cheapest_est, value_est['avg_price'], 'est-only', price_top['est']) }}
       {% endif %}
     </div>
   </div>
@@ -527,23 +558,45 @@ var INGRESS = '{{ ingress }}';
 // Both lists are already in the page, so switching is instant and needs no
 // round trip. The choice is remembered because it expresses how the user wants
 // to read their cellar, not a one-off look.
-function setPriceBasis(basis) {
-  try { localStorage.setItem('statsPriceBasis', basis); } catch (e) {}
+// Two independent switches - basis (recorded / with estimate) and view
+// (overview / top 5 expensive / top 5 cheapest). Every list carries both, and
+// exactly one is shown.
+var _priceBasis = 'own', _priceView = 'overview';
+
+function _applyPriceLists() {
   document.querySelectorAll('[data-price-basis]').forEach(function (el) {
     var k = el.getAttribute('data-price-basis');
-    if (k === 'est-only') return;           // nothing to switch against
-    el.hidden = (k !== basis);
+    var basisOk = (k === 'est-only') || k === _priceBasis;   // est-only: nothing to switch against
+    el.hidden = !(basisOk && el.getAttribute('data-price-view') === _priceView);
   });
   document.querySelectorAll('#priceBasisSwitch .pb-btn').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.basis === basis);
+    b.classList.toggle('active', b.dataset.basis === _priceBasis);
+  });
+  document.querySelectorAll('#priceViewSwitch .pb-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.view === _priceView);
   });
 }
 
+function setPriceBasis(basis) {
+  _priceBasis = basis;
+  try { localStorage.setItem('statsPriceBasis', basis); } catch (e) {}
+  _applyPriceLists();
+}
+
+function setPriceView(view) {
+  _priceView = view;
+  try { localStorage.setItem('statsPriceView', view); } catch (e) {}
+  _applyPriceLists();
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-  if (!document.getElementById('priceBasisSwitch')) return;
-  var saved = null;
-  try { saved = localStorage.getItem('statsPriceBasis'); } catch (e) {}
-  if (saved === 'est') setPriceBasis('est');
+  if (!document.getElementById('priceViewSwitch')) return;
+  try {
+    if (document.getElementById('priceBasisSwitch') && localStorage.getItem('statsPriceBasis') === 'est') _priceBasis = 'est';
+    var v = localStorage.getItem('statsPriceView');
+    if (v === 'top_exp' || v === 'top_cheap') _priceView = v;
+  } catch (e) {}
+  _applyPriceLists();
 });
 var T = {{ t | tojson }};
 var CURRENCY = '{{ currency }}';

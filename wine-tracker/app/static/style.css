@@ -1741,17 +1741,19 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
    over 3 of 86 bottles means something very different from one over 80. */
 /* Switches the price overview between recorded prices and the estimate. Lives in
    the card heading, right-aligned, so it reads as scoped to that card. */
-.price-basis-switch {
+.price-basis-switch, .price-view-switch {
   display: inline-flex; margin-left: auto; gap: 2px;
   border: 1px solid var(--border); border-radius: 7px; padding: 2px;
 }
-.price-basis-switch .pb-btn {
+/* The view switch sits on its own line above the list */
+.price-view-switch { display: flex; width: max-content; max-width: 100%; margin: 0 0 .6rem; }
+.price-basis-switch .pb-btn, .price-view-switch .pb-btn {
   background: none; border: none; cursor: pointer;
   color: var(--muted); font-size: .68rem; font-weight: 600;
   padding: .15rem .45rem; border-radius: 5px; transition: all .15s;
 }
-.price-basis-switch .pb-btn:hover { color: var(--text); }
-.price-basis-switch .pb-btn.active { background: var(--accent); color: #fff; }
+.price-basis-switch .pb-btn:hover, .price-view-switch .pb-btn:hover { color: var(--text); }
+.price-basis-switch .pb-btn.active, .price-view-switch .pb-btn.active { background: var(--accent); color: #fff; }
 .price-basis-note {
   font-size: .72rem; color: var(--muted); opacity: .8; padding: 0 0 .5rem;
 }
