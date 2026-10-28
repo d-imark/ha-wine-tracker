@@ -17,6 +17,26 @@ APP_DIR = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP_DIR)
 
 
+# ── Cheap password hashes in tests ────────────────────────────────────────────
+# "pbkdf2:sha256" means 1,000,000 iterations: ~0.65 s per hash and again per
+# login check, which made the auth tests most of the suite's runtime. Tests
+# only need a valid hash, not a strong one. Patched before app.py and the test
+# modules import the function; check_password_hash reads the iteration count
+# from the hash itself. The app keeps its strong default.
+import werkzeug.security as _wsec
+
+_strong_generate_password_hash = _wsec.generate_password_hash
+
+
+def _fast_generate_password_hash(password, method="pbkdf2:sha256", salt_length=16):
+    if method in ("pbkdf2", "pbkdf2:sha256"):
+        method = "pbkdf2:sha256:1000"
+    return _strong_generate_password_hash(password, method=method, salt_length=salt_length)
+
+
+_wsec.generate_password_hash = _fast_generate_password_hash
+
+
 TEST_OPTIONS = {
     "currency": "CHF",
     "language": "de",
