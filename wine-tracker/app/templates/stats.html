@@ -240,11 +240,12 @@
         {% set row_total = item.counts.values() | sum %}
         {% if row_total > ns.max_total %}{% set ns.max_total = row_total %}{% endif %}
       {% endfor %}
-      {% set short_desktop = dw_chart | length > 10 %}
-      {% set short_mobile = dw_chart | length > 5 %}
+      {% set short_desktop = dw_chart | rejectattr('only', 'equalto', 'phone') | list | length > 10 %}
+      {% set short_mobile = dw_chart | rejectattr('only', 'equalto', 'desktop') | list | length > 5 %}
       <div class="dw-chart">
         {% for item in dw_chart %}
-        <div class="dw-bar-col{% if item.year == current_year %} dw-current{% endif %}">
+        <div class="dw-bar-col{% if item.year == current_year %} dw-current{% endif %}{% if item.only %} dw-only-{{ item.only }}{% endif %}"
+             {% if item.label %}data-label="{{ item.label }}"{% endif %}>
           <div class="dw-bar-stack">
             {# total above the segments; the bars stop short of the top for it #}
             <span class="dw-bar-total">{{ item.counts.values() | sum }}</span>
@@ -260,8 +261,10 @@
           </div>
           <div class="dw-bar-label">
             {% if item.label %}
-            {# the edge bars: windows reaching before / past the axis #}
-            {{ item.label }}
+            {# the edge bars: windows reaching before / past the axis; short on
+               phones, where the bars are too narrow for four digits #}
+            <span class="dw-edge-full">{{ item.label }}</span>
+            <span class="dw-edge-short">{{ item.label_short }}</span>
             {% elif short_desktop %}
             <span class="dw-yr-short">{{ item.year % 100 }}</span>
             <span class="dw-yr-full">{{ item.year }}</span>
@@ -803,9 +806,8 @@ function editWine(id) {
     if (chart === 'dw') {
       var yr = el.dataset.year;
       var dwYear = WINE_DATA.byDW[yr] || {};
-      // The edge bars ("older" / "later") carry their label in the DOM.
-      var labelEl = el.closest('.dw-bar-col').querySelector('.dw-bar-label');
-      var yrLabel = isNaN(parseInt(yr, 10)) && labelEl ? labelEl.textContent.trim() : yr;
+      // The edge bars ("older" / "later") carry their full label.
+      var yrLabel = el.closest('.dw-bar-col').dataset.label || yr;
       return { title: (WINE_TYPE_NAMES[key] || key) + ' · ' + yrLabel, wines: dwYear[key] || [] };
     }
     return null;

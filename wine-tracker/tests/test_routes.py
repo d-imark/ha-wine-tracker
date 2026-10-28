@@ -2578,11 +2578,16 @@ def test_stats_drink_window_chart_with_outliers(client):
     assert resp.status_code == 200
     html = resp.data.decode()
     chart = html.split('class="dw-chart"', 1)[1].split('class="dw-legend"', 1)[0]
-    assert chart.count('class="dw-bar-col') == 5          # older, cur..cur+2, later
+    assert chart.count('class="dw-bar-col') == 6          # older, cur..cur+2, later (+ phone edge bar)
+    assert chart.count("dw-only-phone") == 1 and chart.count("dw-only-desktop") == 1
     import html as _html
-    labels = [_html.unescape(part.split("</div>", 1)[0].strip())
+    import re as _re
+    # edge bars carry a full and a short label (phones): "< 2023" / "<23"
+    labels = [" ".join(_html.unescape(_re.sub(r"<[^>]+>", " ", part.split("</div>", 1)[0])).split())
               for part in chart.split('class="dw-bar-label">')[1:]]
-    assert labels[0] == f"< {cur - 3}" and labels[-1] == f"{cur + 15}+"
+    yy = lambda y: f"{y % 100:02d}"
+    assert labels[0] == f"< {cur - 3} <{yy(cur - 3)}"
+    assert labels[-2:] == [f"{cur + 10}+ {yy(cur + 10)}+", f"{cur + 15}+ {yy(cur + 15)}+"]
     assert str(cur - 14) not in chart and str(cur + 30) not in chart
 
 

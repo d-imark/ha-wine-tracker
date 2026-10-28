@@ -1864,11 +1864,25 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 }
 .dw-bar-stack {
   width: 100%; flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
-  border-radius: 4px 4px 0 0; overflow: hidden;
+  align-items: center;      /* lets a 3-digit total stick out over a narrow bar */
 }
+.dw-bar-seg { align-self: stretch; }
+/* rounded top on the topmost segment (the stack no longer clips) */
+.dw-bar-total + .dw-bar-seg { border-radius: 4px 4px 0 0; }
 .dw-bar-seg { min-height: 2px; transition: height .4s ease; }
+.dw-edge-short { display: none; }
+@media (max-width: 600px) {
+  .dw-edge-full { display: none; }
+  .dw-edge-short { display: inline; }
+}
+/* Phones end the axis at +10 with their own edge bar; desktops go to +15 */
+.dw-only-phone { display: none; }
+@media (max-width: 600px) {
+  .dw-only-phone { display: flex; }
+  .dw-only-desktop { display: none; }
+}
 .dw-bar-total {
-  font-size: .68rem; font-weight: 700; color: var(--text);
+  font-size: .68rem; font-weight: 700; color: var(--text); white-space: nowrap;
   text-align: center; line-height: 1; margin-bottom: 3px;
   font-variant-numeric: tabular-nums;
 }

@@ -1921,6 +1921,9 @@ def api_timeline():
 # stretch the axis over four decades.
 DW_YEARS_BACK = 3
 DW_YEARS_AHEAD = 15
+# Phones have room for fewer bars: there the axis ends at +10, with its own
+# edge bar. Both variants are rendered; CSS picks one by screen width.
+DW_YEARS_AHEAD_PHONE = 10
 
 
 def _drink_window_chart(wines, current_year):
@@ -1930,9 +1933,11 @@ def _drink_window_chart(wines, current_year):
     "older" bar, every one reaching past the last year in a "later" bar - so
     the edge bars show all of them, and no bottle drops out. Returns (chart,
     type_order, names_by_bar); chart items carry `year` (int, or "older" /
-    "later"), `counts` {type: bottles} and, for the edge bars, a `label`.
+    "later" / "later_phone"), `counts` {type: bottles}, for the edge bars a
+    `label`, and `only` ("desktop" / "phone") for bars of one layout only.
     """
     first, last = current_year - DW_YEARS_BACK, current_year + DW_YEARS_AHEAD
+    last_phone = current_year + DW_YEARS_AHEAD_PHONE
     by_year = defaultdict(lambda: defaultdict(int))
     names = defaultdict(lambda: defaultdict(list))
     types = set()
@@ -1950,6 +1955,8 @@ def _drink_window_chart(wines, current_year):
             bars.append("older")
         if until > last:
             bars.append("later")
+        if until > last_phone:
+            bars.append("later_phone")
         for bar in bars:
             by_year[bar][t] += w["quantity"]
             names[bar][t].append(entry)
@@ -1957,13 +1964,19 @@ def _drink_window_chart(wines, current_year):
     years = [b for b in by_year if isinstance(b, int)]
     chart = []
     if "older" in by_year:
-        chart.append({"year": "older", "label": f"< {first}",
+        chart.append({"year": "older", "label": f"< {first}", "label_short": f"<{first % 100:02d}",
                       "counts": dict(by_year["older"])})
     if years:
-        chart += [{"year": yr, "counts": dict(by_year[yr])}
+        chart += [{"year": yr, "counts": dict(by_year[yr]),
+                   "only": "desktop" if yr > last_phone else None}
                   for yr in range(min(years), max(years) + 1)]
+    if "later_phone" in by_year:
+        chart.append({"year": "later_phone", "label": f"{last_phone}+",
+                      "label_short": f"{last_phone % 100:02d}+", "only": "phone",
+                      "counts": dict(by_year["later_phone"])})
     if "later" in by_year:
         chart.append({"year": "later", "label": f"{last}+",
+                      "label_short": f"{last % 100:02d}+", "only": "desktop",
                       "counts": dict(by_year["later"])})
     names_by_bar = {str(bar): dict(per_type) for bar, per_type in names.items()}
     return chart, sorted(types), names_by_bar

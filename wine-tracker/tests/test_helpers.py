@@ -1098,7 +1098,9 @@ class TestDrinkWindowChart:
                 "quantity": qty, "drink_from": frm, "drink_until": until}
 
     def _chart(self, wines):
-        return wine_app._drink_window_chart(wines, self.CUR)
+        """The desktop view: everything but the phone-only bars."""
+        chart, order, names = wine_app._drink_window_chart(wines, self.CUR)
+        return [c for c in chart if c.get("only") != "phone"], order, names
 
     def test_long_window_fills_the_axis_and_both_edges(self):
         chart, _, _ = self._chart([self._w(1, 2012, 2055, qty=2)])
@@ -1140,3 +1142,31 @@ class TestDrinkWindowChart:
 
     def test_empty(self):
         assert self._chart([]) == ([], [], {})
+
+
+class TestDrinkWindowChartPhone:
+    """Phones show current-3 .. current+10: the years 11-15 ahead and the
+    "+15" edge bar are desktop-only, and a "+10" edge bar replaces them."""
+    CUR = 2026
+
+    def _w(self, wid, frm, until, qty=1):
+        return {"id": wid, "name": f"W{wid}", "year": 2020, "type": "Rotwein",
+                "quantity": qty, "drink_from": frm, "drink_until": until}
+
+    def test_years_beyond_ten_are_desktop_only(self):
+        chart, _, _ = wine_app._drink_window_chart([self._w(1, 2026, 2055)], self.CUR)
+        flags = {c["year"]: c.get("only") for c in chart}
+        assert all(flags[y] is None for y in range(2026, 2037))
+        assert all(flags[y] == "desktop" for y in range(2037, 2042))
+        assert flags["later"] == "desktop" and flags["later_phone"] == "phone"
+
+    def test_phone_edge_bar_counts_everything_past_ten_years(self):
+        wines = [self._w(1, 2030, 2055, qty=2), self._w(2, 2038, 2040, qty=3), self._w(3, 2026, 2030)]
+        chart, _, names = wine_app._drink_window_chart(wines, self.CUR)
+        bar = next(c for c in chart if c["year"] == "later_phone")
+        assert bar["counts"] == {"Rotwein": 5} and bar["label"] == "2036+"
+        assert sorted(w["id"] for w in names["later_phone"]["Rotwein"]) == [1, 2]
+
+    def test_no_phone_bar_when_nothing_reaches_that_far(self):
+        chart, _, _ = wine_app._drink_window_chart([self._w(1, 2026, 2030)], self.CUR)
+        assert all(c["year"] != "later_phone" for c in chart)
