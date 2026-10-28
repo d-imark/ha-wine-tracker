@@ -2055,7 +2055,50 @@ class TestAiSettings:
         client.post("/api/ai-settings", json={"openai_api_key": "sk-geheim-789"})
         assert "sk-geheim-789" not in client.get("/api/ai-settings").data.decode()
         assert "sk-geheim-789" not in client.get("/").data.decode()
-        assert b"sk-geheim-789" not in client.get("/export").data
+        # The ZIP is deflated - look inside every member, not at the raw bytes.
+        import io, zipfile
+        zf = zipfile.ZipFile(io.BytesIO(client.get("/export").data))
+        for name in zf.namelist():
+            assert b"sk-geheim-789" not in zf.read(name), name
+
+    def test_connection_test_uses_form_values_without_saving(self, client, db):
+        """Trying another provider must not overwrite a working setup."""
+        client.post("/api/ai-settings", json={"ai_provider": "openai", "openai_api_key": "sk-good",
+                                              "openai_model": "gpt-good"})
+        with patch("app._call_chat_anthropic", return_value="OK") as mock_call:
+            resp = client.post("/api/ai-settings/test", headers=self.XHR, json={
+                "ai_provider": "anthropic", "anthropic_api_key": "sk-try", "anthropic_model": "claude-try"})
+        assert resp.get_json()["ok"] is True
+        used = mock_call.call_args[0][2]
+        assert used["anthropic_api_key"] == "sk-try" and used["anthropic_model"] == "claude-try"
+        import app as wine_app
+        opts = wine_app.load_options()
+        assert opts["ai_provider"] == "openai" and opts["openai_model"] == "gpt-good"
+        assert opts["anthropic_api_key"] == ""
+
+    def test_connection_test_keeps_stored_key_when_field_is_empty(self, client):
+        client.post("/api/ai-settings", json={"ai_provider": "anthropic", "anthropic_api_key": "sk-stored"})
+        with patch("app._call_chat_anthropic", return_value="OK") as mock_call:
+            client.post("/api/ai-settings/test", headers=self.XHR,
+                        json={"ai_provider": "anthropic", "anthropic_api_key": "", "anthropic_model": "m"})
+        assert mock_call.call_args[0][2]["anthropic_api_key"] == "sk-stored"
+
+    def test_connection_test_honours_a_cleared_chat_model(self, client):
+        client.post("/api/ai-settings", json={"ai_provider": "anthropic", "anthropic_api_key": "sk",
+                                              "anthropic_model": "label-m", "chat_model": "old-chat"})
+        with patch("app._call_chat_anthropic", return_value="OK") as mock_call:
+            client.post("/api/ai-settings/test", headers=self.XHR,
+                        json={"ai_provider": "anthropic", "chat_model": "", "anthropic_model": "label-m"})
+        assert mock_call.call_args[0][2]["anthropic_model"] == "label-m"
+
+    def test_readonly_cannot_test_or_list_models(self, client, monkeypatch):
+        import app as wine_app
+        monkeypatch.setattr(wine_app, "AUTH_ENABLED", True)
+        with client.session_transaction() as s:
+            s["user"] = "viewer"
+            s["role"] = "readonly"
+        assert client.get("/api/ai-settings/models?provider=openrouter").status_code == 403
+        assert client.post("/api/ai-settings/test", headers=self.XHR, json={}).status_code == 403
 
     def test_test_endpoint_uses_chat_call(self, client):
         client.post("/api/ai-settings", json={

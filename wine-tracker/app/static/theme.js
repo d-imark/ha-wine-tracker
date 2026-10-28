@@ -139,6 +139,7 @@ function switchSettingsTab(name) {
     sec.style.display = sec.dataset.settingsTab === name ? '' : 'none';
   });
   try { localStorage.setItem('wineSettingsTab', name); } catch (e) {}
+  if (name === 'ai') _aiEnsureLoaded();
 }
 
 // ── AI settings (settings modal) ─────────────────────────────────────────────
@@ -148,6 +149,29 @@ function switchSettingsTab(name) {
 var _aiSettings = null;
 var _aiModelCache = {};
 var _modelDdTarget = null;
+var _aiLoadStarted = false;
+
+// Loaded only once the AI tab is actually shown: the model list is fetched
+// from the provider, and that must not happen on every page view.
+function _aiEnsureLoaded() {
+  if (_aiLoadStarted || !document.getElementById('aiProviderSelect')) return;
+  var modal = document.getElementById('settingsModal');
+  if (!modal || !modal.classList.contains('open')) return;
+  _aiLoadStarted = true;
+  aiSettingsLoad();
+}
+
+// Pages open the modal with their own openModal(); watch for it instead of
+// patching five of them.
+document.addEventListener('DOMContentLoaded', function() {
+  var modal = document.getElementById('settingsModal');
+  if (!modal || !window.MutationObserver) return;
+  new MutationObserver(function() {
+    if (!modal.classList.contains('open')) { closeModelDd(); return; }
+    var active = modal.querySelector('.settings-tab.active');
+    if (active && active.dataset.tab === 'ai') _aiEnsureLoaded();
+  }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+});
 
 function _aiStatus(msg, kind) {
   var el = document.getElementById('aiSettingsStatus');
@@ -188,6 +212,10 @@ function aiSettingsProviderChanged() {
   document.getElementById('aiHostRow').style.display = p === 'ollama' ? '' : 'none';
   document.getElementById('aiWebSearchRow').style.display = p === 'openai' ? '' : 'none';
   document.getElementById('aiModelInput').value = _aiSettings.settings[p + '_model'] || '';
+  // The chat model names a model of one provider: on another provider it
+  // would break the sommelier, so it only comes back with the stored provider.
+  document.getElementById('aiChatModelInput').value =
+    p === _aiSettings.settings.ai_provider ? (_aiSettings.settings.chat_model || '') : '';
   var keyInput = document.getElementById('aiApiKeyInput');
   keyInput.value = '';
   keyInput.placeholder = _aiSettings.keys[p + '_api_key'] ? T.ai_key_stored : T.ai_key_placeholder;
@@ -199,11 +227,8 @@ function _aiSetModelButtons(hasModels) {
     var b = document.getElementById(id);
     if (b) b.style.display = hasModels ? '' : 'none';
   });
-  // With a list the field is a picker; without one it stays free text.
-  ['aiModelInput', 'aiChatModelInput'].forEach(function(id) {
-    var input = document.getElementById(id);
-    if (input) input.readOnly = hasModels;
-  });
+  // The fields stay free text: the list is capped and filtered, so a model
+  // missing from it must still be typeable.
 }
 
 function _aiLoadModelList(provider) {
@@ -305,9 +330,7 @@ function _aiPost(path, payload) {
   }).then(function(r) { return r.json(); });
 }
 
-// Saves, then reloads the page (which AI buttons a page shows depends on it) -
-// unless a callback wants to continue, like the connection test.
-function aiSettingsSave(cb) {
+function _aiFormPayload() {
   var p = document.getElementById('aiProviderSelect').value;
   var payload = {
     ai_provider: p,
@@ -320,36 +343,39 @@ function aiSettingsSave(cb) {
     var key = document.getElementById('aiApiKeyInput').value.trim();
     if (key) payload[p + '_api_key'] = key;
   }
+  return payload;
+}
+
+// Saves, then reloads the page - which AI buttons a page shows depends on it.
+function aiSettingsSave() {
+  var payload = _aiFormPayload();
   _aiStatus('…');
   _aiBusy(true);
   _aiPost('/api/ai-settings', payload)
     .then(function(data) {
       if (!data.ok) { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); return; }
-      if (payload[p + '_api_key']) delete _aiModelCache[p];
-      document.getElementById('aiApiKeyInput').value = '';
       _aiStatus(T.ai_saved, 'ok');
-      if (typeof cb === 'function') { cb(); return; }
       location.reload();
     })
     .catch(function() { _aiStatus(T.ai_save_failed, 'error'); _aiBusy(false); });
 }
 
+// Tests what is in the form WITHOUT saving it: a failed try with another
+// provider must not replace a working setup.
 function aiSettingsTest() {
-  aiSettingsSave(function() {
-    _aiStatus(T.ai_testing);
-    _aiPost('/api/ai-settings/test')
-      .then(function(data) {
-        _aiStatus(data.ok ? T.ai_test_ok : T.ai_test_failed + ': ' + (data.error || ''),
-                  data.ok ? 'ok' : 'error');
-        _aiBusy(false);
-      })
-      .catch(function() { _aiStatus(T.ai_test_failed, 'error'); _aiBusy(false); });
-  });
+  _aiStatus(T.ai_testing);
+  _aiBusy(true);
+  _aiPost('/api/ai-settings/test', _aiFormPayload())
+    .then(function(data) {
+      _aiStatus(data.ok ? T.ai_test_ok : T.ai_test_failed + ': ' + (data.error || ''),
+                data.ok ? 'ok' : 'error');
+      _aiBusy(false);
+    })
+    .catch(function() { _aiStatus(T.ai_test_failed, 'error'); _aiBusy(false); });
 }
 
 // Drops every app override so the add-on configuration applies again. Asks the
-// server which ones exist: "Test connection" saves without a reload, so the
-// list from page load can be out of date.
+// server which ones exist rather than trusting the list from page load.
 function aiSettingsResetOverrides() {
   _aiBusy(true);
   fetch(_ingressPrefix() + '/api/ai-settings')
@@ -552,7 +578,6 @@ document.addEventListener('DOMContentLoaded', function() {
   updateThemeSegmented();
   updateThemeDropdown();
   initSettingsTabs();
-  if (document.getElementById('aiProviderSelect')) aiSettingsLoad();
 });
 
 // ── Area (cellar / bar) ──────────────────────────────────────────────────────

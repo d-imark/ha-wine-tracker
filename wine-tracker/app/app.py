@@ -3735,22 +3735,16 @@ def api_ai_settings_get():
                    configured=_is_ai_configured(opts))
 
 
-@app.route("/api/ai-settings", methods=["POST"])
-def api_ai_settings_save():
-    """Store AI settings. null removes an override; an empty API key field
-    keeps the stored key; keys outside AI_SETTING_KEYS are ignored."""
-    denied = _ai_settings_forbidden()
-    if denied:
-        return denied
-    payload = request.get_json(silent=True)
-    if payload is None or not isinstance(payload, dict):
-        return jsonify(ok=False, error="json_body_required"), 400
-    db = get_db()
+def _ai_settings_changes(payload):
+    """Turn a settings payload into {key: value-or-None}. None removes the
+    override; an empty API key field means "keep the stored key" and is left
+    out; keys outside AI_SETTING_KEYS are ignored."""
+    changes = {}
     for key, value in payload.items():
         if key not in AI_SETTING_KEYS:
             continue
         if value is None:
-            db.execute("DELETE FROM app_settings WHERE key=?", (key,))
+            changes[key] = None
             continue
         if isinstance(value, bool):
             value = "true" if value else "false"
@@ -3759,24 +3753,52 @@ def api_ai_settings_save():
         value = value.strip()[:500]
         if value == "":
             if key not in AI_KEY_FIELDS:
-                db.execute("DELETE FROM app_settings WHERE key=?", (key,))
+                changes[key] = None
             continue
-        db.execute(
-            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, value),
-        )
+        changes[key] = value
+    return changes
+
+
+@app.route("/api/ai-settings", methods=["POST"])
+def api_ai_settings_save():
+    """Store AI settings (see _ai_settings_changes for the rules)."""
+    denied = _ai_settings_forbidden()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify(ok=False, error="json_body_required"), 400
+    db = get_db()
+    for key, value in _ai_settings_changes(payload).items():
+        if value is None:
+            db.execute("DELETE FROM app_settings WHERE key=?", (key,))
+        else:
+            db.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
     db.commit()
     return jsonify(ok=True, configured=_is_ai_configured(load_options()))
 
 
 @app.route("/api/ai-settings/test", methods=["POST"])
 def api_ai_settings_test():
-    """A minimal chat call against the configured provider."""
+    """A minimal chat call. Tests the values posted from the form, laid over
+    the stored settings WITHOUT saving them - trying another provider must not
+    break a working setup. An empty body tests what is stored."""
     denied = _ai_settings_forbidden()
     if denied:
         return denied
-    opts = chat_opts(load_options())
+    opts = load_options()
+    payload = request.get_json(silent=True)
+    if isinstance(payload, dict):
+        for key, value in _ai_settings_changes(payload).items():
+            # A field cleared in the form means "empty" here, not "stored value"
+            # (the provider calls fall back to their default model on "").
+            opts[key] = "" if value is None else value
+        opts["openai_web_search"] = _truthy(opts.get("openai_web_search", True))
+    opts = chat_opts(opts)
     provider = opts.get("ai_provider", "none").strip().lower()
     if provider == "none" or not _is_ai_configured(opts):
         return jsonify(ok=False, error="ai_not_configured"), 400
