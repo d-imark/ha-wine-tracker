@@ -1629,24 +1629,31 @@ function changeQtyCard(card, delta, isUndo) {
   // quick clicks can then arrive in any order without saving an older number,
   // and no other field of the bottle is touched.
   applyQtyUI(card, newQty);          // optimistic
-  var seq = (card._qtySeq || 0) + 1;
-  card._qtySeq = seq;
+  card._qtyPending = (card._qtyPending || 0) + 1;
   fetch(INGRESS + '/api/wine/' + id + '/quantity', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     body: JSON.stringify({ delta: change, undo: !!isUndo })
   })
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (!data.ok) throw new Error('save failed');
-      // Only the answer to the latest click may set the number; an earlier
-      // one arriving late would flicker back.
-      if (card._qtySeq === seq) applyQtyUI(card, data.wine.quantity);
-    })
+    .then(function(data) { if (!data.ok) throw new Error('save failed'); })
     .catch(function() {
       // Take back exactly this click, whatever other clicks did meanwhile.
       applyQtyUI(card, Math.max(0, (parseInt(card.dataset.quantity) || 0) - change));
       showErrorToast(T.toast_save_failed);
+    })
+    .then(function() {
+      // The answers to quick clicks are snapshots taken in whatever order the
+      // server ran them - none is the final number. Once the last one is in,
+      // ask for the real count (it may also have changed on another device).
+      card._qtyPending--;
+      if (card._qtyPending > 0) return;
+      fetch(INGRESS + '/api/wine/' + id)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok && !card._qtyPending) applyQtyUI(card, d.wine.quantity);
+        })
+        .catch(function() {});
     });
 
   if (isUndo) { hideUndoToast(); return; }
@@ -1696,6 +1703,23 @@ function undoToastClick() {
 // ── Qty popover (opened from the qty badge or the table's quantity cell) ─────
 
 var qtyPopoverCard = null;
+var qtyPopoverAnchor = null;
+
+// Next to its anchor, flipped above it near the bottom edge. Returns false
+// when the anchor is out of view.
+function placeQtyPopover() {
+  var pop = document.getElementById('qtyPopover');
+  if (!pop || !qtyPopoverAnchor) return false;
+  var r = qtyPopoverAnchor.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) return false;
+  var pr = pop.getBoundingClientRect();
+  var left = Math.max(8, Math.min(r.left, window.innerWidth - pr.width - 8));
+  var top = r.bottom + 6;
+  if (top + pr.height > window.innerHeight - 8) top = r.top - pr.height - 6;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  return true;
+}
 
 function openQtyPopover(el, ev) {
   ev.stopPropagation();
@@ -1710,21 +1734,17 @@ function openQtyPopover(el, ev) {
   if (!card) return;
   if (qtyPopoverCard === card && pop.style.display !== 'none') { closeQtyPopover(); return; }
   qtyPopoverCard = card;
+  qtyPopoverAnchor = el;
   document.getElementById('qtyPopoverCount').textContent = card.dataset.quantity || '0';
   pop.style.display = 'flex';
-  var r = el.getBoundingClientRect();
-  var pr = pop.getBoundingClientRect();
-  var left = Math.max(8, Math.min(r.left, window.innerWidth - pr.width - 8));
-  var top = r.bottom + 6;
-  if (top + pr.height > window.innerHeight - 8) top = r.top - pr.height - 6;
-  pop.style.left = left + 'px';
-  pop.style.top = top + 'px';
+  placeQtyPopover();
 }
 
 function closeQtyPopover() {
   var pop = document.getElementById('qtyPopover');
   if (pop) pop.style.display = 'none';
   qtyPopoverCard = null;
+  qtyPopoverAnchor = null;
 }
 
 function qtyPopoverChange(delta) {
@@ -1735,7 +1755,13 @@ document.addEventListener('click', function(e) {
   var pop = document.getElementById('qtyPopover');
   if (pop && pop.style.display !== 'none' && !pop.contains(e.target)) closeQtyPopover();
 });
-window.addEventListener('scroll', closeQtyPopover, true);
+// Scrolling moves the popover along with its anchor and only closes it once the
+// anchor leaves the screen. Closing on every scroll event lost the tap on a
+// phone: a table still gliding sideways after a swipe fires one right after.
+window.addEventListener('scroll', function() {
+  var pop = document.getElementById('qtyPopover');
+  if (pop && pop.style.display !== 'none' && !placeQtyPopover()) closeQtyPopover();
+}, true);
 
 // ── AJAX duplicate ────────────────────────────────────────────────────────────
 
