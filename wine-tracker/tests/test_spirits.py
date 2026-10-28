@@ -21,12 +21,11 @@ def _insert_wine(db, name="Testwhisky", category="whisky", quantity=1):
 def test_details_roundtrip(db):
     wid = _insert_wine(db)
     spirits.set_details(db, wid, {
-        "abv": 46.0, "age_years": 16, "distilled_year": 2005, "bottled_year": 2021,
+        "age_years": 16, "distilled_year": 2005, "bottled_year": 2021,
         "bottler": "Original", "batch_number": "Batch 003", "cask_strength": 1,
         "single_cask": 0, "cask_number": "#1234", "chill_filtered": 0, "peat_ppm": 35,
     })
     d = spirits.get_details(db, wid)
-    assert d["abv"] == 46.0
     assert d["age_years"] == 16
     assert d["batch_number"] == "Batch 003"
     assert d["cask_strength"] == 1
@@ -35,21 +34,21 @@ def test_details_roundtrip(db):
 
 def test_details_update_replaces_values(db):
     wid = _insert_wine(db)
-    spirits.set_details(db, wid, {"abv": 40.0})
-    spirits.set_details(db, wid, {"abv": 43.0, "age_years": 12})
+    spirits.set_details(db, wid, {"peat_ppm": 20})
+    spirits.set_details(db, wid, {"peat_ppm": 35, "age_years": 12})
     d = spirits.get_details(db, wid)
-    assert d["abv"] == 43.0 and d["age_years"] == 12
+    assert d["peat_ppm"] == 35 and d["age_years"] == 12
 
 
 def test_details_missing_row_is_empty_not_an_error(db):
     wid = _insert_wine(db)
     d = spirits.get_details(db, wid)
-    assert d["abv"] is None and d["opened_at"] is None
+    assert d["age_years"] is None and d["opened_at"] is None
 
 
 def test_details_cascade_delete(db):
     wid = _insert_wine(db)
-    spirits.set_details(db, wid, {"abv": 46.0})
+    spirits.set_details(db, wid, {"age_years": 10})
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("DELETE FROM wines WHERE id=?", (wid,))
     db.commit()
@@ -67,7 +66,7 @@ def test_deleting_a_wine_removes_its_child_rows(client, db):
     }, follow_redirects=True)
     wid = db.execute("SELECT id FROM wines WHERE name='Orphan Test'").fetchone()[0]
     client.post(f"/api/wine/{wid}/purchases", json={"quantity": 1, "unit_price": 10})
-    spirits.set_details(db, wid, {"abv": 40})
+    spirits.set_details(db, wid, {"age_years": 8})
     db.execute("INSERT INTO spirit_casks (wine_id, name, years, position) VALUES (?,?,?,?)",
                (wid, "Ex-Bourbon", 5, 0))
     db.commit()
@@ -94,7 +93,7 @@ def test_cleanup_orphans_removes_leftovers(db):
     import app as wine_app
     db.execute("INSERT INTO wine_grapes (wine_id, name, pct, position) "
                "VALUES (999999, 'Ghost', NULL, 0)")
-    db.execute("INSERT INTO spirit_details (wine_id, abv) VALUES (999999, 40)")
+    db.execute("INSERT INTO spirit_details (wine_id, age_years) VALUES (999999, 8)")
     db.commit()
     removed = wine_app.cleanup_orphans(db)
     assert removed >= 2
@@ -239,3 +238,8 @@ def test_spirit_tables_created_by_init_db(db):
     names = {r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"spirit_details", "spirit_casks"} <= names
+
+
+def test_details_no_longer_carry_abv():
+    """Alcohol content is a bottle field (wines.alcohol_pct) for every category."""
+    assert "abv" not in spirits.DETAIL_FIELDS

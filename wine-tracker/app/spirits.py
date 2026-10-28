@@ -8,8 +8,9 @@ from datetime import datetime
 
 import reference
 
+# Alcohol content is not here: it is a field of every bottle (wines.alcohol_pct).
 DETAIL_FIELDS = [
-    "abv", "age_years", "distilled_year", "bottled_year", "cask_summary",
+    "age_years", "distilled_year", "bottled_year", "cask_summary",
     "bottler", "batch_number", "cask_strength", "single_cask", "cask_number",
     "chill_filtered", "peat_ppm", "opened_at", "fill_level",
 ]
@@ -19,7 +20,6 @@ def create_spirit_tables(db):
     db.execute("""
         CREATE TABLE IF NOT EXISTS spirit_details (
             wine_id        INTEGER PRIMARY KEY,
-            abv            REAL,
             age_years      INTEGER,
             distilled_year INTEGER,
             bottled_year   INTEGER,

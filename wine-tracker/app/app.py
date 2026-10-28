@@ -620,6 +620,15 @@ def _category_from_form(form):
     return value if value in CATEGORIES else "wine"
 
 
+def _alcohol_from_form(form):
+    """% vol from the form, None when empty or not a number."""
+    raw = (form.get("alcohol_pct") or "").strip().replace(",", ".")
+    try:
+        return float(raw) if raw else None
+    except ValueError:
+        return None
+
+
 def _spirit_payload_from_form(form):
     """Return (details, casks) from the posted form.
 
@@ -627,7 +636,7 @@ def _spirit_payload_from_form(form):
     quantity stepper) leaves the other whisky fields untouched. `casks` is None
     when the form carries no cask data at all.
     """
-    numeric = {"abv": float, "age_years": int, "distilled_year": int,
+    numeric = {"age_years": int, "distilled_year": int,
                "bottled_year": int, "peat_ppm": int}
     flags = ("cask_strength", "single_cask", "chill_filtered")
     text = ("bottler", "batch_number", "cask_number")
@@ -729,6 +738,8 @@ def init_db():
             # `notes` belongs to the user. Everything the AI writes about the
             # bottle goes here instead.
             "description":    "TEXT",
+            # % vol for wine and spirits alike (was spirit_details.abv).
+            "alcohol_pct":    "REAL",
         }
         for col, dtype in migrations.items():
             if col not in existing:
@@ -838,6 +849,7 @@ def init_db():
 
         # ── spirits: details + cask chain ──────────────────────────────────
         spirits.create_spirit_tables(db)
+        migrate_abv_to_alcohol_pct(db)
 
         # One-time: child rows left behind by deletions from before the
         # explicit cleanup existed (the declared cascades never fired).
@@ -973,6 +985,50 @@ def migrate_notes_to_description(db):
     _mark_migration_done(db, "notes_to_description")
     if moved:
         app.logger.info("Moved AI notes into description for %d bottles", moved)
+    return moved
+
+
+def migrate_abv_to_alcohol_pct(db):
+    """Move the spirits-only spirit_details.abv onto wines.alcohol_pct.
+
+    Alcohol content became a field of every bottle. Guarded by the old column
+    itself rather than app_meta: once it is dropped there is nothing left to
+    move, and on an SQLite too old for DROP COLUMN the column is left empty, so
+    a repeat finds nothing to copy.
+    """
+    cols = {r[1] for r in db.execute("PRAGMA table_info(spirit_details)")}
+    if "abv" not in cols:
+        return 0
+    cur = db.execute(
+        "UPDATE wines SET alcohol_pct = "
+        "(SELECT abv FROM spirit_details WHERE wine_id = wines.id) "
+        "WHERE alcohol_pct IS NULL AND EXISTS "
+        "(SELECT 1 FROM spirit_details WHERE wine_id = wines.id AND abv IS NOT NULL)")
+    moved = cur.rowcount or 0
+
+    # Saved filter presets name the field too.
+    for row in db.execute("SELECT id, conditions FROM filter_presets").fetchall():
+        try:
+            cond = json.loads(row[1])
+        except (TypeError, ValueError):
+            continue
+        rules = cond.get("rules") if isinstance(cond, dict) else None
+        if not isinstance(rules, dict) or "abv" not in rules:
+            continue
+        rule = rules.pop("abv")
+        rules.setdefault("alcohol_pct", rule)
+        db.execute("UPDATE filter_presets SET conditions=? WHERE id=?",
+                   (json.dumps(cond), row[0]))
+
+    # Emptied first: should the DROP fail, a value the user later clears on the
+    # bottle must not come back from here on the next start.
+    db.execute("UPDATE spirit_details SET abv = NULL")
+    try:
+        db.execute("ALTER TABLE spirit_details DROP COLUMN abv")
+    except sqlite3.OperationalError as e:
+        app.logger.warning("Could not drop spirit_details.abv (%s); it stays unused", e)
+    if moved:
+        app.logger.info("Moved alcohol content onto %d bottles", moved)
     return moved
 
 
@@ -1254,8 +1310,9 @@ def add():
            (name, winery, year, type, region, quantity, rating, vivino_rating, notes, description,
             image, added,
             purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-            maturity_data, taste_profile, food_pairings, country, ai_rationale, category)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            maturity_data, taste_profile, food_pairings, country, ai_rationale, category,
+            alcohol_pct)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form["name"].strip(),
             request.form.get("winery", "").strip() or None,
@@ -1283,6 +1340,7 @@ def add():
             request.form.get("country", "").strip() or None,
             request.form.get("ai_rationale", "").strip() or None,
             _category_from_form(request.form),
+            _alcohol_from_form(request.form),
         ),
     )
     db.commit()
@@ -1385,13 +1443,18 @@ def edit(wine_id):
         purchased_at_val = request.form.get("purchased_at", "").strip() or None
     else:
         purchased_at_val = wine["purchased_at"]
+    # A quantity +/- post does not carry it - keep the stored value then.
+    if "alcohol_pct" in request.form:
+        alcohol_val = _alcohol_from_form(request.form)
+    else:
+        alcohol_val = wine["alcohol_pct"]
     db.execute(
         """UPDATE wines SET name=?, winery=?, year=?, type=?, region=?, quantity=?, rating=?, vivino_rating=?,
            notes=?, description=?, image=?, purchased_at=?, ai_price=?, drink_from=?, drink_until=?,
            location=?,
            grape=?, vivino_id=?, bottle_format=?,
            maturity_data=?, taste_profile=?, food_pairings=?, country=?, ai_rationale=?,
-           category=?
+           category=?, alcohol_pct=?
            WHERE id=?""",
         (
             request.form["name"].strip(),
@@ -1423,6 +1486,7 @@ def edit(wine_id):
             # An edit that does not post a category keeps the current one.
             (_category_from_form(request.form)
              if "category" in request.form else (wine["category"] or "wine")),
+            alcohol_val,
             wine_id,
         ),
     )
@@ -1472,8 +1536,8 @@ def duplicate(wine_id):
         """INSERT INTO wines (name, winery, year, type, region, quantity, rating, vivino_rating, notes,
            description, image, added,
            purchased_at, ai_price, drink_from, drink_until, location, grape, vivino_id, bottle_format,
-           maturity_data, taste_profile, food_pairings, country, ai_rationale)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           maturity_data, taste_profile, food_pairings, country, ai_rationale, alcohol_pct)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             wine["name"],
             wine["winery"],
@@ -1500,6 +1564,7 @@ def duplicate(wine_id):
             wine["food_pairings"],
             wine["country"],
             wine["ai_rationale"],
+            wine["alcohol_pct"],
         ),
     )
     db.commit()

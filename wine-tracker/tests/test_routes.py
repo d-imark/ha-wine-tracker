@@ -730,7 +730,7 @@ class TestStatsPage:
                                   "price": "60"}, headers=AJAX)
         client.post("/add", data={"name": "Stat Lagavulin", "category": "whisky",
                                   "type": "Single Malt", "quantity": "2",
-                                  "region": "Islay", "price": "90", "abv": "43",
+                                  "region": "Islay", "price": "90", "alcohol_pct": "43",
                                   "age_years": "16",
                                   "casks": J.dumps([{"name": "Ex-Bourbon", "years": 16}])},
                     headers=AJAX)
@@ -1643,7 +1643,7 @@ def test_add_wine_legacy_grape_fallback(client, db):
 def test_add_whisky_stores_details_and_casks(client, db):
     resp = client.post("/add", data={
         "name": "Lagavulin 16", "category": "whisky", "type": "Single Malt",
-        "region": "Islay", "quantity": "2", "abv": "43", "age_years": "16",
+        "region": "Islay", "quantity": "2", "alcohol_pct": "43", "age_years": "16",
         "bottler": "Original", "batch_number": "Batch 003", "peat_ppm": "35",
         "casks": json.dumps([{"name": "Ex-Bourbon", "years": 14},
                              {"name": "PX Sherry", "years": 2}]),
@@ -1654,7 +1654,8 @@ def test_add_whisky_stores_details_and_casks(client, db):
 
     import spirits
     d = spirits.get_details(db, wid)
-    assert d["abv"] == 43 and d["age_years"] == 16 and d["batch_number"] == "Batch 003"
+    assert d["age_years"] == 16 and d["batch_number"] == "Batch 003"
+    assert db.execute("SELECT alcohol_pct FROM wines WHERE id=?", (wid,)).fetchone()[0] == 43
     assert [c["name"] for c in spirits.list_casks(db, wid)] == ["Ex-Bourbon", "PX Sherry"]
     assert d["cask_summary"] == "Ex-Bourbon → PX Sherry"
 
@@ -1672,14 +1673,15 @@ def test_edit_without_spirit_fields_keeps_them(client, db):
     """A quantity-only edit must not wipe the whisky details."""
     client.post("/add", data={
         "name": "Keep Details", "category": "whisky", "type": "Single Malt",
-        "quantity": "1", "abv": "46",
+        "quantity": "1", "alcohol_pct": "46", "age_years": "12",
     }, follow_redirects=True)
     wid = db.execute("SELECT id FROM wines WHERE name='Keep Details'").fetchone()[0]
     client.post(f"/edit/{wid}", data={
         "name": "Keep Details", "type": "Single Malt", "quantity": "3", "rating": "0",
     }, follow_redirects=True)
     import spirits
-    assert spirits.get_details(db, wid)["abv"] == 46
+    assert spirits.get_details(db, wid)["age_years"] == 12
+    assert db.execute("SELECT alcohol_pct FROM wines WHERE id=?", (wid,)).fetchone()[0] == 46
     assert db.execute("SELECT category FROM wines WHERE id=?", (wid,)).fetchone()[0] == "whisky"
 
 
@@ -1820,3 +1822,49 @@ class TestCardDatasetPriceFields:
         card = self._card(client.get("/").data.decode(), "Cuvee Dataset")
         assert "data-grapes=" in card
         assert "Merlot" in card and "Syrah" in card
+
+
+# ── alcohol content on the bottle (wine and spirits) ──────────────────────────
+
+def _alc(db, name):
+    return db.execute("SELECT alcohol_pct FROM wines WHERE name=?", (name,)).fetchone()[0]
+
+
+def test_add_and_edit_store_alcohol_pct(client, db):
+    client.post("/add", data={"name": "Riesling Alk", "quantity": "1",
+                              "alcohol_pct": "12.5"}, headers=AJAX)
+    client.post("/add", data={"name": "Whisky Alk", "category": "whisky", "quantity": "1",
+                              "alcohol_pct": "46"}, headers=AJAX)
+    assert _alc(db, "Riesling Alk") == 12.5
+    assert _alc(db, "Whisky Alk") == 46.0
+    wid = db.execute("SELECT id FROM wines WHERE name='Riesling Alk'").fetchone()[0]
+    client.post(f"/edit/{wid}", data={"name": "Riesling Alk", "quantity": "1",
+                                      "alcohol_pct": "13"}, headers=AJAX)
+    assert _alc(db, "Riesling Alk") == 13.0
+    client.post(f"/edit/{wid}", data={"name": "Riesling Alk", "quantity": "1",
+                                      "alcohol_pct": ""}, headers=AJAX)
+    assert _alc(db, "Riesling Alk") is None
+
+
+def test_partial_edit_keeps_alcohol_pct(client, db):
+    client.post("/add", data={"name": "Teil Alk", "category": "whisky", "quantity": "1",
+                              "alcohol_pct": "57.1"}, headers=AJAX)
+    wid = db.execute("SELECT id FROM wines WHERE name='Teil Alk'").fetchone()[0]
+    client.post(f"/edit/{wid}", data={"name": "Teil Alk", "quantity": "2"}, headers=AJAX)
+    assert _alc(db, "Teil Alk") == 57.1
+
+
+def test_duplicate_copies_alcohol_pct(client, db):
+    client.post("/add", data={"name": "Dupli Alk", "quantity": "1", "year": "2019",
+                              "alcohol_pct": "14"}, headers=AJAX)
+    wid = db.execute("SELECT id FROM wines WHERE name='Dupli Alk'").fetchone()[0]
+    client.post(f"/duplicate/{wid}", data={"new_year": "2020", "quantity": "1"}, headers=AJAX)
+    vals = [r[0] for r in db.execute("SELECT alcohol_pct FROM wines WHERE name='Dupli Alk'")]
+    assert vals == [14.0, 14.0]
+
+
+def test_wine_json_carries_alcohol_pct(client):
+    w = json.loads(client.post("/add", data={"name": "Json Alk", "quantity": "1",
+                                             "alcohol_pct": "13.5"}, headers=AJAX).data)["wine"]
+    assert w["alcohol_pct"] == 13.5
+    assert "abv" not in (w.get("spirit_details") or {})

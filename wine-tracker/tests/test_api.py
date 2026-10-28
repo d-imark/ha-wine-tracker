@@ -2242,13 +2242,14 @@ def test_wine_json_includes_spirit_data(client, db):
     import json as J
     client.post("/add", data={
         "name": "Api Whisky", "category": "whisky", "type": "Single Malt",
-        "quantity": "1", "abv": "46",
+        "quantity": "1", "alcohol_pct": "46", "age_years": "10",
         "casks": J.dumps([{"name": "Ex-Bourbon", "years": 10}]),
     }, follow_redirects=True)
     wid = db.execute("SELECT id FROM wines WHERE name='Api Whisky'").fetchone()[0]
     w = client.get(f"/api/wine/{wid}").get_json()["wine"]
     assert w["category"] == "whisky"
-    assert w["spirit_details"]["abv"] == 46
+    assert w["spirit_details"]["age_years"] == 10
+    assert w["alcohol_pct"] == 46
     assert [c["name"] for c in w["casks"]] == ["Ex-Bourbon"]
 
 

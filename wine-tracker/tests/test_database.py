@@ -369,3 +369,79 @@ class TestFilterPresetsTable:
         ).fetchone()
         conn.close()
         assert tables is not None
+
+
+# ── alcohol content: spirit_details.abv -> wines.alcohol_pct ─────────────────
+
+def _columns(conn, table):
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _make_legacy_alcohol_db(abv=46.3, alcohol_pct=None, preset_rules=None):
+    """Turn the test DB back into the pre-migration layout: abv lives on
+    spirit_details, wines has no value yet."""
+    import json
+    conn = sqlite3.connect(wine_app.DB_PATH)
+    if "abv" not in _columns(conn, "spirit_details"):
+        conn.execute("ALTER TABLE spirit_details ADD COLUMN abv REAL")
+    cur = conn.execute("INSERT INTO wines (name, category, quantity) VALUES ('Lagavulin', 'whisky', 1)")
+    wid = cur.lastrowid
+    if "alcohol_pct" in _columns(conn, "wines"):
+        conn.execute("UPDATE wines SET alcohol_pct=? WHERE id=?", (alcohol_pct, wid))
+    conn.execute("INSERT INTO spirit_details (wine_id, abv) VALUES (?, ?)", (wid, abv))
+    conn.execute("INSERT INTO wines (name, category, quantity) VALUES ('Chablis', 'wine', 1)")
+    if preset_rules is not None:
+        conn.execute(
+            "INSERT INTO filter_presets (name, conditions, created, updated) VALUES (?,?,?,?)",
+            ("Stark", json.dumps({"rules": preset_rules}), "2026-10-01", "2026-10-01"))
+    conn.commit()
+    conn.close()
+
+
+def _alcohol(name):
+    conn = sqlite3.connect(wine_app.DB_PATH)
+    try:
+        return conn.execute("SELECT alcohol_pct FROM wines WHERE name=?", (name,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+class TestAlcoholMigration:
+    def test_alcohol_migration_moves_abv(self, app):
+        _make_legacy_alcohol_db()
+        wine_app.init_db()
+        assert _alcohol("Lagavulin") == 46.3
+        assert _alcohol("Chablis") is None
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        assert "abv" not in _columns(conn, "spirit_details")
+        conn.close()
+
+    def test_alcohol_migration_is_idempotent(self, app):
+        _make_legacy_alcohol_db()
+        wine_app.init_db()
+        wine_app.init_db()
+        assert _alcohol("Lagavulin") == 46.3
+
+    def test_migration_keeps_existing_alcohol_pct(self, app):
+        wine_app.init_db()          # make sure the column exists
+        _make_legacy_alcohol_db(abv=46.3, alcohol_pct=43.0)
+        wine_app.init_db()
+        assert _alcohol("Lagavulin") == 43.0
+
+    def test_migration_rewrites_abv_in_filter_presets(self, app):
+        import json
+        _make_legacy_alcohol_db(preset_rules={"abv": {"op": "gt", "value": "40"},
+                                              "name": {"op": "contains", "value": "a"}})
+        wine_app.init_db()
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        cond = json.loads(conn.execute(
+            "SELECT conditions FROM filter_presets WHERE name='Stark'").fetchone()[0])
+        conn.close()
+        assert cond["rules"] == {"alcohol_pct": {"op": "gt", "value": "40"},
+                                 "name": {"op": "contains", "value": "a"}}
+
+    def test_new_db_has_no_abv_column(self, app):
+        conn = sqlite3.connect(wine_app.DB_PATH)
+        assert "abv" not in _columns(conn, "spirit_details")
+        assert "alcohol_pct" in _columns(conn, "wines")
+        conn.close()
