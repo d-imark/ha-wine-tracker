@@ -135,18 +135,25 @@
 <!-- ═══════ HERKUNFT MAP ═══════ -->
 {% if map_points %}
 <div class="map-card">
-  <h2><i class="mdi mdi-earth"></i> {{ L('stat_wine_origin') }}</h2>
-  <div class="globe-wrap">
-    <canvas id="globeCanvas"></canvas>
-    <div class="globe-legend">
+  <h2><i class="mdi mdi-earth"></i> {{ L('stat_wine_origin') }}
+    <button type="button" class="globe-list-toggle active" id="globeListToggle"
+            onclick="toggleGlobeList()" title="{{ t.stat_toggle_regions }}"
+            aria-pressed="true"><i class="mdi mdi-format-list-bulleted"></i></button>
+  </h2>
+  {# The list sits beside the globe (below it on phones) instead of over it;
+     clicking a region turns the globe to it and highlights its marker. #}
+  <div class="globe-wrap" id="globeWrap">
+    <div class="globe-legend" id="globeLegend">
       {% for p in map_points|sort(attribute='region')|sort(attribute='qty', reverse=True) %}
-      <div class="globe-legend-item">
+      <button type="button" class="globe-legend-item" data-region="{{ p.region }}"
+              data-lat="{{ p.lat }}" data-lon="{{ p.lon }}" onclick="focusGlobeRegion(this)">
         <span class="globe-legend-dot"></span>
         <span>{{ p.region }}</span>
         <span class="globe-legend-qty">{{ p.qty }}</span>
-      </div>
+      </button>
       {% endfor %}
     </div>
+    <canvas id="globeCanvas"></canvas>
   </div>
 </div>
 {% endif %}
@@ -1015,6 +1022,7 @@ const GLOBE_THEMES = {
 };
 
 let globeInstance = null;
+let globeObserver = null;
 let phi = 0;
 let theta = 0;
 let pointerDown = false;
@@ -1022,41 +1030,61 @@ let pointerX = 0;
 let pointerY = 0;
 let velocity = 0;
 let resumeAutoRotate = 0;
+let globePoints = [];
+let globeMarkers = [];
+let markersDirty = false;
+let selectedRegion = -1;          // index into globePoints, -1 = none
+let targetPhi = null, targetTheta = null;
+let globeVisible = true;
+
+const MARKER_MIN = 0.04, MARKER_MAX = 0.14, MARKER_FOCUS = 0.18, MARKER_DIM = 0.025;
+
+// COBE shows longitude 0 at phi = 226° (calibrated); latitude maps onto theta.
+function phiFor(lon) { return (226 - lon) * Math.PI / 180; }
+function thetaFor(lat) { return Math.max(-1.2, Math.min(1.2, lat * Math.PI / 180)); }
+
+function buildMarkers() {
+  const maxQty = Math.max(...globePoints.map(p => p.qty));
+  globeMarkers = globePoints.map((p, i) => {
+    let size = Math.max(MARKER_MIN, (p.qty / maxQty) * MARKER_MAX);
+    if (selectedRegion !== -1) size = (i === selectedRegion) ? MARKER_FOCUS : MARKER_DIM;
+    return { location: [p.lat, p.lon], size: size };
+  });
+  markersDirty = true;
+}
+
+// Only draw while the globe is on screen and the tab is visible: COBE renders
+// every frame otherwise, which made the whole page sluggish to scroll.
+function updateGlobeRendering() {
+  if (globeInstance) globeInstance.toggle(globeVisible && !document.hidden);
+}
 
 function initGlobe() {
   const canvas = document.getElementById('globeCanvas');
   if (!canvas) return;
 
-  const points = {{ map_points | tojson }};
-  if (!points || points.length === 0) {
+  globePoints = {{ map_points | tojson }};
+  if (!globePoints || globePoints.length === 0) {
     canvas.closest('.map-card')?.remove();
     return;
   }
+  buildMarkers();
 
-  // Build markers from map_points
-  const maxQty = Math.max(...points.map(p => p.qty));
-  const markers = points.map(p => ({
-    location: [p.lat, p.lon],
-    size: Math.max(0.04, (p.qty / maxQty) * 0.14)
-  }));
+  // Start centred on the biggest region (longitude only), slightly tilted north
+  const biggest = globePoints.reduce((a, b) => a.qty > b.qty ? a : b);
+  phi = phiFor(biggest.lon);
+  theta = 0.3;
 
-  // Determine initial rotation to center on the biggest region (longitude only)
-  const biggest = points.reduce((a, b) => a.qty > b.qty ? a : b);
-  const startPhi = (226 - biggest.lon) * Math.PI / 180;  // COBE: 226° base (calibrated) minus longitude
-  phi = startPhi;
-  theta = 0.3;                                         // slight tilt to show northern hemisphere better
-
-  // Get current theme
   const isLight = document.documentElement.classList.contains('light');
   const theme = isLight ? GLOBE_THEMES.light : GLOBE_THEMES.dark;
 
-  // Canvas sizing — the buffer (width/height) and the per-frame render size must
-  // use the SAME value (size * dpr), otherwise COBE draws the globe at the wrong
-  // scale and only a fraction of it is visible.
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // The buffer (width/height) and the per-frame render size must use the SAME
+  // value (size * dpr), otherwise COBE draws the globe at the wrong scale. The
+  // pixel ratio is capped at 1.5: at 2 every frame shades 78 % more pixels for
+  // a difference nobody sees on a rotating dot map.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   const size = canvas.offsetWidth || 500;
 
-  // Destroy existing globe
   if (globeInstance) { globeInstance.destroy(); globeInstance = null; }
 
   globeInstance = createGlobe(canvas, {
@@ -1064,19 +1092,25 @@ function initGlobe() {
     width: size * dpr,
     height: size * dpr,
     phi: phi,
-    theta: 0.3,
+    theta: theta,
     dark: theme.dark,
     diffuse: theme.diffuse,
-    mapSamples: 16000,
+    mapSamples: 12000,
     mapBrightness: theme.mapBrightness,
     baseColor: theme.baseColor,
     markerColor: theme.markerColor,
     glowColor: theme.glowColor,
-    markers: markers,
+    markers: globeMarkers,
     opacity: 0.85,
     onRender: (state) => {
       const now = Date.now();
-      if (!pointerDown && now > resumeAutoRotate) {
+      if (targetPhi !== null && !pointerDown) {
+        // Ease towards the chosen region along the shorter way round.
+        let d = targetPhi - phi;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        phi += d * 0.08;
+        theta += (targetTheta - theta) * 0.08;
+      } else if (!pointerDown && now > resumeAutoRotate && selectedRegion === -1) {
         phi += 0.003;
       }
       phi += velocity;
@@ -1086,38 +1120,97 @@ function initGlobe() {
       state.theta = theta;
       state.width = size * dpr;
       state.height = size * dpr;
+      if (markersDirty) { state.markers = globeMarkers; markersDirty = false; }
     }
   });
 
-  // Pointer interaction - drag to rotate (X = longitude, Y = latitude)
-  canvas.addEventListener('pointerdown', (e) => {
+  // Drag to rotate (X = longitude, Y = latitude); dragging ends a focus move.
+  canvas.onpointerdown = (e) => {
     pointerDown = true;
+    targetPhi = targetTheta = null;
     pointerX = e.clientX;
     pointerY = e.clientY;
     velocity = 0;
     canvas.style.cursor = 'grabbing';
-  });
-  window.addEventListener('pointerup', () => {
-    if (pointerDown) {
-      pointerDown = false;
-      resumeAutoRotate = Date.now() + 1000;
-      canvas.style.cursor = 'grab';
-    }
-  });
-  window.addEventListener('pointermove', (e) => {
-    if (pointerDown) {
-      const dx = e.clientX - pointerX;
-      const dy = e.clientY - pointerY;
-      pointerX = e.clientX;
-      pointerY = e.clientY;
-      phi += dx * 0.005;
-      theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, theta + dy * 0.005));
-    }
-  });
+  };
+
+  if (window.IntersectionObserver && !globeObserver) {
+    globeObserver = new IntersectionObserver((entries) => {
+      globeVisible = entries[0].isIntersecting;
+      updateGlobeRendering();
+    });
+    globeObserver.observe(canvas);
+  }
+  updateGlobeRendering();
 }
+
+window.addEventListener('pointerup', () => {
+  if (pointerDown) {
+    pointerDown = false;
+    resumeAutoRotate = Date.now() + 1000;
+    const canvas = document.getElementById('globeCanvas');
+    if (canvas) canvas.style.cursor = 'grab';
+  }
+});
+window.addEventListener('pointermove', (e) => {
+  if (!pointerDown) return;
+  const dx = e.clientX - pointerX;
+  const dy = e.clientY - pointerY;
+  pointerX = e.clientX;
+  pointerY = e.clientY;
+  phi += dx * 0.005;
+  theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, theta + dy * 0.005));
+});
+document.addEventListener('visibilitychange', updateGlobeRendering);
+
+// ── Region list: show/hide, click to focus ───────────────────────────────────
+
+window.focusGlobeRegion = (btn) => {
+  const lat = parseFloat(btn.dataset.lat), lon = parseFloat(btn.dataset.lon);
+  const idx = globePoints.findIndex(p => p.region === btn.dataset.region && p.lat === lat && p.lon === lon);
+  if (idx === -1) return;
+  const again = (idx === selectedRegion);
+  selectedRegion = again ? -1 : idx;
+  document.querySelectorAll('.globe-legend-item').forEach(b =>
+    b.classList.toggle('active', !again && b === btn));
+  buildMarkers();
+  if (again) {
+    targetPhi = targetTheta = null;
+    resumeAutoRotate = Date.now() + 1000;
+  } else {
+    targetPhi = phiFor(lon);
+    targetTheta = thetaFor(lat);
+  }
+};
+
+function applyGlobeList(show) {
+  const wrap = document.getElementById('globeWrap');
+  const btn = document.getElementById('globeListToggle');
+  if (!wrap || !btn) return;
+  wrap.classList.toggle('list-hidden', !show);
+  btn.classList.toggle('active', show);
+  btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+}
+
+window.toggleGlobeList = () => {
+  const wrap = document.getElementById('globeWrap');
+  if (!wrap) return;
+  const show = wrap.classList.contains('list-hidden');
+  try { localStorage.setItem('statsGlobeList', show ? '1' : '0'); } catch (e) {}
+  applyGlobeList(show);
+  // The canvas size changes with the layout - rebuild at the new size.
+  requestAnimationFrame(initGlobe);
+};
+
+(function() {
+  let show = true;
+  try { show = localStorage.getItem('statsGlobeList') !== '0'; } catch (e) {}
+  applyGlobeList(show);
+})();
 
 // Hook: recreate globe when theme changes (called by theme.js)
 window._onThemeApplied = () => initGlobe();
+initGlobe();
 initGlobe();
 </script>
 

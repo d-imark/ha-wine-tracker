@@ -2638,3 +2638,15 @@ class TestPriceTop5:
         assert 'id="priceViewSwitch"' in html
         for view in ("overview", "top_exp", "top_cheap"):
             assert f'data-view="{view}"' in html
+
+
+def test_globe_regions_are_clickable_and_list_can_be_hidden(client):
+    import re
+    client.post("/add", data={"name": "Barolo", "quantity": "2", "region": "Piemont",
+                              "country": "Italien"}, headers=AJAX)
+    html = client.get("/stats").data.decode()
+    if 'id="globeCanvas"' not in html:
+        pytest.skip("no map coordinates for the test region in this reference set")
+    assert 'id="globeListToggle"' in html
+    items = re.findall(r'<button type="button" class="globe-legend-item"[^>]*data-lat="[-\d.]+"[^>]*data-lon="[-\d.]+"', html)
+    assert items, "legend entries must be buttons carrying their coordinates"
