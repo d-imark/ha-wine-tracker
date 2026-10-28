@@ -466,7 +466,8 @@ def check_readonly():
     if request.method in ("POST", "PUT", "DELETE"):
         # Allow login POST, chat API, chat sessions for readonly users
         # (session delete is blocked in the endpoint itself)
-        allowed = {"login", "api_chat", "api_chat_sessions_list", "api_chat_session_detail"}
+        allowed = {"login", "api_chat", "api_chat_sessions_list", "api_chat_session_detail",
+                   "api_prefs_save"}
         if request.endpoint not in allowed:
             if request.is_json or request.headers.get("X-Requested-With"):
                 return jsonify(ok=False, error="readonly"), 403
@@ -573,6 +574,11 @@ def inject_globals():
         ctx.setdefault("ref_cask_names", [])
         ctx.setdefault("wine_type_colors", {})
         ctx.setdefault("wine_type_custom_keys", [])
+    # Seeded into localStorage by every page's head script (see theme.js).
+    try:
+        ctx["user_prefs"] = load_user_prefs()
+    except Exception:
+        ctx["user_prefs"] = {}
     return ctx
 
 
@@ -877,6 +883,16 @@ def init_db():
         chat_cols = {row[1] for row in db.execute("PRAGMA table_info(chat_messages)")}
         if "image_path" not in chat_cols:
             db.execute("ALTER TABLE chat_messages ADD COLUMN image_path TEXT")
+
+        # ── user_prefs (UI preferences per user, see /api/prefs) ─────────
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS user_prefs (
+                user  TEXT NOT NULL,
+                key   TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (user, key)
+            )
+        """)
 
         # ── app_settings (in-app AI settings, read by load_options) ───────
         db.execute("""
@@ -3702,6 +3718,61 @@ def _preset_row_to_dict(row):
     except (ValueError, TypeError):
         d["conditions"] = {}
     return d
+
+
+# ── UI preferences on the server ─────────────────────────────────────────────
+# localStorage alone loses them on a cache clear and on every other device.
+# Kept in step with PREF_KEYS / PREF_PREFIXES in theme.js.
+PREF_KEYS = {
+    "wine-theme", "wine-theme-name", "wineViewMode", "wineTableSortCol",
+    "wineTableSortAsc", "wine-show-empty", "wine-advanced-filter-default",
+    "chatEditWines", "chatRecording",
+    "wt_area", "statsPriceBasis", "wineSettingsTab",
+}
+# The table column choice is stored per area: wineTableCols.cellar / .bar
+PREF_PREFIXES = ("wineTableCols.",)
+# Deliberately absent: "wine-advanced-filter", the ACTIVE filter. It is working
+# state - following you to another device it would hide bottles there.
+PREF_MAX_LEN = 4000
+
+
+def _is_pref_key(key):
+    return key in PREF_KEYS or any(key.startswith(p) for p in PREF_PREFIXES)
+
+
+def prefs_user():
+    if AUTH_ENABLED:
+        return session.get("user") or "default"
+    return "default"
+
+
+def load_user_prefs():
+    if AUTH_ENABLED and not session.get("user"):
+        return {}
+    rows = get_db().execute(
+        "SELECT key, value FROM user_prefs WHERE user = ?", (prefs_user(),)
+    ).fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+@app.route("/api/prefs", methods=["POST"])
+def api_prefs_save():
+    """Replace the user's preference snapshot. Readonly users may save their
+    own. A value too long to store is left out - cutting JSON would break it."""
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify(ok=False, error="json_body_required"), 400
+    prefs = {k: v for k, v in payload.items()
+             if _is_pref_key(k) and isinstance(v, str) and len(v) <= PREF_MAX_LEN}
+    user = prefs_user()
+    db = get_db()
+    db.execute("DELETE FROM user_prefs WHERE user = ?", (user,))
+    db.executemany(
+        "INSERT INTO user_prefs (user, key, value) VALUES (?, ?, ?)",
+        [(user, k, v) for k, v in prefs.items()],
+    )
+    db.commit()
+    return jsonify(ok=True)
 
 
 # ── In-app AI settings (settings modal) ──────────────────────────────────────

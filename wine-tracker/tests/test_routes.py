@@ -2184,3 +2184,111 @@ def test_ai_tab_offers_every_provider_and_web_search(client):
         assert f'<option value="{p}"' in section, p
     assert 'id="aiWebSearchToggle"' in section and 'id="aiOverridesHint"' in section
     assert 'id="aiModelDd"' in html
+
+
+# ── user preferences on the server (P5) ──────────────────────────────────────
+
+def _stored_prefs(db, user="default"):
+    return {r["key"]: r["value"]
+            for r in db.execute("SELECT key, value FROM user_prefs WHERE user=?", (user,))}
+
+
+class TestUserPrefs:
+    """Tests for server-side persistence of UI preferences (/api/prefs)."""
+
+    def test_save_and_seed_prefs(self, client, db):
+        resp = client.post("/api/prefs", json={"wine-theme": "dark", "wineViewMode": "table"})
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        assert _stored_prefs(db) == {"wine-theme": "dark", "wineViewMode": "table"}
+        assert b'"wine-theme": "dark"' in client.get("/").data
+
+    def test_unknown_keys_ignored(self, client, db):
+        client.post("/api/prefs", json={"evil-key": "x", "wine-theme": "light"})
+        assert list(_stored_prefs(db)) == ["wine-theme"]
+
+    def test_post_replaces_previous_prefs(self, client, db):
+        client.post("/api/prefs", json={"wine-theme": "dark", "wine-show-empty": "1"})
+        client.post("/api/prefs", json={"wine-theme": "light"})
+        assert _stored_prefs(db) == {"wine-theme": "light"}
+
+    def test_non_string_values_ignored(self, client, db):
+        client.post("/api/prefs", json={"wine-theme": {"nested": True}, "wineViewMode": "cards"})
+        assert _stored_prefs(db) == {"wineViewMode": "cards"}
+
+    def test_missing_json_body_keeps_prefs(self, client, db):
+        client.post("/api/prefs", json={"wine-theme": "dark"})
+        resp = client.post("/api/prefs", data="kein json")
+        assert resp.status_code == 400
+        assert _stored_prefs(db) == {"wine-theme": "dark"}
+
+    def test_prefix_keys_and_our_keys_are_stored(self, client, db):
+        cols = '["winery","alcohol_pct","quantity"]'
+        client.post("/api/prefs", json={"wineTableCols.bar": cols, "wt_area": "bar",
+                                        "statsPriceBasis": "ai", "wineSettingsTab": "data",
+                                        "wineTableColsX": "nope"})
+        assert _stored_prefs(db) == {"wineTableCols.bar": cols, "wt_area": "bar",
+                                     "statsPriceBasis": "ai", "wineSettingsTab": "data"}
+
+    def test_active_filter_is_not_synced(self, client, db):
+        """A filter is working state - following you to another device it would
+        hide bottles there for no visible reason."""
+        client.post("/api/prefs", json={"wine-advanced-filter": '{"rules":{}}', "wine-theme": "dark"})
+        assert _stored_prefs(db) == {"wine-theme": "dark"}
+
+    def test_overlong_values_are_dropped_not_cut(self, client, db):
+        client.post("/api/prefs", json={"wineTableCols.cellar": "[" + '"x",' * 2000 + '"y"]',
+                                        "wine-theme": "dark"})
+        assert _stored_prefs(db) == {"wine-theme": "dark"}
+
+    @pytest.mark.parametrize("path", ["/", "/stats", "/timeline", "/reference"])
+    def test_every_page_seeds_prefs(self, client, path):
+        client.post("/api/prefs", json={"wine-theme-name": "burgundy"})
+        head = client.get(path).data.decode().split("</head>", 1)[0]
+        assert '"wine-theme-name": "burgundy"' in head
+
+
+class TestUserPrefsAuth:
+    """Per-user separation and readonly access for /api/prefs."""
+
+    def _make_auth_app(self):
+        import app as wine_app
+        wine_app.AUTH_ENABLED = True
+        wine_app._USERS = {
+            "admin": {"hash": generate_password_hash("secret", method="pbkdf2:sha256"), "role": "admin"},
+            "viewer": {"hash": generate_password_hash("pass", method="pbkdf2:sha256"), "role": "readonly"},
+        }
+        wine_app.app.config["TESTING"] = True
+        wine_app.app.secret_key = "test-secret"
+        wine_app.init_db()
+        return wine_app.app.test_client()
+
+    def teardown_method(self):
+        import app as wine_app
+        wine_app.AUTH_ENABLED = False
+        wine_app._USERS = {}
+
+    def test_prefs_are_per_user(self, db):
+        client = self._make_auth_app()
+        client.post("/login", data={"username": "admin", "password": "secret"})
+        client.post("/api/prefs", json={"wine-theme": "dark"})
+        client.get("/logout")
+        client.post("/login", data={"username": "viewer", "password": "pass"})
+        client.post("/api/prefs", json={"wine-theme": "light"},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+        rows = {r["user"]: r["value"]
+                for r in db.execute("SELECT user, value FROM user_prefs WHERE key='wine-theme'")}
+        assert rows == {"admin": "dark", "viewer": "light"}
+
+    def test_readonly_can_save_prefs(self, db):
+        client = self._make_auth_app()
+        client.post("/login", data={"username": "viewer", "password": "pass"})
+        resp = client.post("/api/prefs", json={"wineViewMode": "list"},
+                           headers={"X-Requested-With": "XMLHttpRequest"})
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+    def test_prefs_require_login(self):
+        client = self._make_auth_app()
+        resp = client.post("/api/prefs", json={"wine-theme": "dark"})
+        assert resp.status_code == 401

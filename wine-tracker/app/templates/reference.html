@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="{{ ingress }}/static/style.css">
 <script>
-(function(){var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
+(function(){var p={{ user_prefs | tojson }};var any=false;var dirty=false;try{dirty=!!localStorage.getItem('wtPrefsDirty')}catch(e){}for(var k in p){any=true;if(!dirty){try{localStorage.setItem(k,p[k])}catch(e){}}}window._serverPrefsEmpty=!any;window._prefsDirty=dirty;var n=localStorage.getItem('wine-theme-name')||'homeassistant';if(n&&n!=='classic')document.documentElement.setAttribute('data-theme',n);var s=localStorage.getItem('wine-theme')||'system';var e=s==='system'?(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):s;if(e==='light')document.documentElement.classList.add('light');})();
 </script>
 <title>{{ t.ref_title }} - Wine Tracker</title>
 <style>

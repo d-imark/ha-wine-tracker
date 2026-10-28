@@ -469,3 +469,16 @@ class TestAppSettingsTable:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
         ).fetchone()
         assert row is not None
+
+
+class TestUserPrefsTable:
+    def test_user_prefs_table_created(self, app, db):
+        row = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_prefs'"
+        ).fetchone()
+        assert row is not None
+
+    def test_user_prefs_primary_key(self, app, db):
+        db.execute("INSERT INTO user_prefs (user, key, value) VALUES ('default', 'wine-theme', 'dark')")
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO user_prefs (user, key, value) VALUES ('default', 'wine-theme', 'light')")

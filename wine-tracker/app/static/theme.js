@@ -138,7 +138,10 @@ function switchSettingsTab(name) {
   document.querySelectorAll('#settingsModal .settings-section[data-settings-tab]').forEach(function(sec) {
     sec.style.display = sec.dataset.settingsTab === name ? '' : 'none';
   });
-  try { localStorage.setItem('wineSettingsTab', name); } catch (e) {}
+  // Only on a real change: every write is mirrored to the server (see below).
+  try {
+    if (localStorage.getItem('wineSettingsTab') !== name) localStorage.setItem('wineSettingsTab', name);
+  } catch (e) {}
   if (name === 'ai') _aiEnsureLoaded();
 }
 
@@ -561,6 +564,88 @@ function confirmImport() {
       if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-label') || 'Import'; }
     });
 }
+
+// ── UI preferences on the server ─────────────────────────────────────────────
+// Every page's head script seeds localStorage from the server copy (before
+// this file loads, so that does not echo back). From here on, writes to the
+// keys below are mirrored to /api/prefs, debounced. Kept in step with
+// PREF_KEYS / PREF_PREFIXES in app.py; the active advanced filter is left out
+// on purpose (working state, not a preference).
+var PREF_KEYS = ['wine-theme', 'wine-theme-name', 'wineViewMode', 'wineTableSortCol',
+                 'wineTableSortAsc', 'wine-show-empty', 'wine-advanced-filter-default',
+                 'chatEditWines', 'chatRecording',
+                 'wt_area', 'statsPriceBasis', 'wineSettingsTab'];
+var PREF_PREFIXES = ['wineTableCols.'];
+var _prefSyncTimer = null;
+
+function _isPrefKey(k) {
+  return PREF_KEYS.indexOf(k) !== -1 ||
+    PREF_PREFIXES.some(function(p) { return String(k).indexOf(p) === 0; });
+}
+
+function _collectPrefs() {
+  var prefs = {};
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (_isPrefKey(k)) prefs[k] = localStorage.getItem(k);
+    }
+  } catch (e) {}
+  return prefs;
+}
+
+// A change not yet on the server is marked in 'wtPrefsDirty'. While the mark
+// is set, the head scripts do not seed from the (older) server copy - without
+// it a quick reload or page change would put the old value back.
+var PREF_DIRTY = 'wtPrefsDirty';
+
+function _sendPrefs() {
+  clearTimeout(_prefSyncTimer);
+  _prefSyncTimer = null;
+  var mark = null;
+  try { mark = localStorage.getItem(PREF_DIRTY); } catch (e) {}
+  fetch(_ingressPrefix() + '/api/prefs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    body: JSON.stringify(_collectPrefs()),
+    keepalive: true      // still delivered when the page is being left
+  }).then(function(r) {
+    // Only clear the mark if nothing changed while the request was out.
+    try { if (r.ok && localStorage.getItem(PREF_DIRTY) === mark) localStorage.removeItem(PREF_DIRTY); } catch (e) {}
+  }).catch(function() {});
+}
+
+function _schedulePrefSync() {
+  try { localStorage.setItem(PREF_DIRTY, String(Date.now())); } catch (e) {}
+  clearTimeout(_prefSyncTimer);
+  _prefSyncTimer = setTimeout(_sendPrefs, 400);
+}
+
+// Leaving the page must not drop a change still waiting for its timer.
+window.addEventListener('pagehide', function() {
+  if (_prefSyncTimer) _sendPrefs();
+});
+
+(function() {
+  // Patched on the prototype, not on localStorage itself: assigning
+  // localStorage.setItem may store an item named "setItem" instead.
+  if (!window.Storage) return;
+  var proto = Storage.prototype, origSet = proto.setItem, origRemove = proto.removeItem;
+  proto.setItem = function(k, v) {
+    origSet.call(this, k, v);
+    if (this === window.localStorage && _isPrefKey(k)) _schedulePrefSync();
+  };
+  proto.removeItem = function(k) {
+    origRemove.call(this, k);
+    if (this === window.localStorage && _isPrefKey(k)) _schedulePrefSync();
+  };
+  // Upload what this browser has when the server has nothing yet (first visit
+  // after the update) or when an earlier change never made it there.
+  if (window._prefsDirty === true ||
+      (window._serverPrefsEmpty === true && Object.keys(_collectPrefs()).length)) {
+    document.addEventListener('DOMContentLoaded', _schedulePrefSync);
+  }
+})();
 
 // Apply theme name on load (mode is handled by inline script + OS listener)
 (function() {
