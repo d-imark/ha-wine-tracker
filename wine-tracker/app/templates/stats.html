@@ -250,7 +250,10 @@
             {% endfor %}
           </div>
           <div class="dw-bar-label">
-            {% if short_desktop %}
+            {% if item.label %}
+            {# the edge bars: windows reaching before / past the axis #}
+            {{ item.label }}
+            {% elif short_desktop %}
             <span class="dw-yr-short">{{ item.year % 100 }}</span>
             <span class="dw-yr-full">{{ item.year }}</span>
             {% elif short_mobile %}
@@ -738,7 +741,10 @@ function editWine(id) {
     if (chart === 'dw') {
       var yr = el.dataset.year;
       var dwYear = WINE_DATA.byDW[yr] || {};
-      return { title: (WINE_TYPE_NAMES[key] || key) + ' · ' + yr, wines: dwYear[key] || [] };
+      // The edge bars ("older" / "later") carry their label in the DOM.
+      var labelEl = el.closest('.dw-bar-col').querySelector('.dw-bar-label');
+      var yrLabel = isNaN(parseInt(yr, 10)) && labelEl ? labelEl.textContent.trim() : yr;
+      return { title: (WINE_TYPE_NAMES[key] || key) + ' · ' + yrLabel, wines: dwYear[key] || [] };
     }
     return null;
   }

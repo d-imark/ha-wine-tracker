@@ -1916,6 +1916,59 @@ def api_timeline():
     return jsonify(ok=True, entries=entries)
 
 
+# The drink window chart shows what matters for planning: the last few years
+# and the next ones. One long-lived bottle or an old dessert wine used to
+# stretch the axis over four decades.
+DW_YEARS_BACK = 3
+DW_YEARS_AHEAD = 15
+
+
+def _drink_window_chart(wines, current_year):
+    """Bottles per year, stacked by type, for current-3 .. current+15.
+
+    Every bottle whose window reaches before the first year also counts in an
+    "older" bar, every one reaching past the last year in a "later" bar - so
+    the edge bars show all of them, and no bottle drops out. Returns (chart,
+    type_order, names_by_bar); chart items carry `year` (int, or "older" /
+    "later"), `counts` {type: bottles} and, for the edge bars, a `label`.
+    """
+    first, last = current_year - DW_YEARS_BACK, current_year + DW_YEARS_AHEAD
+    by_year = defaultdict(lambda: defaultdict(int))
+    names = defaultdict(lambda: defaultdict(list))
+    types = set()
+    for w in wines:
+        try:
+            until = int(w["drink_until"])
+            frm = int(w["drink_from"]) if w.get("drink_from") else until
+        except (ValueError, TypeError):
+            continue
+        t = w["type"] or "Anderes"
+        types.add(t)
+        entry = {"n": w["name"], "y": w.get("year"), "q": w["quantity"], "id": w["id"]}
+        bars = list(range(max(frm, first), min(until, last) + 1))
+        if frm < first:
+            bars.append("older")
+        if until > last:
+            bars.append("later")
+        for bar in bars:
+            by_year[bar][t] += w["quantity"]
+            names[bar][t].append(entry)
+
+    years = [b for b in by_year if isinstance(b, int)]
+    chart = []
+    if "older" in by_year:
+        chart.append({"year": "older", "label": f"< {first}",
+                      "counts": dict(by_year["older"])})
+    if years:
+        chart += [{"year": yr, "counts": dict(by_year[yr])}
+                  for yr in range(min(years), max(years) + 1)]
+    if "later" in by_year:
+        chart.append({"year": "later", "label": f"{last}+",
+                      "counts": dict(by_year["later"])})
+    names_by_bar = {str(bar): dict(per_type) for bar, per_type in names.items()}
+    return chart, sorted(types), names_by_bar
+
+
 @app.route("/stats")
 def stats_page():
     db = get_db()
@@ -2071,31 +2124,7 @@ def stats_page():
         f"SELECT id, name, year, type, quantity, drink_from, drink_until FROM wines WHERE {A} "
         "AND drink_until IS NOT NULL AND drink_until != '' AND quantity > 0"
     ).fetchall()]
-    dw_by_year = defaultdict(lambda: defaultdict(int))
-    dw_names_by_year = defaultdict(lambda: defaultdict(list))
-    dw_types = set()
-    for w in dw_wines:
-        try:
-            until = int(w["drink_until"])
-            frm = int(w["drink_from"]) if w.get("drink_from") else until
-            t = w["type"] or "Anderes"
-            dw_types.add(t)
-            entry = {"n": w["name"], "y": w.get("year"), "q": w["quantity"], "id": w["id"]}
-            for yr in range(frm, until + 1):
-                dw_by_year[yr][t] += w["quantity"]
-                dw_names_by_year[yr][t].append(entry)
-        except (ValueError, TypeError):
-            pass
-    if dw_by_year:
-        dw_chart = [{"year": yr, "counts": dict(dw_by_year[yr])}
-                    for yr in range(min(dw_by_year), max(dw_by_year) + 1)]
-        dw_type_order = sorted(dw_types)
-        dw_wine_names = {str(yr): {t: wl for t, wl in types.items()}
-                         for yr, types in dw_names_by_year.items()}
-    else:
-        dw_chart = []
-        dw_type_order = []
-        dw_wine_names = {}
+    dw_chart, dw_type_order, dw_wine_names = _drink_window_chart(dw_wines, current_year)
 
     # Stock history - last 6 months
     today = date.today()
