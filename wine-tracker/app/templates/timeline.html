@@ -42,7 +42,7 @@
 }
 </style>
 </head>
-<body>
+<body{% if ingress %} class="embedded"{% endif %}>
 
 <header>
   <a class="nav-brand" href="{{ ingress }}/"><img src="{{ ingress }}/static/logo.png" alt="Wine Tracker" class="nav-logo"></a>

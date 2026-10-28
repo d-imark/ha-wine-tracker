@@ -129,16 +129,54 @@ function toggleChatEditWines(enabled) {
   localStorage.setItem('chatEditWines', enabled ? '1' : '0');
 }
 
+function _ingressPrefix() {
+  // The settings modal renders the ingress path onto the export button; not
+  // every page that includes the modal sets window.INGRESS.
+  var btn = document.getElementById('exportBackupBtn');
+  if (btn) return btn.getAttribute('data-base') || '';
+  return window.INGRESS || '';
+}
+
+// ── Data: Export ──────────────────────────────────────────────────────────────
+// A plain link makes the HA companion app's webview render the ZIP as text.
+// Fetch it instead: hand it to the share sheet inside the app, download it as a
+// blob elsewhere, and fall back to plain navigation if the fetch fails.
+function exportBackup() {
+  var btn = document.getElementById('exportBackupBtn');
+  var url = _ingressPrefix() + '/export';
+  if (btn) btn.disabled = true;
+  fetch(url)
+    .then(function(r) {
+      if (!r.ok) throw new Error('export failed');
+      var dispo = r.headers.get('Content-Disposition') || '';
+      var match = dispo.match(/filename="?([^";]+)"?/);
+      var name = match ? match[1] : 'wine-tracker-export.zip';
+      return r.blob().then(function(blob) { return { blob: blob, name: name }; });
+    })
+    .then(function(res) {
+      var embedded = document.body.classList.contains('embedded');
+      if (embedded && navigator.canShare) {
+        var file = new File([res.blob], res.name, { type: 'application/zip' });
+        if (navigator.canShare({ files: [file] })) {
+          return navigator.share({ files: [file] }).catch(function() {});
+        }
+      }
+      var objUrl = URL.createObjectURL(res.blob);
+      var a = document.createElement('a');
+      a.href = objUrl;
+      a.download = res.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function() { URL.revokeObjectURL(objUrl); }, 10000);
+    })
+    .catch(function() { window.location.href = url; })
+    .finally(function() { if (btn) btn.disabled = false; });
+}
+
 // ── Data: Import ──────────────────────────────────────────────────────────────
 // Remember the token returned by /import/preview so confirmImport() can commit.
 var _importToken = null;
-
-function _ingressPrefix() {
-  // Best-effort: reuse any ingress path already baked into links on the page.
-  var anchor = document.querySelector('a[href*="/export"]');
-  if (anchor) return anchor.getAttribute('href').replace(/\/export$/, '');
-  return '';
-}
 
 function _showImportError(msg) {
   var el = document.getElementById('importError');

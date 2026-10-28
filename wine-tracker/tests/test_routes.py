@@ -38,6 +38,32 @@ class TestIndex:
                     "description"):
             assert f'data-{key}="' in html, key
 
+    @staticmethod
+    def _body_tag(html):
+        return html.split("<body", 1)[1].split(">", 1)[0]
+
+    @pytest.mark.parametrize("path", ["/", "/stats", "/timeline", "/reference"])
+    def test_body_marked_embedded_under_ingress(self, client, path):
+        """HA ingress already clears the iOS home indicator; pages flag
+        themselves so the CSS skips its own safe-area inset."""
+        html = client.get(path, headers={"X-Ingress-Path": "/api/hassio_ingress/x"}).data.decode()
+        assert "embedded" in self._body_tag(html)
+
+    def test_body_not_embedded_without_ingress(self, client):
+        assert "embedded" not in self._body_tag(client.get("/").data.decode())
+
+    def test_export_is_a_button_with_share_fallback(self, client):
+        """A plain link renders the ZIP as text inside the HA companion app."""
+        html = client.get("/").data.decode()
+        assert 'id="exportBackupBtn"' in html and "exportBackup()" in html
+
+    @pytest.mark.parametrize("path", ["/", "/stats", "/timeline", "/reference"])
+    def test_settings_modal_carries_the_ingress_base(self, client, path):
+        """Export and import build their URLs from the button's data-base.
+        They used to read it off the export link, which is now a button."""
+        html = client.get(path, headers={"X-Ingress-Path": "/api/hassio_ingress/x"}).data.decode()
+        assert 'data-base="/api/hassio_ingress/x"' in html
+
     def test_bottle_format_rendered_canonically(self, client):
         """Server-rendered cards must match the AJAX-rendered form ("3", not
         "3.0"), or filter chips and presets stop matching after a save."""
