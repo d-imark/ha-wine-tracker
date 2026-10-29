@@ -1897,7 +1897,6 @@ textarea { resize: vertical; min-height: 70px; font-family: inherit; }
   .dw-yr-short-mobile { display: inline; }
 }
 .dw-current .dw-bar-label { color: var(--accent); font-weight: 700; }
-.dw-current .dw-bar-stack { box-shadow: 0 0 0 1.5px var(--accent); }
 .dw-legend { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-top: 1rem; font-size: .78rem; }
 .dw-legend-item { display: flex; align-items: center; gap: .3rem; }
 

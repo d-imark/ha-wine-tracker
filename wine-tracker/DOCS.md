@@ -121,5 +121,5 @@ sensor:
 
 See the full documentation and changelog on [GitHub](https://github.com/d-imark/ha-wine-tracker).
 
-[version-badge]: https://img.shields.io/badge/version-v1.17.0-blue.svg
+[version-badge]: https://img.shields.io/badge/version-v1.17.1-blue.svg
 [ai-badge]: https://img.shields.io/badge/AI%20powered-label%20recognition-blueviolet.svg

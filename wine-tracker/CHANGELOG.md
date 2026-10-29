@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.1
+
+- **Statistik: Trinkfenster** - das aktuelle Jahr hat keinen Rahmen mehr um den Balken; hervorgehoben ist nur noch die Jahreszahl.
+
 ## 1.17.0
 
 - **Wichtig beim Update: KI-Anbieter prüfen** - wer bisher nur einen Anthropic-Schlüssel eingetragen und den Anbieter (`ai_provider`) auf „none" gelassen hat, bekam die KI trotzdem, weil sie automatisch erkannt wurde. Diese Erkennung greift nicht mehr, sobald ein Anbieter gesetzt ist - und Home Assistant setzt „none" immer. Damit lässt sich die KI jetzt auch wirklich ausschalten. Falls sie nach dem Update fehlt: in der Add-on-Konfiguration `anthropic` wählen oder den Anbieter im neuen Einstellungs-Reiter „KI-Anbieter" festlegen.
