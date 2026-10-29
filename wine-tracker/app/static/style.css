@@ -3403,7 +3403,8 @@ html.light .undo-toast.error #undoToastMsg { color: #c0392b; }
 @media (pointer: coarse) {
   /* The badge keeps its look; an invisible margin around it takes the tap. */
   .qty-badge[onclick]::before { content: ''; position: absolute; inset: -12px -8px; }
-  .view-list .qty-badge[onclick] { position: relative; }
+  /* relative for the tap area - without top/right the card offsets would shift it onto the image */
+  .view-list .qty-badge[onclick] { position: relative; top: auto; right: auto; }
   .qty-popover button { width: 44px; height: 44px; font-size: 1.25rem; }
   .undo-toast button { min-height: 44px; padding: 0 .9rem; }
   .globe-list-toggle { width: 44px; height: 40px; font-size: 1.15rem; }

@@ -3,6 +3,7 @@
 ## 1.17.1
 
 - **Statistik: Trinkfenster** - das aktuelle Jahr hat keinen Rahmen mehr um den Balken; hervorgehoben ist nur noch die Jahreszahl.
+- **Listenansicht auf dem Handy** - die Flaschenzahl klebte am Bild und sass etwas zu tief; sie steht jetzt wieder mit Abstand mittig neben dem Bild.
 
 ## 1.17.0
 
